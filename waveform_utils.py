@@ -126,9 +126,11 @@ def plot_waveforms(waveform_data, config):
     # Calculate and print sampling rate and Nyquist frequency
     sampling_rate = 1 / config['n']
     nyquist_freq = sampling_rate / 2
+    freq_resolution = sampling_rate / len(t)
     print(f"Sampling rate: {sampling_rate} Hz")
     print(f"Nyquist frequency: {nyquist_freq} Hz")
     print(f"Total number of available sample points: {len(t)}")   
+    print(f"Frequency Resolution: {freq_resolution} Hz")
 
     fig_dft_magnitude.show()
     fig_dft_phase.show()
