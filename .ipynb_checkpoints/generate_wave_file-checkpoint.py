@@ -12,7 +12,7 @@ def scale_samples(samples, bit_rate):
     else:
         raise ValueError(f"Unsupported bit rate: {bit_rate}")
 
-def generate_wave_file(y_combined, fs_initial, fs_target_name='44.1kHz', bit_rate=16, custom_filename=None):
+def generate_wave_file(y_combined, fs_initial, fs_target_name='44.1kHz', bit_rate=16, custom_filename=None, save_to_file=True):
     # dictionary of common sampling rates
     fs_target_dict = {
         '44.1kHz': 44100,
@@ -45,21 +45,31 @@ def generate_wave_file(y_combined, fs_initial, fs_target_name='44.1kHz', bit_rat
 
     # set the output file name
     if custom_filename is None:
-        output_filename = f"sine_wave_resampled_{fs_target_name}_{bit_rate}bit_{timestamp}.wav"
+        output_filename = f"generated_wave_file_{fs_target_name}_{bit_rate}bit_{timestamp}.wav"
     else:
         output_filename = custom_filename
-
-    # write the resampled waveform to a wave audio file
-    sf.write(output_filename, y_scaled, fs_target, subtype=f'PCM_{bit_rate}')
 
     # get the current working directory
     current_dir = os.getcwd()
 
-    # construct the file path
-    file_path = os.path.join(current_dir, output_filename)
+    # create 'rendered_audio' directory if it doesn't exist
+    output_directory = os.path.join(current_dir, "rendered_audio")
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
 
-    # get the current timestamp for log
-    timestamp_log = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # construct the full path to save the audio
+    file_path = os.path.join(output_directory, output_filename)
 
-    # print a message about the wave file being saved successfully with a timestamp
-    print(f"[{timestamp_log}] {bit_rate}-bit wave file with {fs_target_name} sampling rate saved successfully to: {file_path}")
+    if save_to_file:
+        # write the resampled waveform to a wave audio file
+        sf.write(file_path, y_scaled, fs_target, subtype=f'PCM_{bit_rate}')
+
+        # get the current timestamp for log
+        timestamp_log = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # print a message about the wave file being saved successfully with a timestamp
+        print(f"[{timestamp_log}] {bit_rate}-bit wave file with {fs_target_name} sampling rate saved successfully to: {file_path}")
+
+        return file_path
+    else:
+        return y_scaled, fs_target
