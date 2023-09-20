@@ -8,8 +8,9 @@ import librosa
 def load_wav_from_source(wav_source):
     """Load a WAV file either from a local path or a URL."""
     if os.path.exists(wav_source):
-        wav_filename = os.path.basename(wav_source)
-        print(f"WAV file loaded from local path: {os.path.abspath(wav_source)}")
+        full_path = os.path.abspath(wav_source)
+        print(f"WAV file loaded from local path: {full_path}")
+        return full_path
     else:
         try:
             response = requests.get(wav_source)
