@@ -1,4 +1,4 @@
-![AudioSpyplt Logo](./logo.png)
+![AudioSpylt Logo](./logo.png)
 
 # AudioSpylt
 
@@ -50,7 +50,7 @@ To get started, clone the repository, and set up your Jupyter Notebook environme
 
 ## Dependencies
 
-The following libraries are required to run AudioSpyplt:
+The following libraries are required to run AudioSpylt:
 
 - requests
 - numpy
