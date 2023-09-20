@@ -54,4 +54,4 @@ Feel free to contribute to the project by creating pull requests or by opening i
 
 ## License
 
-This project is under the MIT License. See the [LICENSE](./LICENSE) file for details.
+This project is under the MIT License.
