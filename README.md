@@ -1,8 +1,8 @@
 ![AudioSpyplt Logo](./logo.png)
 
-# AudioSpyplt
+# AudioSpylt
 
-AudioSpyplt is a Python-based toolbox tailored for sound analysis, re/synthesis, and diverse visual & symbolic sound representations. Predominantly designed for instructional use, this toolbox operates within the Jupyter Notebooks environment. Initially developed for composition students I mentored last year, it emphasizes varied resynthesis patterns.
+AudioSpylt is a Python-based toolbox tailored for sound analysis, re/synthesis, and diverse visual & symbolic sound representations. Predominantly designed for instructional use, this toolbox operates within the Jupyter Notebooks environment. Initially developed for composition students I mentored last year, it emphasizes varied resynthesis patterns.
 
 ## Toolbox Overview
 
