@@ -48,6 +48,31 @@ These notebooks are designed to provide comprehensive explanations and demonstra
 
 To get started, clone the repository, and set up your Jupyter Notebook environment to run the notebooks.
 
+## Dependencies
+
+The following libraries are required to run AudioSpyplt:
+
+- requests
+- numpy
+- plotly
+- librosa
+- pandas
+- scipy
+- soundfile
+- IPython
+- verovio
+- tqdm
+
+(Note: Some of the libraries like `os`, `io`, `random`, and `typing` are part of the Python standard library and are included here for completeness.)
+
+### Installation
+
+To install the dependencies, navigate to the root directory of the project and run:
+
+```
+pip install -r requirements.txt
+```
+
 ## Contributions
 
 Feel free to contribute to the project by creating pull requests or by opening issues.

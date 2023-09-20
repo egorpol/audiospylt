@@ -1,0 +1,11 @@
+requests
+numpy
+plotly
+librosa
+pandas
+scipy
+soundfile
+typing
+IPython
+verovio
+tqdm
