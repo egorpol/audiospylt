@@ -62,6 +62,7 @@ The following libraries are required to run AudioSpylt:
 - IPython
 - verovio
 - tqdm
+- matplotlib
 
 ### Installation
 
