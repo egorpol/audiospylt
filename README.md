@@ -63,8 +63,6 @@ The following libraries are required to run AudioSpylt:
 - verovio
 - tqdm
 
-(Note: Some of the libraries like `os`, `io`, `random`, and `typing` are part of the Python standard library and are included here for completeness.)
-
 ### Installation
 
 To install the dependencies, navigate to the root directory of the project and run:
