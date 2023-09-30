@@ -52,7 +52,7 @@ To get started, clone the repository, and set up your Jupyter Notebook environme
 
 ## Dependencies
 
-The following libraries are required to run AudioSpylt:
+AudioSpylt requires the following libraries:
 
 - requests
 - numpy
@@ -62,7 +62,7 @@ The following libraries are required to run AudioSpylt:
 - scipy
 - soundfile
 - IPython
-- verovio
+- verovio==4.0.1
 - tqdm
 - matplotlib
 
@@ -76,8 +76,8 @@ pip install -r requirements.txt
 
 ## Contributions
 
-Feel free to contribute to the project by creating pull requests or by opening issues.
+Your contributions are welcome! Feel free to enhance the project through pull requests or by opening issues.
 
 ## License
 
-This project is under the MIT License.
+AudioSpylt is licensed under the MIT License.
