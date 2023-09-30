@@ -1,5 +1,13 @@
 ![AudioSpylt Logo](./logo.png)
 
+## Important Resources
+
+- Slides and audio examples from the 23rd GMTH Congress talk can be found in the `gmth` folder.
+- Demo notebooks are located in the main folder and include:
+  - `showcase_bayle.ipynb`
+  - `showcase_noanoa.ipynb`
+  - `showcase_parm.ipynb`
+
 # AudioSpylt
 
 > **Note**: This package is currently under development. The provided version should be treated as an alpha release.
