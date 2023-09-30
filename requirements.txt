@@ -7,6 +7,6 @@ scipy
 soundfile
 typing
 IPython
-verovio
+verovio==4.0.1
 tqdm
 matplotlib
