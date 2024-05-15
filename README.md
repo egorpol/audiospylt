@@ -20,7 +20,7 @@ All tutorials can be found in the `tutorials` folder:
 
 - `mfcc_bank.ipynb` - Brief introduction to MFCC-based sound representations.
 - `peaks_scipy_showcase.ipynb` - Quick introduction to `find_peaks` function from `scipy.signal` used for DFT-based peak filtering.
-- `showcase_bayle.ipynb`, `showcase_noanoa.ipynb` - Various examples of DFT-based peak detection and resynthesis aimed to extract symbolic representations from various sounds and resynthesize the DFT frames for aural judgement and exploration of analyzed sounds.
+- `showcase_bayle.ipynb`, `showcase_noanoa.ipynb`, `showcase_parm.ipynb` - Various examples of DFT-based peak detection and resynthesis aimed to extract symbolic representations from various sounds and resynthesize the DFT frames for aural judgement and exploration of analyzed sounds.
 - `above_nyquist.ipynb` - Brief introduction to the effects of aliasing.
 - `dft_resolution.ipynb` - Brief introduction to the effects of sampling rate and sample length.
 
