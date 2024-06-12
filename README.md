@@ -7,6 +7,13 @@
 
 **AudioSpylt** is a Python-based toolbox designed for sound analysis, re/synthesis, and a variety of visual and symbolic sound representations. While it is primarily intended for instructional purposes, this toolbox seamlessly integrates with the Jupyter Notebooks environment. Originally created for composition students, it places a special emphasis on diverse resynthesis techniques.
 
+## Update alpha-0.3
+
+- Added exploration_of_timbre directory with various experimental ML-based sound generation approaches using various global optimization algorithms. The primary goal is to synthesize a DFT frame within a restricted FM/AM setup, optionally aimed to be used within Ableton/Operator.
+
+- `spectral_fm3.ipynb` - Notebook for FM-based sound approximation using a single DFT frame as the source
+- `spectral_am3.ipynb` - Notebook for AM-based sound approximation using a single DFT frame as the source
+
 ## Update alpha-0.2
 
 ### Refactoring
