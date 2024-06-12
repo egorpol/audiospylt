@@ -9,7 +9,7 @@
 
 ## Update alpha-0.3
 
-- Added exploration_of_timbre directory with various experimental ML-based sound generation approaches using various global optimization algorithms. The primary goal is to synthesize a DFT frame within a restricted FM/AM setup, optionally aimed to be used within Ableton/Operator.
+- Added `exploration_of_timbre` directory with various experimental ML-based sound generation approaches using various global optimization algorithms. The primary goal is to synthesize a DFT frame within a restricted FM/AM setup, optionally aimed to be used within Ableton/Operator.
 
 - `spectral_fm3.ipynb` - Notebook for FM-based sound approximation using a single DFT frame as the source
 - `spectral_am3.ipynb` - Notebook for AM-based sound approximation using a single DFT frame as the source
