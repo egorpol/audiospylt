@@ -13,6 +13,13 @@
 
 - `spectral_fm3.ipynb` - Notebook for FM-based sound approximation using a single DFT frame as the source
 - `spectral_am3.ipynb` - Notebook for AM-based sound approximation using a single DFT frame as the source
+- `operator_fm.ipynb` - Notebook for adjusting the calculated FM values to Ableton's Operator preset format
+- `operator_am.ipynb` - Notebook for adjusting the calculated AM values to Ableton's Operator preset format
+- `operator_preset_editor_fm.ipynb` - Notebook for extracting and saving the Operator presets in .adv format (native format for Ableton's Operator)
+- `optimization_gif.ipynb` - Notebook for creating learning process visualizations for different optimization algorithms
+- `distances_demo.ipynb` - Notebook for visualizing distances of different objective functions
+
+
 
 ## Update alpha-0.2
 
@@ -46,11 +53,11 @@ All tutorials can be found in the `tutorials` folder:
 
 These notebooks are designed to provide comprehensive explanations and demonstrations on core audio concepts:
 
-- **wave_sampling_window**: 
+- **wave_sampling_window**:
   - Covers sampling rate, Nyquist Frequency, window functions.
   - Discusses implications of sampled material length on frequency resolution.
 
-- **wave_vs_dft_3d**: 
+- **wave_vs_dft_3d**:
   - Displays 2D and 3D representations of DFT spectra.
   - Emphasizes sine/cosine component visuals.
 
