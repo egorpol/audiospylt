@@ -6,6 +6,12 @@
 
 **AudioSpylt** is a Python-based toolbox designed for sound analysis, resynthesis, and a variety of visual and symbolic sound representations. While it is primarily intended for instructional purposes, this toolbox seamlessly integrates with the Jupyter Notebook environment. Originally created for composition students, it places a special emphasis on diverse resynthesis techniques.
 
+## Update alpha-0.5
+
+- Major cleanup of the entire repository.
+- All conference-related resources (presentations, examples, posters) have been moved to the `conferences/` folder. This includes dedicated folders for GMTH23, INMUSIC24, and MEC2025.
+- The `exploration_of_timbre/` directory has been moved to `conferences/inmusic24/` for reference. Further development will continue at [egorpol/FFTimbre](https://github.com/egorpol/FFTimbre).
+
 ## Update alpha-0.4
 
 - Improved and refactored MEI implementation, including quarter-tone and eighth-tonal representations, as well as basic support for temporal structure representation. Added SVG export. Check the `symbolic_mei.ipynb` notebook for more details.
