@@ -1,5 +1,37 @@
-# Jupyter Notebook
-.ipynb_checkpoints/
-.idea/
+# ===================================================================
+# Python & Jupyter
+# ===================================================================
+
+# Byte-compiled / optimized files
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook Checkpoints
+# These are temporary save points and should not be versioned.
+.ipynb_checkpoints/
+
+# ===================================================================
+# IDE and Editor Directories
+# These are user-specific and have no place in a shared repository.
+# ===================================================================
+.idea/
+.vscode/
+
+# Swap files from editors like Vim
+*.swp
+*.swo
+
+# ===================================================================
+# OS-specific files
+# ===================================================================
 .DS_Store
+Thumbs.db
+
+# ===================================================================
+# Distribution / packaging
+# These are generated when you build a package for distribution.
+# ===================================================================
+build/
+dist/
+*.egg-info/
