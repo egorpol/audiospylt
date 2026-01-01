@@ -2,6 +2,11 @@ import numpy as np
 from scipy.signal import get_window
 import plotly.graph_objects as go
 
+try:  # pragma: no cover
+    from .plotting import show_plotly
+except Exception:  # pragma: no cover
+    from audiospylt.plotting import show_plotly
+
 def generate_waveforms(config):
     """
     Generates waveform data based on the provided configuration.
@@ -104,7 +109,7 @@ def plot_waveforms(waveform_data, t, config):
                                     line=dict(color="Black", width=1, dash="dot"))
 
     fig_waveforms.update_layout(title='Sine Waves', xaxis_title='Time (s)', yaxis_title='Amplitude', autosize=False, width=800, height=600, showlegend=True)
-    fig_waveforms.show()
+    show_plotly(fig_waveforms)
 
     # Create the DFT Magnitude and Phase Plots
     fig_dft_magnitude = go.Figure()
@@ -160,5 +165,5 @@ def plot_waveforms(waveform_data, t, config):
     print(f"Total number of available sample points: {len(t)}")   
     print(f"Frequency Resolution: {freq_resolution} Hz")
 
-    fig_dft_magnitude.show()
-    fig_dft_phase.show()
+    show_plotly(fig_dft_magnitude)
+    show_plotly(fig_dft_phase)

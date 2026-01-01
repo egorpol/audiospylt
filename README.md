@@ -92,6 +92,21 @@ These notebooks provide comprehensive explanations and demonstrations of core au
 
 To get started, clone this repository and set up your Jupyter Notebook environment to run the notebooks.
 
+## Development install (recommended for testing notebooks)
+
+To make `import audiospylt` work from anywhere (including `notebooks/*.ipynb`), do an **editable install** from the repo root.
+
+In PowerShell (Windows):
+
+```bash
+cd C:\Users\egorp\Nextcloud\code\public_repos\audiospylt
+python -m pip install -U pip
+python -m pip install -e ".[notebook]"
+```
+
+Important: your Jupyter kernel must use the **same Python environment** where you ran the install.
+If you still see `ModuleNotFoundError: No module named 'audiospylt'`, you’re almost certainly running the notebook in a different kernel.
+
 ## Dependencies
 
 AudioSpylt requires the following Python libraries:
@@ -114,6 +129,20 @@ To install the dependencies, navigate to the root directory of the project and r
 
 ```bash
 pip install -r requirements.txt
+```
+
+### Installation (pip package)
+
+For local development (editable install from this repo):
+
+```bash
+pip install -e ".[notebook]"
+```
+
+After the project is published to PyPI:
+
+```bash
+pip install audiospylt
 ```
 
 ## Contributions

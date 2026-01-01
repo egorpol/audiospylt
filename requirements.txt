@@ -1,4 +1,5 @@
 IPython
+nbformat>=4.2.0
 librosa
 matplotlib
 numpy

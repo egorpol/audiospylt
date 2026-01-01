@@ -7,6 +7,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Virtual Environments
+venv/
+.venv/
+env/
+.env
+
 # Jupyter Notebook Checkpoints
 # These are temporary save points and should not be versioned.
 .ipynb_checkpoints/
@@ -35,3 +41,11 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+# ===================================================================
+# Project-generated outputs / scratch files
+# ===================================================================
+rendered_audio/
+tsv/
+mei/
+_tmp_*.py

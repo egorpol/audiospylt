@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+- Packaging support via `pyproject.toml` (pip-installable distribution).
+- New `audiospylt/` import namespace that re-exports the existing modules from `py_scripts/`.
+
 ## [0.5.0-alpha] - YYYY-MM-DD
 
 ### Changed
