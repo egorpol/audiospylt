@@ -4,6 +4,7 @@ import plotly.graph_objs as go
 import plotly.express as px
 import os
 import io
+import tempfile
 import librosa
 from scipy.signal import spectrogram, get_window
 from urllib.parse import urlparse
@@ -53,13 +54,37 @@ def ensure_finite_audio(audio_data, name="audio_data", sanitize=True, verbose=Tr
 
     raise ValueError(f"{name} contains {n_bad} NaN/Inf samples")
 
-def load_wav_from_source(wav_source, *, verbose: bool = False):
+def _is_http_url(s: str) -> bool:
+    try:
+        p = urlparse(str(s))
+    except Exception:
+        return False
+    return p.scheme in {"http", "https"} and bool(p.netloc)
+
+
+def load_wav_from_source(
+    wav_source,
+    *,
+    verbose: bool = False,
+    download_mode: str = "cwd",
+    download_dir: str | None = None,
+    show_load_bar: bool = False,
+    download_timeout_s: float | None = 60.0,
+    download_chunk_size: int = 1024 * 256,
+):
     """
-    Load a WAV file either from a local path or a URL.
+    Load an audio file either from a local path or a URL.
 
     This function is intentionally side-effect-light:
     - No printing unless verbose=True
-    - For URLs, it downloads the file into the current working directory.
+    - For URLs, it downloads the file (by default into the current working directory).
+
+    Parameters
+    - download_mode:
+      - "cwd": write the downloaded file into the current working directory (back-compat default)
+      - "dir": write into download_dir (directory is created if missing)
+      - "temp": download into a temporary file (caller may delete it after load)
+    - show_load_bar: if True, show a tqdm progress bar for URL downloads (notebook-friendly).
     """
     if os.path.exists(wav_source):
         full_path = os.path.abspath(wav_source)
@@ -67,22 +92,117 @@ def load_wav_from_source(wav_source, *, verbose: bool = False):
             print(f"WAV file loaded from local path: {full_path}")
         return full_path
 
+    if not _is_http_url(wav_source):
+        raise ValueError(
+            f"wav_source must be an existing local path or an http(s) URL; got {wav_source!r}"
+        )
+
+    download_mode_norm = str(download_mode).lower().strip().replace("-", "_")
+
+    # Prefer the URL path basename, but fall back to something stable.
+    p = urlparse(str(wav_source))
+    url_base = os.path.basename((p.path or "").rstrip("/")) or "downloaded_audio"
+    url_root, url_ext = os.path.splitext(url_base)
+    if not url_ext:
+        # Keep librosa/ffmpeg helpers happy by using a generic extension.
+        url_base = f"{url_base}.bin"
+        url_root, url_ext = os.path.splitext(url_base)
+
+    if download_mode_norm == "cwd":
+        target_path = os.path.abspath(url_base)
+    elif download_mode_norm == "dir":
+        if not download_dir:
+            raise ValueError("download_dir must be provided when download_mode='dir'")
+        os.makedirs(download_dir, exist_ok=True)
+        target_path = os.path.abspath(os.path.join(download_dir, url_base))
+    elif download_mode_norm == "temp":
+        # On Windows, NamedTemporaryFile must be closed before reopening.
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=url_ext)
+        target_path = tmp.name
+        tmp.close()
+    else:
+        raise ValueError("download_mode must be one of: 'cwd' | 'dir' | 'temp'")
+
     try:
-        response = requests.get(wav_source)
-        response.raise_for_status()
+        timeout = download_timeout_s
+        with requests.get(wav_source, stream=True, timeout=timeout) as response:
+            response.raise_for_status()
 
-        wav_buffer = io.BytesIO(response.content)
-        wav_filename = wav_source.split("/")[-1]
+            total = response.headers.get("Content-Length") or response.headers.get("content-length")
+            try:
+                total_bytes = int(total) if total is not None else None
+            except Exception:
+                total_bytes = None
 
-        with open(wav_filename, "wb") as f:
-            f.write(wav_buffer.read())
+            pbar = None
+            if show_load_bar:
+                desc = f"Downloading {url_base}"
+                # tqdm notebook widgets require ipywidgets; when missing, tqdm.notebook can
+                # raise ImportError at *runtime* ("IProgress not found"). Fall back to auto.
+                try:  # pragma: no cover
+                    from tqdm.notebook import tqdm as _tqdm_notebook
+                    try:  # pragma: no cover
+                        pbar = _tqdm_notebook(
+                            total=total_bytes,
+                            unit="B",
+                            unit_scale=True,
+                            unit_divisor=1024,
+                            desc=desc,
+                            leave=False,
+                        )
+                    except Exception:  # pragma: no cover
+                        from tqdm.auto import tqdm as _tqdm_auto
+                        if verbose:
+                            print("Note: ipywidgets missing; falling back to a text progress bar.")
+                        pbar = _tqdm_auto(
+                            total=total_bytes,
+                            unit="B",
+                            unit_scale=True,
+                            unit_divisor=1024,
+                            desc=desc,
+                            leave=False,
+                        )
+                except Exception:  # pragma: no cover
+                    try:  # pragma: no cover
+                        from tqdm.auto import tqdm as _tqdm_auto
+                        pbar = _tqdm_auto(
+                            total=total_bytes,
+                            unit="B",
+                            unit_scale=True,
+                            unit_divisor=1024,
+                            desc=desc,
+                            leave=False,
+                        )
+                    except Exception:  # pragma: no cover
+                        pbar = None
+
+            try:
+                with open(target_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=int(download_chunk_size)):
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        if pbar is not None:
+                            pbar.update(len(chunk))
+            finally:
+                if pbar is not None:
+                    pbar.close()
 
         if verbose:
-            print(f"WAV file downloaded from URL and saved to: {os.path.abspath(wav_filename)}")
+            if download_mode_norm == "temp":
+                print(f"Audio downloaded from URL into a temporary file: {target_path}")
+            else:
+                print(f"Audio file downloaded from URL and saved to: {target_path}")
 
-        return wav_filename
+        return target_path
     except requests.RequestException as e:
-        raise ValueError(f"Failed to load WAV from URL. Error: {e}") from e
+        # Clean up partial files.
+        try:
+            if os.path.exists(target_path):
+                os.remove(target_path)
+        except Exception:
+            pass
+        raise ValueError(f"Failed to load audio from URL. Error: {e}") from e
 
 def load_audio_data(wav_filename, desired_sample_rate, convert_to_mono):
     """Load audio data, convert it to mono (if desired), and resample it (if a desired sample rate is provided)."""
@@ -435,6 +555,9 @@ def load_audio_sample(
     convert_to_mono=True,
     *,
     verbose: bool = False,
+    download_mode: str = "cwd",
+    download_dir: str | None = None,
+    show_load_bar: bool = False,
 ):
     """
     Load-only helper for audio samples (local path or URL).
@@ -445,8 +568,28 @@ def load_audio_sample(
     Returns (audio_data, sample_rate, info_dict) where info contains:
       wav_source, wav_filename, num_channels, duration, playback_audio.
     """
-    wav_filename = load_wav_from_source(wav_source, verbose=verbose)
-    audio_data, sample_rate = load_audio_data(wav_filename, desired_sample_rate, convert_to_mono)
+    is_url = _is_http_url(wav_source)
+    is_temp_download = bool(is_url and str(download_mode).lower().strip().replace("-", "_") == "temp")
+
+    source_path = load_wav_from_source(
+        wav_source,
+        verbose=verbose,
+        download_mode=download_mode,
+        download_dir=download_dir,
+        show_load_bar=show_load_bar,
+    )
+
+    audio_data, sample_rate = load_audio_data(source_path, desired_sample_rate, convert_to_mono)
+
+    # If we downloaded to a temporary file, delete it after decoding so we don't litter
+    # the notebook working directory.
+    temp_deleted = False
+    if is_temp_download:
+        try:
+            os.remove(source_path)
+            temp_deleted = True
+        except Exception:
+            temp_deleted = False
 
     audio_arr = np.asarray(audio_data)
     num_channels = _infer_num_channels(audio_arr)
@@ -461,7 +604,13 @@ def load_audio_sample(
 
     return audio_data, sample_rate, {
         "wav_source": wav_source,
-        "wav_filename": wav_filename,
+        # Back-compat: keep the key name, but in temp-download mode this is a display label
+        # (not a stable file path).
+        "wav_filename": (_basename_for_title(wav_source) if is_temp_download else source_path),
+        "source_local_path": source_path,
+        "source_is_url": bool(is_url),
+        "source_is_tempfile": bool(is_temp_download),
+        "source_tempfile_deleted": bool(temp_deleted),
         "num_channels": num_channels,
         "duration": duration,
         "playback_audio": playback_audio,
@@ -486,6 +635,9 @@ def load_audio_sample_and_preview(
     playback_save_audio: bool = False,
     playback_sanitize: bool = True,
     source_verbose: bool = False,
+    download_mode: str = "cwd",
+    download_dir: str | None = None,
+    show_load_bar: bool = False,
     # Back-compat alias (deprecated): kept so existing notebooks/calls don't break.
     verbose: bool | None = None,
     playback_verbose: bool = False,
@@ -513,6 +665,9 @@ def load_audio_sample_and_preview(
         desired_sample_rate=desired_sample_rate,
         convert_to_mono=convert_to_mono,
         verbose=source_verbose,
+        download_mode=download_mode,
+        download_dir=download_dir,
+        show_load_bar=show_load_bar,
     )
 
     if show_properties:
@@ -846,12 +1001,23 @@ def plot_spectrogram(
                     cbar_label += f" (gamma={gamma})"
 
         freqs_hz = librosa.mel_frequencies(n_mels=mel_bins, fmax=mel_fmax)
-        y_axis_type = "linear"
         y_label = "Frequency"
-        # px.imshow uses index spacing; keep indices and map ticks to Hz labels.
-        y_for_plot = np.arange(len(freqs_hz))
+
+        # Important: px.imshow hover labels use the *actual y values*, not ticktext,
+        # so if we use numeric mel-bin indices you'll see mixed hover like:
+        #   "Frequency 96" (bin index) vs "Frequency 9.5 kHz" (only when y hits a tickval).
+        #
+        # To make every bin map to a frequency label (and keep equal mel-bin spacing),
+        # we use a categorical y axis with one label per bin.
+        y_for_plot = [_format_hz(v) for v in freqs_hz]
+        if len(set(y_for_plot)) != len(y_for_plot):
+            # Rare case (very large mel_bins): avoid duplicate category labels due to rounding.
+            y_for_plot = [f"{float(v):.3f} Hz" if float(v) < 1000 else f"{float(v)/1000:.3f} kHz" for v in freqs_hz]
+
+        y_axis_type = "category"
+
         tick_idx = np.linspace(0, len(freqs_hz) - 1, num=min(6, len(freqs_hz)), dtype=int)
-        y_tickvals = y_for_plot[tick_idx]
+        y_tickvals = [y_for_plot[i] for i in tick_idx]
         y_ticktext = [_format_hz(freqs_hz[i]) for i in tick_idx]
         title = "Spectrogram (mel y-axis)"
     else:

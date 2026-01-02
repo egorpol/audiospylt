@@ -12,3 +12,4 @@ soundfile
 tqdm
 typing
 verovio
+ipywidgets
