@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks, get_window
 import plotly.graph_objects as go
+import os
+from urllib.parse import urlparse
 
 try:
     # Optional (works in notebooks). Falls back gracefully in non-IPython contexts.
@@ -9,9 +11,53 @@ try:
 except Exception:  # pragma: no cover
     ipy_display = None
 
+
+def _basename_for_title(name: str) -> str:
+    """
+    Return a "basename-like" string for plot titles.
+
+    - For local paths: `os.path.basename(...)`
+    - For URLs: basename of the URL path (ignores query/fragment)
+    """
+    s = str(name).strip().rstrip("/\\")
+    if not s:
+        return s
+    try:
+        p = urlparse(s)
+        if p.scheme and p.netloc:
+            base = os.path.basename((p.path or "").rstrip("/"))
+            return base or s
+    except Exception:
+        pass
+    base = os.path.basename(s)
+    return base or s
+
+
+def _format_title_name(name: str, mode: str) -> str:
+    mode_norm = str(mode).lower().strip().replace("-", "_")
+    if mode_norm == "basename":
+        return _basename_for_title(name)
+    if mode_norm == "full":
+        return str(name)
+    raise ValueError(f"plot_title_mode must be 'full' or 'basename'; got {mode!r}")
+
+
+def _show_plotly(fig):
+    try:  # pragma: no cover
+        from .plotting import show_plotly
+    except Exception:  # pragma: no cover
+        from audiospylt.plotting import show_plotly
+    return show_plotly(fig)
+
 def apply_window(signal, window_type):
     window = get_window(window_type, len(signal))
     return signal * window
+
+
+def _compute_window(window_type: str | None, n: int) -> np.ndarray:
+    if not window_type:
+        return np.ones(int(n), dtype=float)
+    return np.asarray(get_window(window_type, int(n)), dtype=float)
 
 def compute_fft(signal, sr):
     fft = np.fft.rfft(signal) / len(signal)
@@ -177,6 +223,11 @@ def plot_spectrum(
     amp_plot_pad=None,
     amp_plot_pad_frac=0.10,
     amp_plot_pad_ratio=0.15,
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+    plotly_layout: dict | None = None,
+    title: str | None = None,
 ):
     max_amp = np.max(spec)
     fig = go.Figure()
@@ -333,12 +384,12 @@ def plot_spectrum(
         )
     
     fig.update_layout(
-        title='Spectrum and Peaks',
+        title=('Spectrum and Peaks' if title is None else title),
         xaxis_title=x_title,
         yaxis_title='Amplitude',
         autosize=False,
-        width=900,
-        height=600,
+        width=(900 if plot_width is None else int(plot_width)),
+        height=(600 if plot_height is None else int(plot_height)),
         showlegend=True
     )
 
@@ -404,11 +455,64 @@ def plot_spectrum(
         else:
             fig.update_yaxes(range=[a_low_p, a_high_p])
     
-    try:  # pragma: no cover
-        from .plotting import show_plotly
-    except Exception:  # pragma: no cover
-        from audiospylt.plotting import show_plotly
-    show_plotly(fig)
+    if plotly_layout:
+        fig.update_layout(**plotly_layout)
+
+    _show_plotly(fig)
+
+
+def plot_windowed_waveform(
+    signal,
+    sr,
+    *,
+    window_type: str | None = None,
+    plot_title_name: str | None = None,
+    plot_title_mode: str = "basename",
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+    plotly_layout: dict | None = None,
+    show: bool = True,
+):
+    """
+    Plot the waveform with the selected window applied, and overlay the window curve in red.
+
+    The window curve is shown on a secondary y-axis (0..1) to keep it readable regardless of audio amplitude.
+    """
+    y = np.asarray(signal, dtype=float).reshape(-1)
+    n = int(y.size)
+    sr = float(sr) if sr else 0.0
+    t = (np.arange(n, dtype=float) / sr) if (sr > 0 and n > 0) else np.array([0.0])
+
+    w = _compute_window(window_type, n)
+    y_win = y * w
+
+    name = plot_title_name or ""
+    name_fmt = _format_title_name(name, plot_title_mode) if name else ""
+    win_label = str(window_type) if window_type else "none"
+    title = f"Waveform (window={win_label})"
+    if name_fmt:
+        title = f"{title} {name_fmt}"
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=t, y=y_win, mode="lines", name="Waveform"))
+    fig.add_trace(go.Scatter(x=t, y=w, mode="lines", name="Window", line=dict(color="red"), yaxis="y2"))
+    fig.update_layout(
+        title=title,
+        xaxis_title="Time (s)",
+        yaxis_title="Amplitude",
+        yaxis2=dict(title="Window", range=[0, 1], side="right", overlaying="y", showgrid=False, zeroline=False),
+        autosize=False,
+        width=(900 if plot_width is None else int(plot_width)),
+        height=(350 if plot_height is None else int(plot_height)),
+        showlegend=True,
+    )
+
+    if plotly_layout:
+        fig.update_layout(**plotly_layout)
+
+    if show:
+        _show_plotly(fig)
+    return fig
 
 def analyze_signal(
     signal,
@@ -438,11 +542,35 @@ def analyze_signal(
     amp_plot_pad_ratio=0.15,
     show_peaks=False,
     show_plot=True,
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+    plot_title_name: str | None = None,
+    plot_title_mode: str = "basename",
+    plotly_layout: dict | None = None,
+    show_windowed_waveform: bool = False,
 ):
-    if window_type:
-        signal = apply_window(signal, window_type)
+    # Normalize input signal once; apply the window for FFT/analysis.
+    y = np.asarray(signal, dtype=float).reshape(-1)
+    w = _compute_window(window_type, int(y.size))
+    y_win = y * w
+
+    # Render waveform first (so it appears before prints/DF display/spectrum plot in notebooks).
+    if show_windowed_waveform:
+        plot_windowed_waveform(
+            y,
+            sr,
+            window_type=window_type,
+            plot_title_name=(plot_title_name if plot_title_name is not None else filename),
+            plot_title_mode=plot_title_mode,
+            plot_width=plot_width,
+            # Use the same plot_height unless the caller overrides via plotly_layout; keep a sensible default.
+            plot_height=plot_height,
+            plotly_layout=plotly_layout,
+            show=True,
+        )
     
-    freqs, spec = compute_fft(signal, sr)
+    freqs, spec = compute_fft(y_win, sr)
     peaks = filter_peaks(
         spec,
         freqs,
@@ -460,7 +588,7 @@ def analyze_signal(
 
     # Print results
     print('File name:', filename)
-    duration = len(signal) / sr
+    duration = (len(y) / sr) if sr else 0.0
     print('Duration (s):', round(duration, 6))
     print('Sampling rate (Hz):', sr)
     print()
@@ -489,6 +617,15 @@ def analyze_signal(
             print(peaks_df.to_string(index=False))
 
     if show_plot:
+        title_name = plot_title_name if plot_title_name is not None else filename
+        title_fmt = _format_title_name(title_name, plot_title_mode) if title_name else ""
+        win_label = str(window_type) if window_type else "none"
+        spec_title = "Spectrum and Peaks"
+        if title_fmt:
+            spec_title = f"{spec_title} {title_fmt}"
+        if window_type:
+            spec_title = f"{spec_title} (window={win_label})"
+
         plot_spectrum(
             freqs,
             spec,
@@ -509,6 +646,10 @@ def analyze_signal(
             amp_plot_pad=amp_plot_pad,
             amp_plot_pad_frac=amp_plot_pad_frac,
             amp_plot_pad_ratio=amp_plot_pad_ratio,
+            plot_width=plot_width,
+            plot_height=plot_height,
+            plotly_layout=plotly_layout,
+            title=spec_title,
         )
 
     return peaks_df
