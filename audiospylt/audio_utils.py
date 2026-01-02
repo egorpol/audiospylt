@@ -6,6 +6,7 @@ import os
 import io
 import librosa
 from scipy.signal import spectrogram, get_window
+from urllib.parse import urlparse
 try:  # pragma: no cover
     from IPython.display import Audio as IPyAudio, display as ipy_display
 except Exception:  # pragma: no cover
@@ -104,21 +105,95 @@ def _infer_num_samples(audio_data):
     # (channels, samples) vs (samples, channels) -> samples are on the larger axis.
     return int(audio_data.shape[-1] if audio_data.shape[0] <= audio_data.shape[-1] else audio_data.shape[0])
 
-def plot_waveform(audio_data, sample_rate, wav_filename):
-    """Plot the waveform of the audio."""
+def _basename_for_title(name: str) -> str:
+    """
+    Return a "basename-like" string for plot titles.
+
+    - For local paths: `os.path.basename(...)`
+    - For URLs: basename of the URL path (ignores query/fragment)
+    """
+    s = str(name).strip().rstrip("/\\")
+    if not s:
+        return s
+    try:
+        p = urlparse(s)
+        if p.scheme and p.netloc:
+            base = os.path.basename((p.path or "").rstrip("/"))
+            return base or s
+    except Exception:
+        # If parsing fails, fall back to os.path.basename below.
+        pass
+    base = os.path.basename(s)
+    return base or s
+
+def plot_waveform(
+    audio_data,
+    sample_rate,
+    wav_filename,
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+    plotly_layout: dict | None = None,
+    title_name: str | None = None,
+    title_mode: str = "full",
+):
+    """Plot the waveform of the audio.
+
+    Parameters
+    - plot_width / plot_height: optional explicit Plotly figure size (pixels)
+    - plotly_layout: optional dict forwarded to `fig.update_layout(**plotly_layout)`
+    - title_name: optional name used in the figure title (defaults to wav_filename)
+    - title_mode: "full" | "basename" (applied to title_name / wav_filename)
+    """
     duration = len(audio_data) / float(sample_rate)
     print(f"Total duration: {duration:.3f} seconds")
 
     time_axis = np.linspace(0, duration, len(audio_data))
     fig = go.Figure(go.Scatter(x=time_axis, y=audio_data))
-    fig.update_layout(title=f'Waveform of {wav_filename}', xaxis_title='Time (seconds)', yaxis_title='Amplitude')
+
+    title_mode_norm = str(title_mode).lower().strip().replace("-", "_")
+    name = wav_filename if title_name is None else title_name
+    if title_mode_norm == "basename":
+        name = _basename_for_title(name)
+    elif title_mode_norm != "full":
+        raise ValueError(f"title_mode must be 'full' or 'basename'; got {title_mode!r}")
+
+    fig.update_layout(
+        title=f"Waveform of {name}",
+        xaxis_title="Time (seconds)",
+        yaxis_title="Amplitude",
+    )
+
+    if plot_width is not None or plot_height is not None:
+        fig.update_layout(width=plot_width, height=plot_height, autosize=False)
+
+    if plotly_layout:
+        fig.update_layout(**plotly_layout)
+
     show_plotly(fig)
 
     return duration
        
-def trim_and_fade_audio(audio_data, sample_rate, num_channels, duration, wav_source, 
-                        start_time=0.4, end_time=1.6, add_fades=True, fade_in_duration=0.2, 
-                        fade_out_duration=0.3, fade_in_exponent=0.8, fade_out_exponent=1.5):
+def trim_and_fade_audio(
+    audio_data,
+    sample_rate,
+    num_channels,
+    duration,
+    wav_source,
+    start_time=0.4,
+    end_time=1.6,
+    add_fades=True,
+    fade_in_duration=0.2,
+    fade_out_duration=0.3,
+    fade_in_exponent=0.8,
+    fade_out_exponent=1.5,
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+    plotly_layout: dict | None = None,
+    title_name: str | None = None,
+    title_mode: str = "basename",
+):
     
     # Ensure start_time and end_time are within the duration of the audio
     start_time = max(0, start_time)
@@ -134,6 +209,13 @@ def trim_and_fade_audio(audio_data, sample_rate, num_channels, duration, wav_sou
     # Adjust the time axis for the cut waveform
     cut_duration = end_time - start_time
     cut_time_axis = np.linspace(0, cut_duration, len(cut_audio_data))
+
+    title_mode_norm = str(title_mode).lower().strip().replace("-", "_")
+    name = wav_source if title_name is None else title_name
+    if title_mode_norm == "basename":
+        name = _basename_for_title(name)
+    elif title_mode_norm != "full":
+        raise ValueError(f"title_mode must be 'full' or 'basename'; got {title_mode!r}")
 
     if add_fades:
         # Calculate the number of frames for the fade-in and fade-out
@@ -162,7 +244,12 @@ def trim_and_fade_audio(audio_data, sample_rate, num_channels, duration, wav_sou
                 overlay_fig.add_trace(go.Scatter(x=cut_time_axis, y=channel_data, name=f'Channel {channel+1}', yaxis='y1'))
         else:
             overlay_fig = go.Figure(go.Scatter(x=cut_time_axis, y=cut_audio_data, name='Waveform', yaxis='y1'))
-        overlay_fig.update_layout(title=f'Waveform with Fade-in and Fade-out {os.path.basename(wav_source)}', xaxis_title='Time (seconds)', yaxis_title='Amplitude', showlegend=False)
+        overlay_fig.update_layout(
+            title=f"Waveform with Fade-in and Fade-out {name}",
+            xaxis_title="Time (seconds)",
+            yaxis_title="Amplitude",
+            showlegend=False,
+        )
 
         # Add fade-in and fade-out curve traces to the plot
         fade_in_trace = go.Scatter(x=cut_time_axis[:fade_in_frames],
@@ -202,6 +289,11 @@ def trim_and_fade_audio(audio_data, sample_rate, num_channels, duration, wav_sou
             )
         )
 
+        if plot_width is not None or plot_height is not None:
+            overlay_fig.update_layout(width=plot_width, height=plot_height, autosize=False)
+        if plotly_layout:
+            overlay_fig.update_layout(**plotly_layout)
+
         # Display the waveform plot with fade-in and fade-out applied
         show_plotly(overlay_fig)
 
@@ -214,7 +306,15 @@ def trim_and_fade_audio(audio_data, sample_rate, num_channels, duration, wav_sou
                 cut_fig.add_trace(go.Scatter(x=cut_time_axis, y=channel_data, name=f'Channel {channel+1}'))
         else:
             cut_fig = go.Figure(go.Scatter(x=cut_time_axis, y=cut_audio_data))
-        cut_fig.update_layout(title=f'Cut Waveform of {os.path.basename(wav_source)}', xaxis_title='Time (seconds)', yaxis_title='Amplitude')
+        cut_fig.update_layout(
+            title=f"Cut Waveform of {name}",
+            xaxis_title="Time (seconds)",
+            yaxis_title="Amplitude",
+        )
+        if plot_width is not None or plot_height is not None:
+            cut_fig.update_layout(width=plot_width, height=plot_height, autosize=False)
+        if plotly_layout:
+            cut_fig.update_layout(**plotly_layout)
         # Display the cut waveform plot
         show_plotly(cut_fig)
 
@@ -233,6 +333,11 @@ def trim_and_fade_and_render(
     fade_out_duration=0.3,
     fade_in_exponent=0.8,
     fade_out_exponent=1.5,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+    plotly_layout: dict | None = None,
+    plot_title_source: str = "filename",
+    plot_title_mode: str = "basename",
     # Keep downstream analysis stable (independent of render_audio's internal sanitization).
     cut_sanitize: bool = True,
     # Back-compat alias (deprecated): kept so existing notebooks/calls don't break.
@@ -268,7 +373,18 @@ def trim_and_fade_and_render(
         if key not in audio_info:
             raise KeyError(f"audio_info missing required key: {key!r}")
 
-    # Prefer wav_filename for plot titles; fall back to wav_source if needed.
+    plot_title_source_norm = str(plot_title_source).lower().strip().replace("-", "_")
+    if plot_title_source_norm in {"filename", "file", "wav_filename"}:
+        title_name = audio_info.get("wav_filename") or audio_info.get("wav_source") or "audio"
+    elif plot_title_source_norm in {"source", "wav_source", "url"}:
+        title_name = audio_info.get("wav_source") or audio_info.get("wav_filename") or "audio"
+    else:
+        raise ValueError(
+            "plot_title_source must be one of: 'filename' | 'source' "
+            f"(got {plot_title_source!r})"
+        )
+
+    # Back-compat: keep passing a label positionally, but titles are now controlled via title_* args.
     wav_label = audio_info.get("wav_filename") or audio_info.get("wav_source") or "audio"
 
     cut_audio_data, cut_duration = trim_and_fade_audio(
@@ -284,6 +400,11 @@ def trim_and_fade_and_render(
         fade_out_duration=fade_out_duration,
         fade_in_exponent=fade_in_exponent,
         fade_out_exponent=fade_out_exponent,
+        plot_width=plot_width,
+        plot_height=plot_height,
+        plotly_layout=plotly_layout,
+        title_name=title_name,
+        title_mode=plot_title_mode,
     )
 
     cut_audio_data = ensure_finite_audio(
@@ -354,6 +475,11 @@ def load_audio_sample_and_preview(
     convert_to_mono=True,
     show_properties: bool = True,
     show_waveform: bool = True,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+    plotly_layout: dict | None = None,
+    plot_title_source: str = "filename",
+    plot_title_mode: str = "full",
     play_audio: bool = True,
     playback_fs_target_name: str | None = "source",
     playback_bit_rate: int = 24,
@@ -394,8 +520,26 @@ def load_audio_sample_and_preview(
 
     if show_waveform:
         # Plot a single channel even when `convert_to_mono=False`.
+        plot_title_source_norm = str(plot_title_source).lower().strip().replace("-", "_")
+        if plot_title_source_norm in {"filename", "file", "wav_filename"}:
+            title_name = audio_info["wav_filename"]
+        elif plot_title_source_norm in {"source", "wav_source", "url"}:
+            title_name = audio_info["wav_source"]
+        else:
+            raise ValueError(
+                "plot_title_source must be one of: 'filename' | 'source' "
+                f"(got {plot_title_source!r})"
+            )
+
         audio_info["waveform_duration_s"] = plot_waveform(
-            audio_info["playback_audio"], sample_rate, audio_info["wav_filename"]
+            audio_info["playback_audio"],
+            sample_rate,
+            audio_info["wav_filename"],
+            plot_width=plot_width,
+            plot_height=plot_height,
+            plotly_layout=plotly_layout,
+            title_name=title_name,
+            title_mode=plot_title_mode,
         )
 
     if play_audio:
@@ -422,6 +566,8 @@ def plot_spectrogram(
     y_axis_mode="linear",
     y_axis_mix=0.5,
     mixed_log_floor_hz=1.0,
+    amp_scale="db",
+    power_law_gamma=None,
     n_fft=2048,
     window_type="hann",
     overlap=0.75,
@@ -526,6 +672,8 @@ def plot_spectrogram(
         raise ValueError("n_fft must be > 0")
     if mel_bins <= 0:
         raise ValueError("mel_bins must be > 0")
+    if amp_scale not in {"db", "linear", "linear_norm"}:
+        raise ValueError(f"amp_scale must be db|linear|linear_norm; got {amp_scale}")
     if y_axis_mode not in {"linear", "log", "mel", "mixed"}:
         raise ValueError(f"y_axis_mode must be linear|log|mel|mixed; got {y_axis_mode}")
     if scaling not in {"density", "spectrum"}:
@@ -676,7 +824,27 @@ def plot_spectrogram(
             sr=sample_rate, n_fft=nfft, n_mels=mel_bins, fmax=mel_fmax
         )
         mel_spec = mel_basis @ S_power
-        Sxx_dB = 10 * np.log10(np.maximum(mel_spec, 1e-12))
+        
+        if amp_scale == "db":
+            S_plot = 10 * np.log10(np.maximum(mel_spec, 1e-12))
+            cbar_label = "Amplitude (dB)"
+        else:
+            S_plot = mel_spec
+            if amp_scale == "linear_norm":
+                m_val = np.max(S_plot)
+                if m_val > 0:
+                    S_plot /= m_val
+                cbar_label = "Normalized Amplitude"
+            else:
+                cbar_label = "Amplitude"
+            
+            # Optional power-law compression (Gamma correction) for linear modes
+            if power_law_gamma is not None:
+                gamma = float(power_law_gamma)
+                if gamma > 0 and gamma != 1.0:
+                    S_plot = np.power(S_plot, gamma)
+                    cbar_label += f" (gamma={gamma})"
+
         freqs_hz = librosa.mel_frequencies(n_mels=mel_bins, fmax=mel_fmax)
         y_axis_type = "linear"
         y_label = "Frequency"
@@ -687,7 +855,26 @@ def plot_spectrogram(
         y_ticktext = [_format_hz(freqs_hz[i]) for i in tick_idx]
         title = "Spectrogram (mel y-axis)"
     else:
-        Sxx_dB = 10 * np.log10(np.maximum(Sxx, 1e-12))
+        if amp_scale == "db":
+            S_plot = 10 * np.log10(np.maximum(Sxx, 1e-12))
+            cbar_label = "Amplitude (dB)"
+        else:
+            S_plot = Sxx
+            if amp_scale == "linear_norm":
+                m_val = np.max(S_plot)
+                if m_val > 0:
+                    S_plot /= m_val
+                cbar_label = "Normalized Amplitude"
+            else:
+                cbar_label = "Amplitude"
+            
+            # Optional power-law compression (Gamma correction) for linear modes
+            if power_law_gamma is not None:
+                gamma = float(power_law_gamma)
+                if gamma > 0 and gamma != 1.0:
+                    S_plot = np.power(S_plot, gamma)
+                    cbar_label += f" (gamma={gamma})"
+
         freqs_hz = freqs
         y_axis_type = "linear"
         y_label = "Frequency (Hz)"
@@ -701,7 +888,7 @@ def plot_spectrogram(
             # Drop 0 Hz to avoid log axis issues.
             if freqs_hz[0] == 0:
                 freqs_plot = freqs_hz[1:]
-                Sxx_dB = Sxx_dB[1:, :]
+                S_plot = S_plot[1:, :]
             else:
                 freqs_plot = freqs_hz
             y_for_plot = freqs_plot
@@ -716,13 +903,13 @@ def plot_spectrogram(
             title = f"Spectrogram (mixed y-axis, mix={y_axis_mix:.2f})"
 
     fig = px.imshow(
-        Sxx_dB,
+        S_plot,
         x=times_for_plot,
         y=y_for_plot,
         origin="lower",
         aspect="auto",
         color_continuous_scale=cmap,
-        labels={"x": "Time (s)", "y": y_label, "color": "Amplitude (dB)"},
+        labels={"x": "Time (s)", "y": y_label, "color": cbar_label},
         title=title,
     )
     fig.update_yaxes(type=y_axis_type)
@@ -760,13 +947,16 @@ def plot_spectrogram(
         "times_center": times_center,
         "times_start": times_start,
         "frequencies": freqs_hz,
-        "Sxx_dB": Sxx_dB,
+        "Sxx_plot": S_plot,
+        "Sxx_raw": Sxx,
         "duration_s": duration_s,
         "boundary": boundary,
         "padded": padded,
         "time_range": time_range,
         "time_reference": time_reference,
         "plot_x_range": final_x_range,
+        "amp_scale": amp_scale,
+        "power_law_gamma": power_law_gamma,
     }
 
 
@@ -774,6 +964,13 @@ def plot_spectrogram_with_waveform(
     audio_data,
     sample_rate,
     *,
+    audio_info: dict | None = None,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+    plotly_layout: dict | None = None,
+    plot_title_source: str = "filename",
+    plot_title_mode: str = "basename",
+    plot_title_name: str | None = None,
     waveform_mode: str = "integrated",
     # Back-compat alias (deprecated): kept so existing notebooks/calls don't break.
     waveform_under: bool | None = None,
@@ -824,6 +1021,49 @@ def plot_spectrogram_with_waveform(
         **spectrogram_kwargs,
     )
 
+    # Optional: apply consistent naming and sizing to plots (for notebook consistency).
+    title_name = plot_title_name
+    if title_name is None and audio_info is not None:
+        plot_title_source_norm = str(plot_title_source).lower().strip().replace("-", "_")
+        if plot_title_source_norm in {"filename", "file", "wav_filename"}:
+            title_name = audio_info.get("wav_filename") or audio_info.get("wav_source")
+        elif plot_title_source_norm in {"source", "wav_source", "url"}:
+            title_name = audio_info.get("wav_source") or audio_info.get("wav_filename")
+        else:
+            raise ValueError(
+                "plot_title_source must be one of: 'filename' | 'source' "
+                f"(got {plot_title_source!r})"
+            )
+
+    title_suffix = None
+    if title_name:
+        plot_title_mode_norm = str(plot_title_mode).lower().strip().replace("-", "_")
+        if plot_title_mode_norm == "basename":
+            title_suffix = _basename_for_title(title_name)
+        elif plot_title_mode_norm == "full":
+            title_suffix = str(title_name)
+        else:
+            raise ValueError(
+                "plot_title_mode must be one of: 'full' | 'basename' "
+                f"(got {plot_title_mode!r})"
+            )
+
+    if title_suffix:
+        base_title = None
+        try:
+            base_title = getattr(spec_fig.layout.title, "text", None)
+        except Exception:
+            base_title = None
+        if not base_title:
+            base_title = "Spectrogram"
+        spec_fig.update_layout(title=f"{base_title} {title_suffix}")
+
+    if plotly_layout:
+        spec_fig.update_layout(**plotly_layout)
+
+    if plot_width is not None or plot_height is not None:
+        spec_fig.update_layout(width=plot_width, height=plot_height, autosize=False)
+
     if waveform_mode == "none":
         if show:
             show_plotly(spec_fig)
@@ -857,9 +1097,14 @@ def plot_spectrogram_with_waveform(
 
     # Separate waveform figure option.
     wave_fig = go.Figure(go.Scatter(x=t, y=y_plot, name="Waveform", line=dict(width=waveform_line_width)))
-    wave_fig.update_layout(title="Waveform", xaxis_title="Time (s)", yaxis_title="Amplitude")
+    wave_title = "Waveform" if not title_suffix else f"Waveform — {title_suffix}"
+    wave_fig.update_layout(title=wave_title, xaxis_title="Time (s)", yaxis_title="Amplitude")
     if x_range is not None:
         wave_fig.update_xaxes(range=x_range)
+    if plotly_layout:
+        wave_fig.update_layout(**plotly_layout)
+    if plot_width is not None or plot_height is not None:
+        wave_fig.update_layout(width=plot_width, height=plot_height, autosize=False)
 
     if waveform_mode == "separate":
         if show:
@@ -917,6 +1162,11 @@ def plot_spectrogram_with_waveform(
     if x_range is not None:
         fig.update_xaxes(range=x_range, autorange=False)
 
+    if plotly_layout:
+        fig.update_layout(**plotly_layout)
+    if plot_width is not None or plot_height is not None:
+        fig.update_layout(width=plot_width, height=plot_height, autosize=False)
+
     if show:
         show_plotly(fig)
     if print_info:
@@ -960,6 +1210,10 @@ def _print_spectrogram_info(sample_rate, spec_info: dict, spectrogram_kwargs: di
         except Exception:
             hop = None
             redundancy = None
+    
+    amp_scale = spec_info.get("amp_scale", "db")
+    
+    power_law_gamma = spec_info.get("power_law_gamma", None)
 
     # Calculate padded samples at the end (from info if available)
     # The spectrogram function pads to match the frames; we can infer total padding
@@ -1038,6 +1292,7 @@ def _print_spectrogram_info(sample_rate, spec_info: dict, spectrogram_kwargs: di
     print(f"- oversample_factor: {_fmt(oversample_factor)}{freq_res_str}")
     print(f"- boundary: {_fmt(boundary)}; padded: {_fmt(padded)}")
     print(f"- time_reference: {_fmt(time_reference)}; time_range: {_fmt(time_range)}")
+    print(f"- amplitude: {amp_scale}" + (f" (gamma={power_law_gamma})" if power_law_gamma else ""))
     if n_frames is not None:
         print(f"- frames: {n_frames}{padding_info_str}")
 
