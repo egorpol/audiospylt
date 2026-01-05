@@ -228,6 +228,15 @@ def plot_spectrum(
     plot_height: int | None = None,
     plotly_layout: dict | None = None,
     title: str | None = None,
+    plot_partials: bool = False,
+    partials_hz: list[float] | None = None,
+    partial_bandwidth_hz: float = 20.0,
+    f0_hz: float | None = None,
+    spectrum_color: str | None = None,
+    peaks_color: str | None = None,
+    threshold_color: str = "Red",
+    partials_color: str = "rgba(0, 180, 0, 0.65)",
+    partials_band_fill: str = "rgba(0, 180, 0, 0.10)",
 ):
     max_amp = np.max(spec)
     fig = go.Figure()
@@ -269,9 +278,15 @@ def plot_spectrum(
     elif freq_axis_mode != "linear":
         raise ValueError(f"freq_axis_mode must be linear|log|mel|mixed; got {freq_axis_mode}")
 
-    fig.add_trace(go.Scatter(x=x_vals, y=spec, mode='lines', name='Spectrum'))
+    spectrum_trace = go.Scatter(x=x_vals, y=spec, mode='lines', name='Spectrum')
+    if spectrum_color is not None:
+        spectrum_trace.update(line=dict(color=spectrum_color))
+    fig.add_trace(spectrum_trace)
     if len(peaks):
-        fig.add_trace(go.Scatter(x=peak_x_vals, y=spec[peaks], mode='markers', name='Peaks'))
+        peaks_trace = go.Scatter(x=peak_x_vals, y=spec[peaks], mode='markers', name='Peaks')
+        if peaks_color is not None:
+            peaks_trace.update(marker=dict(color=peaks_color))
+        fig.add_trace(peaks_trace)
 
     # Amplitude-axis scaling (plot only; peak detection stays linear).
     y_axis_type = "linear"
@@ -279,6 +294,8 @@ def plot_spectrum(
     peaks_y_for_plot = spec[peaks] if len(peaks) else np.array([])
     thresh_amp_low_for_plot = thresh_amp_low
     thresh_amp_high_for_plot = thresh_amp_high
+    y_tickvals = None
+    y_ticktext = None
 
     if amp_axis_mode == "log":
         y_axis_type = "log"
@@ -318,6 +335,48 @@ def plot_spectrum(
             mix_param_name="amp_axis_mix",
             floor_param_name="amp_log_floor",
         )[0])
+
+        # Critical: in mixed mode, the plotted y-values live in a warped coordinate space.
+        # If we leave default numeric ticks, users will compare threshold lines (labeled in raw
+        # amplitude) to warped y-axis numbers and it will look "misaligned".
+        #
+        # Instead, we label the y-axis with *raw amplitude* values at selected tick positions,
+        # mapped into the warped coordinate space.
+        def _format_amp(v: float) -> str:
+            v = float(v)
+            if v == 0:
+                return "0"
+            if abs(v) < 1e-3 or abs(v) >= 1e3:
+                return f"{v:.2e}"
+            return f"{v:.4g}"
+
+        try:
+            floor = float(amp_log_floor)
+        except Exception:
+            floor = 1e-12
+        floor = max(1e-300, floor)
+
+        raw_max = float(np.max(spec)) if len(spec) else 0.0
+        raw_max = max(raw_max, float(thresh_amp_high), float(thresh_amp_low), floor)
+
+        # Pick a small, stable set of meaningful raw ticks.
+        # Include 0 + thresholds + a few log-ish values up to max.
+        tick_raw = [0.0, float(thresh_amp_low), float(thresh_amp_high)]
+        if raw_max > 0:
+            start = max(floor, raw_max / 1e6)
+            tick_raw += list(np.geomspace(start, raw_max, num=5))
+        # Deduplicate and keep finite, sorted.
+        tick_raw = sorted({float(v) for v in tick_raw if np.isfinite(v) and float(v) >= 0.0})
+
+        y_tickvals = _mixed_warp_values(
+            tick_raw,
+            mix=amp_axis_mix,
+            vmax=raw_max,
+            log_floor=floor,
+            mix_param_name="amp_axis_mix",
+            floor_param_name="amp_log_floor",
+        )
+        y_ticktext = [_format_amp(v) for v in tick_raw]
     elif amp_axis_mode != "linear":
         raise ValueError(f"amp_axis_mode must be linear|log|mixed; got {amp_axis_mode}")
 
@@ -326,62 +385,132 @@ def plot_spectrum(
     if len(peaks) and len(fig.data) > 1:
         fig.data[1].y = peaks_y_for_plot
 
-    # Add lines for amplitude threshold values
-    fig.add_shape(
-        type="line",
-        x0=0,
-        y0=thresh_amp_low_for_plot,
-        x1=x_vals[-1] if len(x_vals) else 0,
-        y1=thresh_amp_low_for_plot,
-        line=dict(
-            color="Red",
-            width=2,
-            dash="dash",
-        ),
+    # Threshold "lines" as traces (so they appear in the legend).
+    # We plot them in the *axis coordinate space* (Hz, mel, or mixed warp), and in the
+    # amplitude plot space (linear/log/mixed), so they always align with the plotted spectrum.
+    x_min = float(np.min(x_vals)) if len(x_vals) else 0.0
+    x_max = float(np.max(x_vals)) if len(x_vals) else 0.0
+    y_max = float(np.max(spec_for_plot)) if len(spec_for_plot) else 1.0
+    y_max = max(y_max, float(thresh_amp_high_for_plot)) * 1.05 if y_max > 0 else 1.0
+    if y_axis_type == "log":
+        # Log axis can't show <=0.
+        y_min = float(np.min(spec_for_plot[spec_for_plot > 0])) if np.any(spec_for_plot > 0) else float(amp_log_floor)
+        y_min = max(float(amp_log_floor), y_min)
+    else:
+        y_min = 0.0
+
+    thr_line_style = dict(color=threshold_color, width=2, dash="dash")
+    fig.add_trace(
+        go.Scatter(
+            x=[x_min, x_max],
+            y=[thresh_amp_low_for_plot, thresh_amp_low_for_plot],
+            mode="lines",
+            name=f"Amp low ({thresh_amp_low:g})",
+            line=thr_line_style,
+            hoverinfo="skip",
+            legendgroup="thresholds",
+        )
     )
-    fig.add_shape(
-        type="line",
-        x0=0,
-        y0=thresh_amp_high_for_plot,
-        x1=x_vals[-1] if len(x_vals) else 0,
-        y1=thresh_amp_high_for_plot,
-        line=dict(
-            color="Red",
-            width=2,
-            dash="dash",
-        ),
+    fig.add_trace(
+        go.Scatter(
+            x=[x_min, x_max],
+            y=[thresh_amp_high_for_plot, thresh_amp_high_for_plot],
+            mode="lines",
+            name=f"Amp high ({thresh_amp_high:g})",
+            line=thr_line_style,
+            hoverinfo="skip",
+            legendgroup="thresholds",
+        )
     )
-    
-    # Add lines for frequency threshold values
-    # Map threshold Hz to plot coordinates for non-linear axis modes.
+
+    # Frequency thresholds: map Hz -> axis coordinate space for mel/mixed; keep Hz for linear/log.
     def _map_freq_for_axis(f_hz):
         if freq_axis_mode == "mel":
             return float(_hz_to_mel([f_hz])[0])
         if freq_axis_mode == "mixed":
-            return float(_mixed_warp([f_hz], freq_axis_mix, fmax_hz=fmax_hz, log_floor_hz=mixed_log_floor_hz)[0])
+            return float(
+                _mixed_warp(
+                    [f_hz],
+                    freq_axis_mix,
+                    fmax_hz=fmax_hz,
+                    log_floor_hz=mixed_log_floor_hz,
+                )[0]
+            )
         return float(f_hz)
 
-    fig.add_shape(
-        type="line",
-        x0=_map_freq_for_axis(thresh_freq_low),
-        y0=0,
-        x1=_map_freq_for_axis(thresh_freq_low),
-        y1=thresh_amp_high_for_plot + 0.05 * thresh_amp_high_for_plot,
-        line=dict(color="Red", width=2, dash="dash"),
-    )
-    if thresh_freq_high is not None:
-        fig.add_shape(
-            type="line",
-            x0=_map_freq_for_axis(thresh_freq_high),
-            y0=0,
-            x1=_map_freq_for_axis(thresh_freq_high),
-            y1=thresh_amp_high_for_plot + 0.05 * thresh_amp_high_for_plot,
-            line=dict(
-                color="Red",
-                width=2,
-                dash="dash",
-            ),
+    def _maybe_add_freq_line(f_hz: float, label: str):
+        f_hz = float(f_hz)
+        if x_axis_type == "log" and f_hz <= 0:
+            # Can't draw 0 Hz on a log axis.
+            return
+        x_thr = _map_freq_for_axis(f_hz)
+        fig.add_trace(
+            go.Scatter(
+                x=[x_thr, x_thr],
+                y=[y_min, y_max],
+                mode="lines",
+                name=f"{label} ({_format_hz(f_hz)})",
+                line=thr_line_style,
+                hoverinfo="skip",
+                legendgroup="thresholds",
+            )
         )
+
+    _maybe_add_freq_line(thresh_freq_low, "Freq low")
+    if thresh_freq_high is not None:
+        _maybe_add_freq_line(thresh_freq_high, "Freq high")
+
+    # Optional: overlay partial grid (k*f0) and +/- bandwidth bands.
+    if plot_partials and partials_hz:
+        bw = float(partial_bandwidth_hz)
+        if bw < 0:
+            raise ValueError(f"partial_bandwidth_hz must be >= 0; got {partial_bandwidth_hz}")
+
+        # Cap to keep figures responsive when f0 is very low.
+        max_partials = 200
+        partials_use = list(partials_hz)[:max_partials]
+
+        # Draw translucent bands as shapes (not in legend) + center lines as traces (in legend).
+        band_fill = partials_band_fill
+        center_line = dict(color=partials_color, width=1, dash="dot")
+        if f0_hz is not None and float(f0_hz) > 0:
+            band_label = f"Partials (f0={_format_hz(float(f0_hz))}) ±{bw:g} Hz"
+        else:
+            band_label = f"Partials ±{bw:g} Hz"
+
+        for i, f_hz in enumerate(partials_use):
+            f_hz = float(f_hz)
+            if x_axis_type == "log" and f_hz <= 0:
+                continue
+            x0 = _map_freq_for_axis(max(0.0, f_hz - bw))
+            x1 = _map_freq_for_axis(f_hz + bw)
+            x_center = _map_freq_for_axis(f_hz)
+
+            # Band.
+            fig.add_shape(
+                type="rect",
+                x0=x0,
+                x1=x1,
+                y0=y_min,
+                y1=y_max,
+                fillcolor=band_fill,
+                line=dict(width=0),
+                layer="below",
+            )
+
+            # Center line (legend only once).
+            fig.add_trace(
+                go.Scatter(
+                    x=[x_center, x_center],
+                    y=[y_min, y_max],
+                    mode="lines",
+                    name=band_label,
+                    line=center_line,
+                    hoverinfo="skip",
+                    legendgroup="partials",
+                    showlegend=(i == 0),
+                )
+            )
     
     fig.update_layout(
         title=('Spectrum and Peaks' if title is None else title),
@@ -398,6 +527,8 @@ def plot_spectrum(
         fig.update_xaxes(tickmode="array", tickvals=tickvals, ticktext=ticktext)
 
     fig.update_yaxes(type=y_axis_type)
+    if y_tickvals is not None and y_ticktext is not None:
+        fig.update_yaxes(tickmode="array", tickvals=y_tickvals, ticktext=y_ticktext)
 
     # Auto-zoom plotting ranges based on thresholds (+ padding). Plot-only.
     if auto_plot_range:
@@ -549,6 +680,15 @@ def analyze_signal(
     plot_title_mode: str = "basename",
     plotly_layout: dict | None = None,
     show_windowed_waveform: bool = False,
+    partial_tracking: bool = False,
+    f0: float | None = None,
+    partial_bandwidth_hz: float = 20.0,
+    plot_partials: bool = False,
+    spectrum_color: str | None = None,
+    peaks_color: str | None = None,
+    threshold_color: str = "Red",
+    partials_color: str = "rgba(0, 180, 0, 0.65)",
+    partials_band_fill: str = "rgba(0, 180, 0, 0.10)",
 ):
     # Normalize input signal once; apply the window for FFT/analysis.
     y = np.asarray(signal, dtype=float).reshape(-1)
@@ -584,7 +724,46 @@ def analyze_signal(
         width_hz=width_hz,
         distance_hz=distance_hz,
     )
+
+    # Optional: partial tracking relative to f0 (applies AFTER initial peak filtering).
+    partials_hz = None
+    f0_hz = None
+    if partial_tracking:
+        if f0 is None:
+            raise ValueError("partial_tracking=True requires f0 (Hz)")
+        f0_hz = float(f0)
+        if f0_hz <= 0:
+            raise ValueError(f"f0 must be > 0; got {f0}")
+        bw = float(partial_bandwidth_hz)
+        if bw < 0:
+            raise ValueError(f"partial_bandwidth_hz must be >= 0; got {partial_bandwidth_hz}")
+
+        # Determine which partial (k) each peak is closest to.
+        peak_freqs = freqs[peaks] if len(peaks) else np.array([], dtype=float)
+        if peak_freqs.size:
+            k = np.rint(peak_freqs / f0_hz).astype(int)
+            k = np.maximum(k, 0)
+            target = k.astype(float) * f0_hz
+            delta = peak_freqs - target
+            mask = (k >= 1) & (np.abs(delta) <= bw)
+            peaks = [p for p, keep in zip(peaks, mask) if bool(keep)]
+            k_kept = k[mask]
+            delta_kept = delta[mask]
+        else:
+            k_kept = np.array([], dtype=int)
+            delta_kept = np.array([], dtype=float)
+
+        # Build a partial grid for overlay plotting.
+        fmax_partials = float(thresh_freq_high) if thresh_freq_high is not None else float(freqs[-1] if len(freqs) else 0.0)
+        n_partials = int(np.floor(fmax_partials / f0_hz)) if fmax_partials > 0 else 0
+        if n_partials > 0:
+            partials_hz = [f0_hz * k_ for k_ in range(1, n_partials + 1)]
+
     peaks_df = pd.DataFrame({'Frequency (Hz)': freqs[peaks], 'Amplitude': spec[peaks]})
+    if partial_tracking:
+        # Attach partial info if available (align to the kept peaks order).
+        peaks_df["Partial #"] = k_kept[: len(peaks_df)]
+        peaks_df["Delta from partial (Hz)"] = delta_kept[: len(peaks_df)]
 
     # Print results
     print('File name:', filename)
@@ -650,6 +829,15 @@ def analyze_signal(
             plot_height=plot_height,
             plotly_layout=plotly_layout,
             title=spec_title,
+            plot_partials=bool(plot_partials),
+            partials_hz=partials_hz,
+            partial_bandwidth_hz=partial_bandwidth_hz,
+            f0_hz=f0_hz,
+            spectrum_color=spectrum_color,
+            peaks_color=peaks_color,
+            threshold_color=threshold_color,
+            partials_color=partials_color,
+            partials_band_fill=partials_band_fill,
         )
 
     return peaks_df

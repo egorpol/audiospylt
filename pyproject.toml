@@ -4,8 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "audiospylt"
-version = "0.5.0a0"
+version = "0.6.0a0"
 description = "Python toolbox for sound analysis, resynthesis, and visual/symbolic representations."
+authors = [{ name = "egorpol" }]
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -36,7 +37,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-notebook = ["ipython", "nbformat>=4.2.0"]
+notebook = ["ipython", "nbformat>=4.2.0", "ipywidgets"]
 dev = ["build", "pytest", "ruff", "twine"]
 
 [project.urls]

@@ -206,7 +206,11 @@ def plot_combined(
 def plot_combined_3d(
     files: Optional[List[str]] = None,
     dfs: Optional[List[pd.DataFrame]] = None,
-    df_labels: Optional[List[str]] = None
+    df_labels: Optional[List[str]] = None,
+    axis_order: Sequence[str] = ("time", "amp", "freq"),
+    flip: Optional[Dict[str, bool]] = None,
+    axis_pad_frac: float = 0.05,
+    zero_based_axes: bool = True,
 ) -> None:
     """
     Plots data from multiple sources (files and/or DataFrames) on a 3D canvas.
@@ -218,17 +222,72 @@ def plot_combined_3d(
     - df_labels (list, optional): List of labels corresponding to each DataFrame in `dfs`.
                                  If not provided, DataFrames will be labeled "DataFrame 0", "DataFrame 1", etc.
                                  File paths are used as labels for file-based sources.
+    - axis_order (Sequence[str]): Which dimensions to place on (x, y, z).
+                                 Must be a permutation of ('time', 'amp', 'freq').
+                                 Examples:
+                                   ('time','amp','freq')  # default: x=time, y=amp, z=freq
+                                   ('freq','time','amp')  # x=freq, y=time, z=amp
+    - flip (dict[str,bool], optional): Flip/reverse axes. Keys may be dimension names
+                                       ('time'|'amp'|'freq') and/or axis names ('x'|'y'|'z').
+                                       Axis keys override dimension keys.
+                                       Example: {'freq': True} or {'x': True}
+    - axis_pad_frac (float): Fractional padding applied to axis ranges (when ranges are set).
+    - zero_based_axes (bool): If True, range mins are clamped to <= 0 (useful for time/amp/freq plots).
     """
     all_data = _load_and_prepare_data(files, dfs, df_labels)
     if not all_data:
         print("No data to plot for 3D.")
         return
 
+    def _canon_dim(name: str) -> str:
+        s = str(name).strip().lower()
+        if s in ("t", "time", "times", "seconds", "sec", "s"):
+            return "time"
+        if s in ("a", "amp", "amplitude"):
+            return "amp"
+        if s in ("f", "freq", "frequency", "hz"):
+            return "freq"
+        raise ValueError(f"Unknown dimension '{name}'. Use time|amp|freq.")
+
+    dims = tuple(_canon_dim(d) for d in axis_order)
+    if len(dims) != 3:
+        raise ValueError(f"axis_order must have 3 items (x,y,z). Got: {axis_order!r}")
+    if set(dims) != {"time", "amp", "freq"}:
+        raise ValueError(f"axis_order must be a permutation of ('time','amp','freq'). Got: {axis_order!r}")
+
+    flip = flip or {}
+    # Axis keys override dimension keys.
+    flip_by_dim: Dict[str, bool] = {}
+    flip_by_axis: Dict[str, bool] = {}
+    for k, v in flip.items():
+        ks = str(k).strip().lower()
+        if ks in ("x", "y", "z"):
+            flip_by_axis[ks] = bool(v)
+        else:
+            flip_by_dim[_canon_dim(ks)] = bool(v)
+
+    dim_specs: Dict[str, Dict[str, str]] = {
+        "time": {"start": "time_start", "stop": "time_stop", "title": "Time (s)"},
+        "amp": {"start": "amp_min", "stop": "amp_max", "title": "Amplitude"},
+        "freq": {"start": "freq_start", "stop": "freq_stop", "title": "Frequency (Hz)"},
+    }
+
+    x_dim, y_dim, z_dim = dims
+    x_start, x_stop = dim_specs[x_dim]["start"], dim_specs[x_dim]["stop"]
+    y_start, y_stop = dim_specs[y_dim]["start"], dim_specs[y_dim]["stop"]
+    z_start, z_stop = dim_specs[z_dim]["start"], dim_specs[z_dim]["stop"]
+    x_title, y_title, z_title = dim_specs[x_dim]["title"], dim_specs[y_dim]["title"], dim_specs[z_dim]["title"]
+
+    flip_x = flip_by_axis.get("x", flip_by_dim.get(x_dim, False))
+    flip_y = flip_by_axis.get("y", flip_by_dim.get(y_dim, False))
+    flip_z = flip_by_axis.get("z", flip_by_dim.get(z_dim, False))
+
     fig_3d = go.Figure()
     color_gen = _color_palette_generator()
 
     # For axis range calculation
-    max_time, max_amp, max_freq = 0.0, 0.0, 0.0
+    dim_min: Dict[str, float] = {"time": np.inf, "amp": np.inf, "freq": np.inf}
+    dim_max: Dict[str, float] = {"time": -np.inf, "amp": -np.inf, "freq": -np.inf}
     has_data_for_axes = False
 
     for df, label in all_data:
@@ -244,9 +303,9 @@ def plot_combined_3d(
         current_color = next(color_gen)
         for index, row in df.iterrows():
             fig_3d.add_trace(go.Scatter3d(
-                x=[row['time_start'], row['time_stop']],
-                y=[row['amp_min'], row['amp_max']],
-                z=[row['freq_start'], row['freq_stop']],
+                x=[row[x_start], row[x_stop]],
+                y=[row[y_start], row[y_stop]],
+                z=[row[z_start], row[z_stop]],
                 mode='lines+markers',
                 line=dict(width=2, color=current_color),
                 marker=dict(size=3, color=current_color),
@@ -255,27 +314,48 @@ def plot_combined_3d(
                 showlegend=(index == 0)
             ))
         
-        # Update max values for axis ranges
-        if not df.empty:
+        # Update min/max values for axis ranges (across all dimensions, regardless of axis placement).
+        try:
             has_data_for_axes = True
-            max_time = max(max_time, df['time_stop'].max())
-            max_amp = max(max_amp, df['amp_max'].max())
-            max_freq = max(max_freq, df['freq_stop'].max()) # Assuming freq_stop is relevant for Z axis max
+            for dim, spec in dim_specs.items():
+                v0 = df[spec["start"]].to_numpy(dtype=float)
+                v1 = df[spec["stop"]].to_numpy(dtype=float)
+                v = np.concatenate([v0, v1])
+                if v.size == 0:
+                    continue
+                dim_min[dim] = min(dim_min[dim], float(np.nanmin(v)))
+                dim_max[dim] = max(dim_max[dim], float(np.nanmax(v)))
+        except Exception:
+            # If a source has non-numeric data, we still show traces but skip range computation for it.
+            pass
+
+    def _range_for_dim(dim: str, do_flip: bool) -> Optional[List[float]]:
+        vmin = float(dim_min[dim])
+        vmax = float(dim_max[dim])
+        if not np.isfinite(vmin) or not np.isfinite(vmax):
+            return None
+        if zero_based_axes:
+            vmin = min(vmin, 0.0)
+        span = vmax - vmin
+        pad = float(axis_pad_frac) * (span if span > 0 else max(1.0, abs(vmax), abs(vmin)))
+        lo = vmin - pad
+        hi = vmax + pad
+        return [hi, lo] if do_flip else [lo, hi]
+
+    x_range = _range_for_dim(x_dim, flip_x) if has_data_for_axes else None
+    y_range = _range_for_dim(y_dim, flip_y) if has_data_for_axes else None
+    z_range = _range_for_dim(z_dim, flip_z) if has_data_for_axes else None
 
     scene_dict: Dict[str, Any] = dict(
-        xaxis_title='Time (s)',
-        yaxis_title='Amplitude',
-        zaxis_title='Frequency (Hz)',
+        xaxis=dict(title=x_title, range=x_range) if x_range is not None else dict(title=x_title),
+        yaxis=dict(title=y_title, range=y_range) if y_range is not None else dict(title=y_title),
+        zaxis=dict(title=z_title, range=z_range) if z_range is not None else dict(title=z_title),
         camera=dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=1.5, y=1.5, z=0.5))
     )
-    if has_data_for_axes:
-        scene_dict['xaxis'] = dict(range=[0, max_time * 1.05]) # 5% padding
-        scene_dict['yaxis'] = dict(range=[0, max_amp * 1.05])
-        scene_dict['zaxis'] = dict(range=[0, max_freq * 1.05])
 
 
     fig_3d.update_layout(
-        title_text='Time vs Amplitude vs Frequency (3D)',
+        title_text=f'{x_title} vs {y_title} vs {z_title} (3D)',
         scene=scene_dict,
         template='plotly_white',
         showlegend=True,

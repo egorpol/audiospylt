@@ -5,6 +5,8 @@ from IPython.display import display, HTML
 import verovio
 import xml.etree.ElementTree as ET
 import logging
+import os
+from pathlib import Path
 
 # Setup basic logging
 # logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -291,8 +293,11 @@ def _add_chord_content_to_measure(
 
     if all_deviation_fingerings_for_measure: # These are only populated if display_cent_deviation_for_chord was true
         for fing_attrs in all_deviation_fingerings_for_measure:
-            ET.SubElement(measure_el, 'fing', attrib=fing_attrs)
-            logging.debug(f"Chord Mode: Added fingering '{fing_attrs['text']}' ref {fing_attrs['startid']}")
+            # MEI fingering text should be the element text, not an attribute.
+            fing_text = fing_attrs.pop("text", "")
+            fing_el = ET.SubElement(measure_el, 'fing', attrib=fing_attrs)
+            fing_el.text = fing_text
+            logging.debug(f"Chord Mode: Added fingering '{fing_text}' ref {fing_attrs.get('startid')}")
             
     return current_note_counter
 
@@ -427,7 +432,11 @@ def create_temporal_mei_string(
     clef_config: str,
     resolution_type: str, # Renamed from 'resolution' in the call
     include_natural_accidentals: bool,
-    measure_represents_sec: float # <-- NEW PARAMETER
+    measure_represents_sec: float, # <-- NEW PARAMETER
+    display_time_start: bool = False,
+    time_label_format: str = "{:.3f}s",
+    time_label_place: str = "above",
+    time_label_mode: str = "fing",
 ) -> str:
     """Creates an MEI string for temporally grouped chords with padding."""
     mei_root, score_el = _init_mei_structure_elements()
@@ -460,6 +469,73 @@ def create_temporal_mei_string(
             display_cent_deviation_for_chord=False, 
             current_note_counter=note_counter
         )
+
+        # Optional: display the group time start above the chord as a text direction.
+        # This is useful for temporal DFT/frame visualizations.
+        if display_time_start:
+            try:
+                ts = float(time_start)
+                label = time_label_format.format(ts)
+            except Exception:
+                # Fall back to a simple string if formatting fails
+                label = str(time_start)
+
+            # Anchor the label to a specific element so Verovio reliably places it.
+            # By default, we use a <fing> element attached to the first available note
+            # (similar to how cent deviations are displayed in sequence mode).
+            id_key = f"{{{XML_NS}}}id"
+
+            def _find_first_note_id_for_staff(staff_n: Optional[int]) -> Optional[str]:
+                if staff_n is None:
+                    return None
+                # Tags are in the default MEI namespace via the root xmlns attribute,
+                # but ElementTree builds them without explicit namespace in tag names here.
+                for note_el in measure_chord_el.findall(f".//staff[@n='{staff_n}']//note"):
+                    nid = note_el.get(id_key)
+                    if nid:
+                        return nid
+                return None
+
+            # Prefer anchoring to a note on the top (G) staff if present; otherwise use F staff.
+            anchor_note_id = _find_first_note_id_for_staff(g_staff_n) or _find_first_note_id_for_staff(f_staff_n)
+            anchor_staff_n: int = g_staff_n or f_staff_n or 1
+            if anchor_note_id is None and f_staff_n is not None:
+                anchor_staff_n = f_staff_n
+            elif anchor_note_id is not None and g_staff_n is None and f_staff_n is not None:
+                anchor_staff_n = f_staff_n
+
+            if time_label_mode == "dir":
+                # <dir> can be ignored if it isn't positioned; tstamp helps.
+                dir_attrs = {
+                    "place": time_label_place,
+                    "staff": str(anchor_staff_n),
+                    "layer": "1",
+                    "tstamp": "1",
+                }
+                dir_el = ET.SubElement(measure_chord_el, "dir", attrib=dir_attrs)
+                dir_el.text = label
+            elif time_label_mode == "fing":
+                if anchor_note_id:
+                    fing_attrs = {
+                        "staff": str(anchor_staff_n),
+                        "layer": "1",
+                        "startid": f"#{anchor_note_id}",
+                        "place": time_label_place,
+                    }
+                    fing_el = ET.SubElement(measure_chord_el, "fing", attrib=fing_attrs)
+                    fing_el.text = label
+                else:
+                    # Fallback to <dir> if we couldn't find any note IDs in the measure.
+                    dir_attrs = {
+                        "place": time_label_place,
+                        "staff": str(anchor_staff_n),
+                        "layer": "1",
+                        "tstamp": "1",
+                    }
+                    dir_el = ET.SubElement(measure_chord_el, "dir", attrib=dir_attrs)
+                    dir_el.text = label
+            else:
+                raise ValueError("time_label_mode must be 'fing' or 'dir'.")
 
         # Use the passed parameter here instead of the global constant
         num_padding_measures = int(round(actual_duration_sec / measure_represents_sec)) - 1
@@ -536,7 +612,48 @@ def _render_and_save_mei(
     try:
         ET.fromstring(mei_string) # Basic XML validation
         logging.debug("MEI XML validation successful.")
-        svg_code = vrvToolkit.renderData(mei_string, options=verovio_options)
+
+        # Filter options to those supported by the user's installed Verovio build.
+        # This avoids "Unsupported option ..." noise and (in some builds) hard failures.
+        supported_keys: set[str] = set()
+        try:
+            available = vrvToolkit.getAvailableOptions()
+            for grp in available.get("groups", {}).values():
+                opts = grp.get("options", {})
+                if isinstance(opts, dict):
+                    supported_keys.update(opts.keys())
+        except Exception:
+            # If introspection fails, we still attempt to render with the provided options.
+            supported_keys = set()
+
+        effective_options = dict(verovio_options or {})
+        if supported_keys:
+            effective_options = {k: v for k, v in effective_options.items() if k in supported_keys}
+
+        # Use the canonical Verovio workflow: setOptions + loadData + renderToSVG.
+        # This reliably returns a pure <svg> string suitable for saving as .svg.
+        try:
+            vrvToolkit.resetOptions()
+        except Exception:
+            pass
+
+        if effective_options:
+            vrvToolkit.setOptions(effective_options)
+
+        vrvToolkit.loadData(mei_string)
+        page_count = 1
+        try:
+            page_count = int(vrvToolkit.getPageCount())
+        except Exception:
+            page_count = 1
+
+        if page_count > 1:
+            logging.warning(
+                f"Verovio produced {page_count} pages. Only page 1 will be displayed/saved. "
+                f"Consider adjusting pageHeight/pageWidth/breaks if you need a single SVG."
+            )
+
+        svg_code = vrvToolkit.renderToSVG(1)
         logging.info("Verovio rendering successful.")
         display(HTML(svg_code)) # Display in notebook
     except ET.ParseError as e:
@@ -551,23 +668,42 @@ def _render_and_save_mei(
 
     # Save the MEI file (if requested)
     if save_mei:
-        logging.info(f"Saving MEI string to {mei_save_path}...")
+        mei_out = Path(mei_save_path)
+        if not mei_out.is_absolute():
+            # Help notebook users understand where relative paths land.
+            logging.info(f"Saving MEI string to {mei_save_path} (cwd: {os.getcwd()})...")
+        else:
+            logging.info(f"Saving MEI string to {mei_save_path}...")
         try:
+            mei_out.parent.mkdir(parents=True, exist_ok=True)
             with open(mei_save_path, 'w', encoding='utf-8') as f: f.write(mei_string)
             logging.info(f"MEI file saved successfully: {mei_save_path}")
+            print(f"Saved MEI -> {mei_out.resolve()}")
         except IOError as e:
             logging.error(f"Error saving MEI file to {mei_save_path}: {e}")
 
     # Save the SVG file (if requested and SVG was generated)
     if save_svg and svg_code:
-        logging.info(f"Saving rendered SVG to {svg_save_path}...")
+        svg_out = Path(svg_save_path)
+        if not svg_out.is_absolute():
+            logging.info(f"Saving rendered SVG to {svg_save_path} (cwd: {os.getcwd()})...")
+        else:
+            logging.info(f"Saving rendered SVG to {svg_save_path}...")
         try:
+            svg_out.parent.mkdir(parents=True, exist_ok=True)
             with open(svg_save_path, 'w', encoding='utf-8') as f: f.write(svg_code)
             logging.info(f"SVG file saved successfully: {svg_save_path}")
+            print(f"Saved SVG -> {svg_out.resolve()}")
         except IOError as e:
             logging.error(f"Error saving SVG file to {svg_save_path}: {e}")
     elif save_svg and not svg_code:
         logging.warning(f"SVG file not saved to {svg_save_path} because SVG code was not generated.")
+        print(
+            "\n--- WARNING: SVG was requested but Verovio returned no SVG ---\n"
+            f"cwd: {os.getcwd()}\n"
+            f"svg_save_path: {svg_save_path}\n"
+            "Try enabling logging or check whether the MEI contains any valid notes."
+        )
 
     return svg_code # Return the SVG code so it can be used by other functions if needed
 
@@ -682,12 +818,19 @@ def process_and_visualize(
 
     # --- 7. Render MEI using Verovio & Save ---
     verovio_options = {
-        "inputFormat": "mei", "scale": 50, "adjustPageHeight": False,
-        "pageMarginBottom": 200, "noHeader": True, "border": 0,
-        "pageHeight": 20000, "pageWidth": 1000, "staffLineWidth": 1.5,
-        "systemDividerLineWidth": 1.5, "breaks": "none", "font": "Bravura",
-        "fingering": effective_display_cent_deviation,
-        "svgHtmlClipPaths": True, "justifyVertically": True,
+        # Verovio 5.x compatible options (invalid keys are filtered anyway at render time)
+        "inputFrom": "mei",
+        "scale": 50,
+        "adjustPageHeight": False,
+        "pageMarginBottom": 200,
+        "header": "none",
+        "pageHeight": 20000,
+        "pageWidth": 1000,
+        "staffLineWidth": 0.15,
+        "systemDivider": "none",
+        "breaks": "none",
+        "font": "Leipzig",
+        "justifyVertically": True,
     }
     if display_mode == 'chord':
          verovio_options['scale'] = 40
@@ -711,6 +854,10 @@ def process_temporal_chords(
     note_order_within_chord: str = 'ascending',
     include_natural_accidentals: bool = True,
     measure_represents_sec: float = 0.5,
+    display_time_start: bool = False,
+    time_label_format: str = "{:.3f}s",
+    time_label_place: str = "above",
+    time_label_mode: str = "fing",
     save_mei: bool = False,
     mei_save_path: str = 'output_temporal.mei', # Renamed
     save_svg: bool = False,                   # New
@@ -733,6 +880,12 @@ def process_temporal_chords(
     if note_order_within_chord not in ['original', 'ascending', 'descending']: raise ValueError("Invalid note_order_within_chord.")
     if not isinstance(measure_represents_sec, (int, float)) or measure_represents_sec <= 0:
         raise ValueError("measure_represents_sec must be a positive number.")
+    if not isinstance(time_label_format, str) or not time_label_format:
+        raise ValueError("time_label_format must be a non-empty format string, e.g. '{:.3f}s'.")
+    if time_label_place not in ["above", "below"]:
+        raise ValueError("time_label_place must be 'above' or 'below'.")
+    if time_label_mode not in ["fing", "dir"]:
+        raise ValueError("time_label_mode must be 'fing' or 'dir'.")
 
 
     # ... (1. Load Data - no change)
@@ -815,20 +968,29 @@ def process_temporal_chords(
             clef_config,
             resolution, # resolution_type was renamed to resolution
             include_natural_accidentals,
-            measure_represents_sec=measure_represents_sec # <-- PASS THE PARAMETER
+            measure_represents_sec=measure_represents_sec, # <-- PASS THE PARAMETER
+            display_time_start=display_time_start,
+            time_label_format=time_label_format,
+            time_label_place=time_label_place,
+            time_label_mode=time_label_mode,
         )
     else:
         logging.warning("MEI string generation skipped as no valid time groups were found.")
 
     # --- 6. Render MEI using Verovio & Save ---
     verovio_options_temporal = {
-        "inputFormat": "mei", "scale": 45, "adjustPageHeight": True,
-        "noHeader": True, "border": 0,
+        "inputFrom": "mei",
+        "scale": 45,
+        "adjustPageHeight": True,
+        "header": "none",
         # "pageHeight": 15000, # Optional if adjustPageHeight is True and breaks: none
-        "pageWidth": 1800, "staffLineWidth": 1.5, "systemDividerLineWidth": 1.5,
+        "pageWidth": 1800,
+        "staffLineWidth": 0.15,
+        "systemDivider": "none",
         "breaks": "none",  # Keep as "none" for single long system
-        "font": "Bravura", "fingering": False,
-        "svgHtmlClipPaths": True, "justifyVertically": True, "pageMarginBottom": 200,
+        "font": "Leipzig",
+        "justifyVertically": True,
+        "pageMarginBottom": 200,
     }
     _render_and_save_mei(
         mei_string,

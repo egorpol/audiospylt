@@ -43,8 +43,11 @@ def plot_waves(
         - "closed": include stop sample (legacy behavior; can double-count boundaries)
         - "half_open": exclude stop sample (often reduces boundary artifacts)
     - phase_mode: how to handle oscillator phase inside each event:
-        - "reset": legacy behavior (phase resets at each event start; most likely to click)
-        - "global": use absolute time in the sine argument (helps continuity for constant-frequency bins)
+        - "reset": phase resets at each event start (simple, but most likely to click at boundaries)
+        - "global": absolute-time referenced phase:
+            - keeps phase continuous for constant-frequency bins across adjacent segments
+            - keeps the intended instantaneous frequency for linear ramps within each event
+            - does NOT guarantee phase continuity across events when the frequency changes between events
         - "chirp": integrate a linear freq ramp to get a continuous phase *within* the event
     - show_waveform: if True, show the synthesized waveform only
     - show_fft: if True, show a spectrogram using `py_scripts.audio_utils.plot_spectrogram`
@@ -212,12 +215,32 @@ def plot_waves(
 
         # Phase handling.
         if phase_mode == "reset":
-            # Legacy behavior: phase resets at each segment start.
-            phase = 2.0 * np.pi * freq * tau
+            # Phase resets at each segment start.
+            #
+            # Note: for time-varying frequency, using phase = 2π f(tau) tau will *not*
+            # preserve the intended instantaneous frequency (it introduces a +tau f'(tau)
+            # term). Because our per-event frequency model is linear, we integrate it so
+            # the synthesized tone follows freq_start->freq_stop as expected.
+            f0 = float(freq_start)
+            f1 = float(freq_stop)
+            if f0 == f1:
+                phase = 2.0 * np.pi * f0 * tau
+            else:
+                phase = 2.0 * np.pi * (f0 * tau + 0.5 * (f1 - f0) * (tau * tau) / dur)
         elif phase_mode == "global":
-            # Helps continuity for constant-frequency bins across adjacent frames.
-            # For non-constant freq ramps this is an approximation (not an integral).
-            phase = 2.0 * np.pi * freq * t[idx]
+            # Absolute-time referenced phase.
+            #
+            # For constant-frequency segments (freq_start == freq_stop), this is the classic
+            # phase = 2π f t, which keeps phase continuous across adjacent segments at the same f.
+            #
+            # IMPORTANT: If freq is time-varying and you do phase = 2π f(t) t, the instantaneous
+            # frequency becomes f(t) + t f'(t) (product rule), which can produce "extra" partials
+            # that are not in the input table. To keep the intended instantaneous frequency for
+            # linear ramps, we integrate the linear model over the event and add an absolute-time
+            # offset so that the constant-frequency case matches 2π f t.
+            f0 = float(freq_start)
+            f1 = float(freq_stop)
+            phase = 2.0 * np.pi * (f0 * t[idx] + 0.5 * (f1 - f0) * (tau * tau) / dur)
         else:  # "chirp"
             # Continuous phase *within* an event with a linear frequency ramp:
             # phi(tau) = 2π * ∫ f(u) du = 2π*(f0*tau + 0.5*(f1-f0)*tau^2/dur)
