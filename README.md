@@ -1,10 +1,15 @@
-![AudioSpylt Logo](./logo.png)
+![AudioSpylt Logo](https://raw.githubusercontent.com/egorpol/audiospylt/main/logo.png)
 
 # AudioSpylt
 
-> **Note**: This package is currently under development. The provided version should be treated as an alpha release.
+> **Note**: This package is currently under development. The provided version (`0.6.0a1`) should be treated as an alpha release.
 
 **AudioSpylt** is a Python-based toolbox designed for sound analysis, resynthesis, and a variety of visual and symbolic sound representations. While it is primarily intended for instructional purposes, this toolbox seamlessly integrates with the Jupyter Notebook environment. Originally created for composition students, it places a special emphasis on diverse resynthesis techniques.
+
+## Update alpha-0.6
+
+- major refactor, pip release
+- Cleaned up package structure for better distribution.
 
 ## Update alpha-0.5
 
@@ -101,7 +106,7 @@ In PowerShell (Windows):
 ```bash
 cd C:\Users\egorp\Nextcloud\code\public_repos\audiospylt
 python -m pip install -U pip
-python -m pip install -e ".[notebook]"
+python -m pip install -e .
 ```
 
 Important: your Jupyter kernel must use the **same Python environment** where you ran the install.
@@ -112,8 +117,10 @@ If you still see `ModuleNotFoundError: No module named 'audiospylt'`, you’re a
 AudioSpylt requires the following Python libraries:
 
 - `IPython`
+- `ipywidgets`
 - `librosa`
 - `matplotlib`
+- `nbformat`
 - `numpy`
 - `pandas`
 - `plotly`
@@ -132,14 +139,6 @@ pip install -r requirements.txt
 ```
 
 ### Installation (pip package)
-
-For local development (editable install from this repo):
-
-```bash
-pip install -e ".[notebook]"
-```
-
-After the project is published to PyPI:
 
 ```bash
 pip install audiospylt

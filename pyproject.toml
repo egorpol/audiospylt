@@ -22,6 +22,8 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+  "ipython",
+  "ipywidgets",
   "librosa",
   "matplotlib",
   "nbformat>=4.2.0",
@@ -29,7 +31,6 @@ dependencies = [
   "pandas",
   "plotly",
   "requests",
-  "scikit-learn",
   "scipy",
   "soundfile",
   "tqdm",
@@ -37,7 +38,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-notebook = ["ipython", "nbformat>=4.2.0", "ipywidgets"]
 dev = ["build", "pytest", "ruff", "twine"]
 
 [project.urls]
