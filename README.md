@@ -2,66 +2,25 @@
 
 # AudioSpylt
 
-> **Note**: This package is currently under development. The provided version (`0.6.0a1`) should be treated as an alpha release.
+> **Note**: This package is currently under development. The provided version (`0.6.0a2`) should be treated as an alpha release. Although the package is already in development for quite some time, bugs and undocumennted features are still quite common. 
 
 **AudioSpylt** is a Python-based toolbox designed for sound analysis, resynthesis, and a variety of visual and symbolic sound representations. While it is primarily intended for instructional purposes, this toolbox seamlessly integrates with the Jupyter Notebook environment. Originally created for composition students, it places a special emphasis on diverse resynthesis techniques.
 
-## Update alpha-0.6
 
-- major refactor, pip release
-- Cleaned up package structure for better distribution.
 
-## Update alpha-0.5
-
-- Major cleanup of the entire repository.
-- All conference-related resources (presentations, examples, posters) have been moved to the `conferences/` folder. This includes dedicated folders for GMTH23, INMUSIC24, and MEC2025.
-- The `exploration_of_timbre/` directory has been moved to `conferences/inmusic24/` for reference. Further development will continue at [egorpol/FFTimbre](https://github.com/egorpol/FFTimbre).
-
-## Update alpha-0.4
-
-- Improved and refactored MEI implementation, including quarter-tone and eighth-tonal representations, as well as basic support for temporal structure representation. Added SVG export. Check the `symbolic_mei.ipynb` notebook for more details.
-- Improved and refactored Python scripts for plotting TSV frequency tables and SSM representations (`multiplotter.py` and `ssm.py`).
-
-## Update alpha-0.3
-
-- Added the `exploration_of_timbre/` directory with various experimental ML-based sound generation approaches using global optimization algorithms. The primary goal is to synthesize a DFT frame within a restricted FM/AM setup, optionally for use within Ableton Operator.
-- `spectral_fm3.ipynb` - Notebook for FM-based sound approximation using a single DFT frame as the source.
-- `spectral_am3.ipynb` - Notebook for AM-based sound approximation using a single DFT frame as the source.
-- `operator_fm.ipynb` - Notebook for adjusting calculated FM values to the Ableton Operator preset format.
-- `operator_am.ipynb` - Notebook for adjusting calculated AM values to the Ableton Operator preset format.
-- `operator_preset_editor_fm.ipynb` - Notebook for extracting and saving Ableton Operator presets in `.adv` format (its native preset format).
-- `optimization_gif.ipynb` - Notebook for creating learning process visualizations for different optimization algorithms.
-- `distances_demo.ipynb` - Notebook for visualizing distances of different objective functions.
-
-## Update alpha-0.2
-
-### Refactoring
-
-- All code has been refactored.
-- All Python scripts have been moved to the `py_scripts/` folder.
-
-### Tutorials Added
-
-All tutorials can be found in the `tutorials/` folder:
-
-- `mfcc_bank.ipynb` - Brief introduction to MFCC-based sound representations.
-- `peaks_scipy_showcase.ipynb` - Quick introduction to the `find_peaks` function from `scipy.signal`, used for DFT-based peak filtering.
-- `showcase_bayle.ipynb`, `showcase_noanoa.ipynb`, `showcase_parm.ipynb` - Various examples of DFT-based peak detection and resynthesis, aiming to extract symbolic representations from sounds and resynthesize DFT frames for aural judgment and exploration of the analyzed audio.
-- `above_nyquist.ipynb` - Brief introduction to the effects of aliasing.
-- `dft_resolution.ipynb` - Brief introduction to the effects of sampling rate and sample length on DFT resolution.
-
-### Notebooks Added/Revised
-
-- `symbolic_mei.ipynb` - Completely rewritten implementation of Verovio-based MEI rendering (see also `mei.py` in the `py_scripts/` folder). Now supports various rendering modes, including MIDI cent deviation notation above notes (useful for microtonal analysis).
-- `ssm.ipynb` - Plotly-based self-similarity matrix (SSM) visualization of selected audio files; includes analysis methods such as 'chroma', 'mfcc', or 'chroma+mfcc'.
-
-## Important Resources
-
-- Slides from the 23rd GMTH Congress talk can be found in the `gmth_congress_slides/` folder.
+For a detailed history of changes, see the [CHANGELOG.md](./CHANGELOG.md).
 
 ## Toolbox Overview
 
 The toolbox is organized into the following main categories:
+
+/case_studies - narrative-driven notebooks that demonstrate end-to-end workflows for both analytic and creative purposes
+/conferences - various materials from past conferences where audiospylt package was presented
+/mei - test file directory for mei output 
+/samples - contains samples (audio and score sheets) used in case_studies
+/tutorials_tech - explain individual functions and parameters in isolation, serving as a functional reference. 
+/tutorials_workflow - focused examples demonstrating specific toolchains for audio data handling, spectral analysis, DataFrame manipulation, and sound synthesis. Showcasing mostly interaction between different modules.
+
 
 ### Instructional Notebooks
 These notebooks provide comprehensive explanations and demonstrations of core audio concepts:
@@ -95,54 +54,21 @@ These notebooks provide comprehensive explanations and demonstrations of core au
 
 ## Getting Started
 
-To get started, clone this repository and set up your Jupyter Notebook environment to run the notebooks.
-
-## Development install (recommended for testing notebooks)
-
-To make `import audiospylt` work from anywhere (including `notebooks/*.ipynb`), do an **editable install** from the repo root.
-
-In PowerShell (Windows):
-
-```bash
-cd C:\Users\egorp\Nextcloud\code\public_repos\audiospylt
-python -m pip install -U pip
-python -m pip install -e .
-```
-
-Important: your Jupyter kernel must use the **same Python environment** where you ran the install.
-If you still see `ModuleNotFoundError: No module named 'audiospylt'`, you’re almost certainly running the notebook in a different kernel.
-
-## Dependencies
-
-AudioSpylt requires the following Python libraries:
-
-- `IPython`
-- `ipywidgets`
-- `librosa`
-- `matplotlib`
-- `nbformat`
-- `numpy`
-- `pandas`
-- `plotly`
-- `requests`
-- `scipy`
-- `soundfile`
-- `tqdm`
-- `verovio`
-
-### Installation
-
-To install the dependencies, navigate to the root directory of the project and run:
-
-```bash
-pip install -r requirements.txt
-```
-
 ### Installation (pip package)
 
 ```bash
 pip install audiospylt
 ```
+## Dependencies
+
+AudioSpylt requires the following Python libraries:
+
+- `IPython`, `ipywidgets`, `nbformat` (for notebook support)
+- `librosa`, `soundfile` (audio processing)
+- `numpy`, `scipy`, `pandas` (data science)
+- `matplotlib`, `plotly` (visualization)
+- `verovio` (symbolic rendering)
+- `requests`, `tqdm` (utilities)
 
 ## Contributions
 

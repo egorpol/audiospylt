@@ -378,8 +378,12 @@ def plot_scatter(
     amp_axis_mix: float = 0.5,
     amp_log_floor: float = 1e-12,
     auto_plot_range: bool = True,
+    freq_plot_min_hz: Optional[float] = None,
+    freq_plot_max_hz: Optional[float] = None,
     freq_plot_pad_hz: Optional[float] = None,
     freq_plot_pad_frac: float = 0.05,
+    amp_plot_min: Optional[float] = None,
+    amp_plot_max: Optional[float] = None,
     amp_plot_pad: Optional[float] = None,
     amp_plot_pad_frac: float = 0.10,
     amp_plot_pad_ratio: float = 0.15,
@@ -406,7 +410,9 @@ def plot_scatter(
     - amp_axis_mix (float): For 'mixed' mode, blend factor in [0, 1] (0=linear, 1=log-like).
     - amp_log_floor (float): Floor for log/mixed amplitude handling (>0).
     - auto_plot_range (bool): If True, auto-zoom to data with padding (safer than forcing [0..max]).
+    - freq_plot_min_hz/freq_plot_max_hz: Override x-axis range in Hz (linear/mel/mixed).
     - freq_plot_pad_hz/freq_plot_pad_frac: Absolute/relative padding for x-range in Hz.
+    - amp_plot_min/amp_plot_max: Override y-axis range (linear/mixed).
     - amp_plot_pad/amp_plot_pad_frac/amp_plot_pad_ratio: Padding for y-range (ratio used in log mode).
     """
     all_data = _load_and_prepare_data(files, dfs, df_labels)
@@ -538,10 +544,13 @@ def plot_scatter(
         scatter_fig.update_xaxes(tickmode="array", tickvals=x_tickvals, ticktext=x_ticktext)
     scatter_fig.update_yaxes(type=y_axis_type)
 
-    if has_data_for_axes and auto_plot_range:
+    if has_data_for_axes and (auto_plot_range or freq_plot_min_hz is not None or freq_plot_max_hz is not None
+                              or amp_plot_min is not None or amp_plot_max is not None):
         # X range padding.
         x0, x1 = float(x_min_raw), float(x_max_raw)
         if x_axis_type == "log":
+            if freq_plot_min_hz is not None and float(freq_plot_min_hz) <= 0:
+                raise ValueError("freq_plot_min_hz must be > 0 for log x-axis.")
             # Plotly expects log10 values for axis range when type='log'.
             # Our x values are raw Hz for log axis.
             # For mel/mixed we don't use log axis type.
@@ -555,19 +564,39 @@ def plot_scatter(
             x0_use = max(min_pos, x0 if np.isfinite(x0) else min_pos)
             x1_use = max(x0_use * (1.0 + 1e-6), x1 if np.isfinite(x1) else x0_use * 10.0)
             # Apply padding in Hz-space.
-            span = max(1e-12, x1_use - x0_use)
-            pad = float(freq_plot_pad_hz) if freq_plot_pad_hz is not None else float(freq_plot_pad_frac) * span
-            x0_use = max(min_pos, x0_use - pad)
-            x1_use = max(x0_use * (1.0 + 1e-6), x1_use + pad)
+            if freq_plot_pad_hz is not None:
+                # Absolute Hz padding
+                pad = float(freq_plot_pad_hz)
+                x0_use = max(1e-12, x0_use - pad)
+                x1_use = max(x0_use * (1.0 + 1e-6), x1_use + pad)
+            else:
+                # Ratio-based padding for log axis (using freq_plot_pad_frac as ratio)
+                # Default 0.05 means 5% padding on each side in log space
+                ratio = float(freq_plot_pad_frac)
+                x0_use = max(1e-12, x0_use / (1.0 + ratio))
+                x1_use = max(x0_use * (1.0 + 1e-6), x1_use * (1.0 + ratio))
+
+            if freq_plot_min_hz is not None:
+                x0_use = float(freq_plot_min_hz)
+            if freq_plot_max_hz is not None:
+                x1_use = max(x0_use * (1.0 + 1e-6), float(freq_plot_max_hz))
             scatter_fig.update_xaxes(range=[np.log10(x0_use), np.log10(x1_use)])
         else:
             span = max(1e-12, x1 - x0)
             pad = float(freq_plot_pad_hz) if freq_plot_pad_hz is not None else float(freq_plot_pad_frac) * span
-            scatter_fig.update_xaxes(range=[x0 - pad, x1 + pad])
+            x0_use = x0 - pad
+            x1_use = x1 + pad
+            if freq_plot_min_hz is not None:
+                x0_use = float(freq_plot_min_hz)
+            if freq_plot_max_hz is not None:
+                x1_use = float(freq_plot_max_hz)
+            scatter_fig.update_xaxes(range=[x0_use, x1_use])
 
         # Y range padding.
         y0, y1 = float(y_min_raw), float(y_max_raw)
         if y_axis_type == "log":
+            if amp_plot_min is not None and float(amp_plot_min) <= 0:
+                raise ValueError("amp_plot_min must be > 0 for log y-axis.")
             floor = float(amp_log_floor)
             y0_use = max(floor, y0 if np.isfinite(y0) else floor)
             y1_use = max(y0_use * (1.0 + 1e-9), y1 if np.isfinite(y1) else y0_use * 10.0)
@@ -576,11 +605,21 @@ def plot_scatter(
                 raise ValueError(f"amp_plot_pad_ratio must be >= 0; got {amp_plot_pad_ratio}")
             y0_use = max(floor, y0_use / (1.0 + r))
             y1_use = y1_use * (1.0 + r)
+            if amp_plot_min is not None:
+                y0_use = max(floor, float(amp_plot_min))
+            if amp_plot_max is not None:
+                y1_use = max(y0_use * (1.0 + 1e-9), float(amp_plot_max))
             scatter_fig.update_yaxes(range=[np.log10(y0_use), np.log10(y1_use)])
         else:
             span = max(1e-12, y1 - y0)
             pad = float(amp_plot_pad) if amp_plot_pad is not None else float(amp_plot_pad_frac) * span
-            scatter_fig.update_yaxes(range=[y0 - pad, y1 + pad])
+            y0_use = y0 - pad
+            y1_use = y1 + pad
+            if amp_plot_min is not None:
+                y0_use = float(amp_plot_min)
+            if amp_plot_max is not None:
+                y1_use = float(amp_plot_max)
+            scatter_fig.update_yaxes(range=[y0_use, y1_use])
 
     show_plotly(scatter_fig)
 
