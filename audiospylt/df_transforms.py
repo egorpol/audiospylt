@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from scipy.special import expit
 
 def detect_dataframe_type(df: pd.DataFrame) -> dict:
     """
@@ -471,3 +472,637 @@ def add_time_cues(df: pd.DataFrame, cues: list) -> pd.DataFrame:
     result_df = result_df.sort_values(by=['time_start', 'freq_start']).reset_index(drop=True)
     
     return result_df
+
+def merge_equal_split(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+    """
+    Upsamples the smaller of two DataFrames to match the length of the larger one using nearest-neighbor interpolation,
+    then merges them side-by-side.
+
+    Args:
+        df1: First DataFrame.
+        df2: Second DataFrame.
+
+    Returns:
+        A new DataFrame with columns ['freq_data1', 'amp_data1', 'freq_data2', 'amp_data2'].
+    """
+    def upsample_df(df, target_len):
+        if len(df) >= target_len:
+            return df.copy().reset_index(drop=True)
+        # Calculate indices to repeat. np.linspace distributes the repeats evenly
+        indices = np.linspace(0, len(df) - 1, target_len).round().astype(int)
+        return df.iloc[indices].reset_index(drop=True)
+
+    # Determine target length
+    target_len = max(len(df1), len(df2))
+
+    # Upsample both to target length ensuring index alignment
+    df1_equal = upsample_df(df1, target_len)
+    df2_equal = upsample_df(df2, target_len)
+
+    # Rename columns
+    df1_equal.columns = ['freq_data1', 'amp_data1']
+    df2_equal.columns = ['freq_data2', 'amp_data2']
+
+    # Combine side-by-side
+    result_equal = pd.concat([df1_equal, df2_equal], axis=1)
+
+    return result_equal
+
+def create_time_transition_df(input_df: pd.DataFrame, duration: float, scale_amp: bool = True, override_amp: float = None) -> pd.DataFrame:
+    """
+    Transforms merged spectral data into a time-based transition DataFrame.
+    
+    Args:
+        input_df: DataFrame with columns ['freq_data1', 'amp_data1', 'freq_data2', 'amp_data2']
+        duration: Total duration of the transition in seconds
+        scale_amp: If True, normalizes amplitudes to 0-1 range
+        override_amp: If provided, sets all amplitudes to this value
+    """
+    df = input_df.copy()
+    
+    # Handle amplitude processing
+    if override_amp is not None:
+        amp_start = np.full(len(df), override_amp)
+        amp_stop = np.full(len(df), override_amp)
+    elif scale_amp:
+        # Avoid division by zero
+        max1 = df['amp_data1'].max() or 1.0
+        max2 = df['amp_data2'].max() or 1.0
+        amp_start = df['amp_data1'] / max1
+        amp_stop = df['amp_data2'] / max2
+    else:
+        amp_start = df['amp_data1']
+        amp_stop = df['amp_data2']
+
+    return pd.DataFrame({
+        "freq_start": df['freq_data1'],
+        "freq_stop": df['freq_data2'],
+        "time_start": 0.0,
+        "time_stop": float(duration),
+        "amp_min": amp_start,  # Using 'min' to represent start value
+        "amp_max": amp_stop    # Using 'max' to represent stop value
+    })
+
+def _cdf_mapping_indices(n_src: int, n_dst: int, power: float) -> np.ndarray:
+    if n_src == 0 or n_dst == 0:
+        return np.array([], dtype=int)
+    # Negative power flips the mapping direction (mirrors the CDF)
+    flip = power < 0
+    p = abs(power)
+    bins = np.linspace(0, 1, n_src) ** p
+    bins[0], bins[-1] = 0, 1
+    thresholds = (bins[:-1] + bins[1:]) / 2
+    targets = np.linspace(0, 1, n_dst, endpoint=False) + 0.5 / n_dst
+    indices = np.digitize(targets, thresholds)
+    indices = np.clip(indices, 0, n_src - 1)
+    indices[0] = 0
+    indices[-1] = n_src - 1
+    if flip:
+        indices = (n_src - 1) - indices
+        indices[0] = n_src - 1
+        indices[-1] = 0
+    return indices
+
+def merge_cdf_analysis(df1: pd.DataFrame, df2: pd.DataFrame, plot: bool = False):
+    """
+    Analyzes two DataFrames to find the valid power range for CDF-based merging.
+    Ideally, we map the smaller dataframe into the larger one such that all original
+    values are represented.
+
+    Args:
+        df1: First DataFrame.
+        df2: Second DataFrame.
+        plot: If True, plots the CDF for min/max valid powers using Plotly.
+
+    Returns:
+        list: [min_power, max_power] range.
+    """
+    # Determine which DataFrame has fewer rows and prepare copies
+    if len(df1) < len(df2):
+        df_less_src, df_more_src = df1.copy(), df2.copy()
+    else:
+        df_less_src, df_more_src = df2.copy(), df1.copy()
+
+    n_less = len(df_less_src)
+    n_more = len(df_more_src)
+
+    if n_less == 0 or n_more == 0:
+        return [1.0, 1.0]
+
+    def check_coverage(indices, n_src):
+        """Checks if all source indices are used at least once."""
+        return len(np.unique(indices)) == n_src
+
+    # Optimize finding the valid power range
+    # Define search space with high resolution near 1, coarser for larger powers
+    power_candidates = np.concatenate([
+        np.linspace(0.01, 2, 1000),
+        np.linspace(2.01, 100, 1000)
+    ])
+    valid_powers = []
+
+    # Check validity using vectorized operations
+    if n_less == n_more:
+        power_range = [1.0, 1.0]
+    else:
+        for p in power_candidates:
+            idxs = _cdf_mapping_indices(n_less, n_more, p)
+            if check_coverage(idxs, n_less):
+                valid_powers.append(p)
+
+        if not valid_powers:
+            # Fallback if no full coverage found
+            print("Warning: No fully covering power found. Using default [1.0, 1.0].")
+            power_range = [1.0, 1.0]
+        else:
+            power_range = [valid_powers[0], valid_powers[-1]]
+
+    if plot:
+        import plotly.graph_objects as go
+        
+        # We need values to plot CDF. Let's use the freq column of the smaller DF.
+        cols = df_less_src.columns
+        f_col = next((c for c in cols if 'freq' in c.lower()), cols[0])
+        
+        # Get mapped values for min and max power
+        # Note: mapping produces a sequence of length n_more
+        vals_min = df_less_src[f_col].iloc[_cdf_mapping_indices(n_less, n_more, power_range[0])].values
+        vals_max = df_less_src[f_col].iloc[_cdf_mapping_indices(n_less, n_more, power_range[1])].values
+        
+        sorted_freq_min = np.sort(vals_min)
+        sorted_freq_max = np.sort(vals_max)
+        
+        # Create Y axis (CDF probability)
+        y = np.arange(1, len(sorted_freq_min) + 1) / len(sorted_freq_min)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=sorted_freq_min, y=y, mode='lines', name=f'Min Power: {power_range[0]:.3f}'))
+        fig.add_trace(go.Scatter(x=sorted_freq_max, y=y, mode='lines', name=f'Max Power: {power_range[1]:.3f}'))
+        
+        fig.update_layout(
+            title='Cumulative Distribution Function for Min and Max Power',
+            xaxis_title='Frequency',
+            yaxis_title='CDF',
+            template='plotly_white',
+            legend_title='Power'
+        )
+        fig.show()
+
+    return power_range
+
+def merge_cdf(df1: pd.DataFrame, df2: pd.DataFrame, power_factor: float = None, plot: bool = False):
+    """
+    Merges two spectral DataFrames using CDF-based distribution mapping with a specific power factor.
+    
+    Args:
+        df1: First DataFrame.
+        df2: Second DataFrame.
+        power_factor: The power exponent for the mapping distribution.
+                      Negative values flip the mapping direction (mirror the CDF).
+                      If None, calculates the mean valid power automatically.
+        plot: If True, plots the distribution curve for the used power_factor.
+
+    Returns:
+        DataFrame: Merged DataFrame with columns
+        ['freq_data1', 'amp_data1', 'freq_data2', 'amp_data2'].
+    """
+    # Determine which DataFrame has fewer rows and prepare copies
+    if len(df1) < len(df2):
+        df_less_src, df_more_src = df1.copy(), df2.copy()
+        df1_role, df2_role = "less", "more"
+    else:
+        df_less_src, df_more_src = df2.copy(), df1.copy()
+        df1_role, df2_role = "more", "less"
+
+    # Find freq/amp cols - assume first freq-like and amp-like columns found
+    def get_cols(df):
+        cols = df.columns
+        f = next((c for c in cols if 'freq' in c.lower()), cols[0])
+        a = next((c for c in cols if 'amp' in c.lower()), cols[1])
+        return f, a
+
+    f1, a1 = get_cols(df_less_src)
+    f2, a2 = get_cols(df_more_src)
+
+    # Create standardized working copies
+    df_less_temp = pd.DataFrame({
+        'freq_data_less': df_less_src[f1],
+        'amp_data_less': df_less_src[a1]
+    })
+    
+    # Prepare result container based on larger dataframe
+    df_result = pd.DataFrame({
+        'freq_data_more': df_more_src[f2],
+        'amp_data_more': df_more_src[a2]
+    })
+    
+    n_less = len(df_less_temp)
+    n_more = len(df_result)
+    
+    # Calculate mapping
+    if power_factor is None:
+        pr = merge_cdf_analysis(df1, df2, plot=False)
+        power_factor = float(np.mean(pr))
+
+    if plot:
+        import plotly.graph_objects as go
+        
+        # Calculate min/max range for context
+        pr = merge_cdf_analysis(df1, df2, plot=False)
+        min_p, max_p = pr[0], pr[1]
+        
+        # We need values to plot CDF. Let's use the freq column of the smaller DF.
+        f_col = next((c for c in df_less_src.columns if 'freq' in c.lower()), df_less_src.columns[0])
+        
+        # Function to get sorted values for a given power
+        def get_sorted_vals(p):
+            idxs = _cdf_mapping_indices(n_less, n_more, p)
+            vals = df_less_src[f_col].iloc[idxs].values
+            return np.sort(vals)
+            
+        vals_min = get_sorted_vals(min_p)
+        vals_max = get_sorted_vals(max_p)
+        vals_sel = get_sorted_vals(power_factor)
+        
+        # Create Y axis (CDF probability)
+        y = np.arange(1, len(vals_sel) + 1) / len(vals_sel)
+
+        fig = go.Figure()
+        
+        # Add Min/Max context
+        fig.add_trace(go.Scatter(
+            x=vals_min, y=y, 
+            mode='lines', name=f'Min Power: {min_p:.3f}',
+            line=dict(dash='dot', width=1, color='gray')
+        ))
+        fig.add_trace(go.Scatter(
+            x=vals_max, y=y, 
+            mode='lines', name=f'Max Power: {max_p:.3f}',
+            line=dict(dash='dot', width=1, color='gray')
+        ))
+
+        # Add Selected
+        fig.add_trace(go.Scatter(
+            x=vals_sel, 
+            y=y, 
+            mode='lines', 
+            name=f'Selected Power: {float(power_factor):.3f}',
+            line=dict(width=3, color='#1f77b4')
+        ))
+        
+        fig.update_layout(
+            title=f'CDF Power Mapping (Selected={float(power_factor):.3f})',
+            xaxis_title='Frequency',
+            yaxis_title='CDF',
+            template='plotly_white',
+            legend_title='Power'
+        )
+        fig.show()
+
+    idxs = _cdf_mapping_indices(n_less, n_more, power_factor)
+    
+    # Assign mapped values to result dataframe
+    df_result['freq_data_less'] = df_less_temp['freq_data_less'].iloc[idxs].values
+    df_result['amp_data_less'] = df_less_temp['amp_data_less'].iloc[idxs].values
+
+    # Reorder columns to be consistent and store used power
+    df_out = df_result[['freq_data_less', 'amp_data_less', 'freq_data_more', 'amp_data_more']].copy()
+    
+    if df1_role == "less":
+        rename_map = {
+            "freq_data_less": "freq_data1",
+            "amp_data_less": "amp_data1",
+            "freq_data_more": "freq_data2",
+            "amp_data_more": "amp_data2",
+        }
+    else:
+        # df1 was "more", so "more" columns correspond to data1
+        rename_map = {
+            "freq_data_more": "freq_data1",
+            "amp_data_more": "amp_data1",
+            "freq_data_less": "freq_data2",
+            "amp_data_less": "amp_data2",
+        }
+
+    df_out = df_out.rename(columns=rename_map)
+    
+    # Reorder to standard [freq1, amp1, freq2, amp2]
+    df_out = df_out[['freq_data1', 'amp_data1', 'freq_data2', 'amp_data2']]
+
+    df_out.attrs["power_factor_used"] = float(power_factor)
+    df_out.attrs["df1_role"] = df1_role
+    df_out.attrs["df2_role"] = df2_role
+    return df_out
+
+def _sigmoid_mapping_indices(n_src: int, n_dst: int, sigmoid_range: float, sigmoid_slope: float = 1.0) -> np.ndarray:
+    if n_src == 0 or n_dst == 0:
+        return np.array([], dtype=int)
+    
+    # We want to map each target to nearest source in sigmoid space
+    # Target domain: [-6, 6] (standard approx for full sigmoid transition)
+    # The slope parameter steepens or flattens the curve
+    targets = expit(np.linspace(-6, 6, n_dst))
+    
+    # Source domain: [-sigmoid_range, sigmoid_range] with slope adjustment
+    # Applying slope to the input space effectively changes the steepness
+    sources = expit(np.linspace(-sigmoid_range * sigmoid_slope, sigmoid_range * sigmoid_slope, n_src))
+    
+    # Normalize sources to match target range [0, 1] if slope pushed them out or kept them in
+    # Actually, expit always returns [0, 1].
+    # But if range is small, expit output range is small (e.g. 0.45-0.55).
+    # If we want to "retain shape" but just stretch it, we might need to normalize the output of expit?
+    # Original logic relied on 'sigmoid_range' to define how much of the sigmoid curve we traverse.
+    # A large range (e.g. 10) traverses 0 to 1. A small range (0.1) traverses 0.48 to 0.52 (linear-ish).
+    
+    # If the user wants to "adjust the S curve", they usually mean steepness (slope).
+    # In the logistic function 1 / (1 + exp(-k * x)), k is the slope.
+    # Our current implementation uses 1 / (1 + exp(-x)) where x goes from -range to +range.
+    # This is equivalent to 1 / (1 + exp(-k * t)) where t goes from -1 to 1 and k = range.
+    
+    # So 'sigmoid_range' IS effectively the slope/steepness control over the normalized domain.
+    # If 'sigmoid_range' is small, the curve is flat (linear).
+    # If 'sigmoid_range' is large, the curve is steep (step-like).
+    
+    # However, to ensure we cover the full output space [0, 1] regardless of range/slope,
+    # we should normalize the SOURCE values to [0, 1] before matching with TARGET values (which are 0-1).
+    
+    # Let's adjust the logic:
+    # 1. Generate source distribution based on range (shape).
+    # 2. Normalize it to [0, 1] so min matches 0 and max matches 1.
+    # 3. Match with targets (which are uniform/sigmoid in their own space? No, targets are just quantiles).
+    
+    # WAIT: The original logic matched expit(target_space) with expit(source_space).
+    # Target space was fixed [-6, 6] -> approx [0, 1].
+    # Source space was [-range, range].
+    # If range is small, source values are [0.48, 0.52].
+    # Targets [0, 0.47] and [0.53, 1] would map to the endpoints 0 and n_src-1.
+    # This caused "clipping" where the middle of the target maps to the linear middle of source,
+    # but the edges of target map to edges of source.
+    
+    # If the goal is "retain S shape", we want the source distribution to Look like an S-curve
+    # distributed across the indices.
+    
+    # Let's add a 'slope' parameter that works alongside range?
+    # Or just interpret the user request: "retain general sigmoid shape" means we shouldn't use the linear-ish
+    # middle part (small range). We should probably use a wider range (large S shape) but maybe compress it?
+    
+    # Actually, `sigmoid_range` controls the shape.
+    # Large range = Step function (Wall).
+    # Medium range (~6) = Standard S.
+    # Small range = Linear / Diagonal.
+    
+    # If the user wants to "adjust the S curve", they likely want to change the steepness
+    # while KEEPING the start/end points at 0 and 1.
+    # The current implementation fails this for small ranges because it outputs [0.48, 0.52].
+    
+    # REVISED LOGIC:
+    # Always normalize source distribution to [0, 1].
+    # Then `sigmoid_range` solely controls the curvature (Linear vs S-curve vs Step).
+    
+    raw_sources = expit(np.linspace(-sigmoid_range, sigmoid_range, n_src))
+    
+    # Normalize to [0, 1]
+    s_min, s_max = raw_sources.min(), raw_sources.max()
+    if s_max - s_min < 1e-9:
+        # Avoid div by zero if range is 0 (shouldn't happen with linspace unless n_src=1)
+        sources = np.linspace(0, 1, n_src)
+    else:
+        sources = (raw_sources - s_min) / (s_max - s_min)
+        
+    # Targets are just evenly spaced quantiles [0, 1]
+    # We want to map these linear quantiles to the source distribution
+    targets = np.linspace(0, 1, n_dst)
+    
+    # Midpoints for classification
+    thresholds = (sources[:-1] + sources[1:]) / 2
+    
+    indices = np.digitize(targets, thresholds)
+    indices = np.clip(indices, 0, n_src - 1)
+    
+    return indices
+
+def merge_sigmoid_analysis(df1: pd.DataFrame, df2: pd.DataFrame, plot: bool = False):
+    """
+    Analyzes two DataFrames to find the valid sigmoid range for merging.
+    Ideally, we map the smaller dataframe into the larger one such that all original
+    values are represented.
+
+    Args:
+        df1: First DataFrame.
+        df2: Second DataFrame.
+        plot: If True, plots the Sigmoid distributions for min/max valid ranges using Plotly.
+
+    Returns:
+        list: [min_range, max_range] valid sigmoid range.
+    """
+    if len(df1) < len(df2):
+        df_less_src, df_more_src = df1.copy(), df2.copy()
+        n_less, n_more = len(df1), len(df2)
+    else:
+        df_less_src, df_more_src = df2.copy(), df1.copy()
+        n_less, n_more = len(df2), len(df1)
+
+    if n_less == 0 or n_more == 0:
+        return [1.0, 1.0]
+
+    def check_coverage(indices, n_src):
+        return len(np.unique(indices)) == n_src
+
+    # Search space - now purely shape control
+    # 0.1 (Linear) -> 10 (Steep S)
+    range_candidates = np.concatenate([
+        np.linspace(0.01, 10, 1000),
+        np.linspace(10.01, 100, 1000)
+    ])
+
+    valid_ranges = []
+
+    if n_less == n_more:
+        valid_ranges = [1.0]
+    else:
+        for r in range_candidates:
+            idxs = _sigmoid_mapping_indices(n_less, n_more, r)
+            if check_coverage(idxs, n_less):
+                valid_ranges.append(r)
+
+    if not valid_ranges:
+        print("Warning: No fully covering sigmoid range found. Using default [6.0, 6.0].")
+        res_range = [6.0, 6.0]
+    else:
+        res_range = [valid_ranges[0], valid_ranges[-1]]
+
+    if plot:
+        import plotly.graph_objects as go
+        
+        cols = df_less_src.columns
+        f_col = next((c for c in cols if 'freq' in c.lower()), cols[0])
+        
+        min_freq = float(df_less_src[f_col].min())
+        max_freq = float(df_less_src[f_col].max())
+        
+        # Plot distribution curves
+        sigmoid_bins = np.linspace(min_freq, max_freq, 500)
+        
+        # Map bins to [0, 1]
+        normalized = (sigmoid_bins - min_freq) / (max_freq - min_freq)
+        
+        # Helper to get normalized curve
+        def get_curve(r):
+            # Same logic as indices: generate standard expit, then normalize to 0-1
+            # But here we are plotting y vs x. 
+            # x is linear (bins). y should be the mapping curve.
+            
+            # The "shape" r implies mapping from domain [-r, r]
+            val_in_range = normalized * 2 * r - r
+            raw_y = expit(val_in_range)
+            
+            # Normalize raw_y to start at 0 and end at 1
+            s_min = expit(-r)
+            s_max = expit(r)
+            return (raw_y - s_min) / (s_max - s_min)
+
+        y_min = get_curve(res_range[0])
+        y_max = get_curve(res_range[1])
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=sigmoid_bins, y=y_min, mode='lines', name=f'Min Range (Shape): {res_range[0]:.3f}'))
+        fig.add_trace(go.Scatter(x=sigmoid_bins, y=y_max, mode='lines', name=f'Max Range (Shape): {res_range[1]:.3f}'))
+        
+        fig.update_layout(
+            title='Normalized Sigmoid Mapping',
+            xaxis_title='Frequency (Hz)',
+            yaxis_title='Normalized CDF (0-1)',
+            template='plotly_white'
+        )
+        fig.show()
+
+    return res_range
+
+def merge_sigmoid(df1: pd.DataFrame, df2: pd.DataFrame, sigmoid_range: float = None, plot: bool = False):
+    """
+    Merges two spectral DataFrames using Sigmoid-based distribution mapping.
+    
+    Args:
+        df1: First DataFrame.
+        df2: Second DataFrame.
+        sigmoid_range: The range factor for the sigmoid distribution.
+                      If None, calculates the mean valid range automatically.
+        plot: If True, plots the distribution curve for the used sigmoid_range.
+    
+    Returns:
+        DataFrame: Merged DataFrame with columns ['freq_data1', 'amp_data1', 'freq_data2', 'amp_data2'].
+    """
+    if len(df1) < len(df2):
+        df_less_src, df_more_src = df1.copy(), df2.copy()
+        df1_role = "less"
+    else:
+        df_less_src, df_more_src = df2.copy(), df1.copy()
+        df1_role = "more"
+        
+    def get_cols(df):
+        cols = df.columns
+        f = next((c for c in cols if 'freq' in c.lower()), cols[0])
+        a = next((c for c in cols if 'amp' in c.lower()), cols[1])
+        return f, a
+        
+    f1, a1 = get_cols(df_less_src)
+    f2, a2 = get_cols(df_more_src)
+    
+    df_less_temp = pd.DataFrame({
+        'freq_data_less': df_less_src[f1],
+        'amp_data_less': df_less_src[a1]
+    })
+    
+    df_result = pd.DataFrame({
+        'freq_data_more': df_more_src[f2],
+        'amp_data_more': df_more_src[a2]
+    })
+    
+    n_less = len(df_less_temp)
+    n_more = len(df_result)
+    
+    if sigmoid_range is None:
+        pr = merge_sigmoid_analysis(df1, df2, plot=False)
+        sigmoid_range = float(np.mean(pr))
+
+    if plot:
+        import plotly.graph_objects as go
+        from scipy.special import expit
+        
+        # Calculate min/max range for context
+        pr = merge_sigmoid_analysis(df1, df2, plot=False)
+        min_r, max_r = pr[0], pr[1]
+        
+        # Use freq column of the source (less) DF for x-axis range
+        min_freq = float(df_less_src[f1].min())
+        max_freq = float(df_less_src[f1].max())
+        
+        sigmoid_bins = np.linspace(min_freq, max_freq, 500)
+        normalized = (sigmoid_bins - min_freq) / (max_freq - min_freq)
+        
+        def get_curve_y(r):
+            val_in_range = normalized * 2 * r - r
+            raw_y = expit(val_in_range)
+            s_min = expit(-r)
+            s_max = expit(r)
+            return (raw_y - s_min) / (s_max - s_min)
+
+        fig = go.Figure()
+        
+        # Add Min/Max context
+        fig.add_trace(go.Scatter(
+            x=sigmoid_bins, y=get_curve_y(min_r), 
+            mode='lines', name=f'Min Range: {min_r:.3f}',
+            line=dict(dash='dot', width=1, color='gray')
+        ))
+        fig.add_trace(go.Scatter(
+            x=sigmoid_bins, y=get_curve_y(max_r), 
+            mode='lines', name=f'Max Range: {max_r:.3f}',
+            line=dict(dash='dot', width=1, color='gray')
+        ))
+
+        # Add Selected
+        fig.add_trace(go.Scatter(
+            x=sigmoid_bins, 
+            y=get_curve_y(float(sigmoid_range)), 
+            mode='lines', 
+            name=f'Selected Range: {float(sigmoid_range):.3f}',
+            line=dict(width=3, color='#1f77b4')
+        ))
+        
+        fig.update_layout(
+            title=f'Sigmoid Mapping Curve (Selected={float(sigmoid_range):.3f})',
+            xaxis_title='Frequency (Hz)',
+            yaxis_title='Normalized Distribution (0-1)',
+            template='plotly_white'
+        )
+        fig.show()
+        
+    idxs = _sigmoid_mapping_indices(n_less, n_more, sigmoid_range)
+    
+    df_result['freq_data_less'] = df_less_temp['freq_data_less'].iloc[idxs].values
+    df_result['amp_data_less'] = df_less_temp['amp_data_less'].iloc[idxs].values
+    
+    # Reorder columns and handle flipping to preserve df1 -> df2 order
+    df_out = df_result[['freq_data_less', 'amp_data_less', 'freq_data_more', 'amp_data_more']].copy()
+    
+    if df1_role == "less":
+        rename_map = {
+            "freq_data_less": "freq_data1",
+            "amp_data_less": "amp_data1",
+            "freq_data_more": "freq_data2",
+            "amp_data_more": "amp_data2",
+        }
+    else:
+        rename_map = {
+            "freq_data_more": "freq_data1",
+            "amp_data_more": "amp_data1",
+            "freq_data_less": "freq_data2",
+            "amp_data_less": "amp_data2",
+        }
+        
+    df_out = df_out.rename(columns=rename_map)
+    df_out = df_out[['freq_data1', 'amp_data1', 'freq_data2', 'amp_data2']]
+    df_out.attrs["sigmoid_range_used"] = float(sigmoid_range)
+    
+    return df_out
