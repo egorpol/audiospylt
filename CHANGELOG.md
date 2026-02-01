@@ -4,18 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0a1] - 2026-01-06
+## [0.6.0a2] - 2026-02-01
+
+### New feature
+- pip release (pip install audiospylt)
+
+### Added
+
+- New notebook organization:
+  - `case_studies/`: narrative-driven notebooks demonstrating end-to-end workflows (analytic and creative).
+  - `tutorials_tech/`: focused references explaining individual functions and parameters in isolation.
+  - `tutorials_workflow/`: toolchain-based examples for audio data handling, spectral analysis, DataFrame manipulation, and sound synthesis.
+- Several new notebooks added across these sections.
+- Google Colab demo notebooks (should work similarly on the Jupyter4NFDI platform).
 
 ### Changed
 - Major refactor and cleanup for the first official PyPI release.
 - Integrated notebook-related dependencies (`ipython`, `ipywidgets`, `nbformat`) into core requirements for easier installation.
 - Improved package structure for better distribution.
-- new tutorial notebook structure:
-- /case_studies - narrative-driven notebooks that demonstrate end-to-end workflows for both analytic and creative purposes
-/tutorials_tech - explain individual functions and parameters in isolation, serving as a functional reference. 
-/tutorials_workflow - focused examples demonstrating specific toolchains for audio data handling, spectral analysis, DataFrame manipulation, and sound synthesis.
-- most of the old notebooks were sorted accordingly, several new notebooks added
-- 
+- Reorganized most existing notebooks into the new structure (legacy notebooks are kept in `notebooks_legacy/` for now).
 
 ## [0.5.0-alpha] - 2025-10-09
 
