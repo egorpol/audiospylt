@@ -38,7 +38,7 @@ def plot_waves(
                               wave_params columns 'fade_in_s' / 'fade_out_s' for exact control.
     - fade_shape: fade curve: 'linear' | 'cosine' | 'sqrt_hann'
                   - 'cosine' is a raised-cosine (Hann half-window) amplitude ramp
-                  - 'sqrt_hann' is useful for *constant-power* crossfades (w1^2 + w2^2 ≈ 1)
+                  - 'sqrt_hann' is useful for *constant-power* crossfades (w1^2 + w2^2 ~= 1)
     - interval_mode: how to interpret [time_start, time_stop] for selecting samples:
         - "closed": include stop sample (legacy behavior; can double-count boundaries)
         - "half_open": exclude stop sample (often reduces boundary artifacts)
@@ -50,7 +50,7 @@ def plot_waves(
             - does NOT guarantee phase continuity across events when the frequency changes between events
         - "chirp": integrate a linear freq ramp to get a continuous phase *within* the event
     - show_waveform: if True, show the synthesized waveform only
-    - show_fft: if True, show a spectrogram using `py_scripts.audio_utils.plot_spectrogram`
+    - show_fft: if True, show a spectrogram using `audiospylt.audio_utils.plot_spectrogram`
     - spectrogram_kwargs: optional dict forwarded to `plot_spectrogram(...)`
 
     Backwards-compat:
@@ -217,7 +217,7 @@ def plot_waves(
         if phase_mode == "reset":
             # Phase resets at each segment start.
             #
-            # Note: for time-varying frequency, using phase = 2π f(tau) tau will *not*
+            # Note: for time-varying frequency, using phase = 2*pi*f(tau)*tau will *not*
             # preserve the intended instantaneous frequency (it introduces a +tau f'(tau)
             # term). Because our per-event frequency model is linear, we integrate it so
             # the synthesized tone follows freq_start->freq_stop as expected.
@@ -231,19 +231,19 @@ def plot_waves(
             # Absolute-time referenced phase.
             #
             # For constant-frequency segments (freq_start == freq_stop), this is the classic
-            # phase = 2π f t, which keeps phase continuous across adjacent segments at the same f.
+            # phase = 2*pi*f*t, which keeps phase continuous across adjacent segments at the same f.
             #
-            # IMPORTANT: If freq is time-varying and you do phase = 2π f(t) t, the instantaneous
+            # IMPORTANT: If freq is time-varying and you do phase = 2*pi*f(t)*t, the instantaneous
             # frequency becomes f(t) + t f'(t) (product rule), which can produce "extra" partials
             # that are not in the input table. To keep the intended instantaneous frequency for
             # linear ramps, we integrate the linear model over the event and add an absolute-time
-            # offset so that the constant-frequency case matches 2π f t.
+            # offset so that the constant-frequency case matches 2*pi*f*t.
             f0 = float(freq_start)
             f1 = float(freq_stop)
             phase = 2.0 * np.pi * (f0 * t[idx] + 0.5 * (f1 - f0) * (tau * tau) / dur)
         else:  # "chirp"
             # Continuous phase *within* an event with a linear frequency ramp:
-            # phi(tau) = 2π * ∫ f(u) du = 2π*(f0*tau + 0.5*(f1-f0)*tau^2/dur)
+            # phi(tau) = 2*pi * integral f(u) du = 2*pi*(f0*tau + 0.5*(f1-f0)*tau^2/dur)
             f0 = float(freq_start)
             f1 = float(freq_stop)
             phase = 2.0 * np.pi * (f0 * tau + 0.5 * (f1 - f0) * (tau * tau) / dur)
@@ -283,7 +283,7 @@ def crossfade_adjacent_events(
     boundary_tol_s: Optional[float] = None,
 ) -> pd.DataFrame:
     """
-    Create a *true crossfade* between adjacent (abuttting) events by overlapping them in time and
+    Create a *true crossfade* between adjacent (abutting) events by overlapping them in time and
     adding per-row fade durations.
 
     This is most useful for "frame-based" representations where each (frequency-bin) component is

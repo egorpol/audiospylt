@@ -5,6 +5,7 @@ from datetime import datetime
 import soundfile as sf
 from pathlib import Path
 import re
+from typing import Any, Iterable, Mapping
 
 def ensure_finite_audio(audio_data, name="audio_data", sanitize=True, verbose=True):
     """
@@ -186,6 +187,7 @@ def generate_wave_file(
     custom_filename=None,
     filename_template=None,
     timestamp_format="%H_%M_%S",
+    output_dir: str | Path | None = None,
     save_to_file=True,
 ):
     """
@@ -233,13 +235,16 @@ def generate_wave_file(
         timestamp_format=timestamp_format,
     )
 
-    # get the current working directory
-    current_dir = os.getcwd()
+    # Decide output directory.
+    # Default behavior (backwards compatible): write into ./rendered_audio relative to CWD.
+    if output_dir is None:
+        output_directory = os.path.join(os.getcwd(), "rendered_audio")
+    else:
+        output_directory = str(Path(output_dir))
 
-    # create 'rendered_audio' directory if it doesn't exist
-    output_directory = os.path.join(current_dir, "rendered_audio")
+    # Create output directory if it doesn't exist.
     if not os.path.exists(output_directory):
-        os.makedirs(output_directory)
+        os.makedirs(output_directory, exist_ok=True)
 
     # construct the full path to save the audio
     file_path = os.path.join(output_directory, output_filename)
@@ -269,6 +274,7 @@ def render_audio(
     custom_filename=None,
     filename_template=None,
     timestamp_format="%H_%M_%S",
+    output_dir: str | Path | None = None,
     save_audio=True,
     player=True,
     sanitize=True,
@@ -299,6 +305,7 @@ def render_audio(
         custom_filename=custom_filename,
         filename_template=filename_template,
         timestamp_format=timestamp_format,
+        output_dir=output_dir,
         save_to_file=save_audio,
     )
 
@@ -312,3 +319,151 @@ def render_audio(
             display(Audio(audio_data, rate=fs_target))
 
     return result
+
+
+def _fs_initial_from_config(config: Mapping[str, Any], *, verbose: bool = True) -> int:
+    """
+    Infer an integer sample rate (Hz) from a config dict containing either:
+      - dt: sample spacing in seconds (preferred)
+      - n: legacy alias for dt
+    """
+    if "dt" in config:
+        dt = float(config["dt"])
+    elif "n" in config:
+        dt = float(config["n"])
+    else:
+        raise KeyError("Config must include 'dt' (preferred) or legacy 'n'.")
+    if dt <= 0:
+        raise ValueError(f"dt must be > 0; got {dt}")
+
+    fs_float = 1.0 / dt
+    fs_int = int(round(fs_float))
+    if verbose and abs(fs_float - fs_int) > 1e-9:
+        print(
+            f"Warning: 1/dt={fs_float} is not an integer Hz; using rounded fs_initial={fs_int}."
+        )
+    return fs_int
+
+
+def mix_selected_waveforms(
+    waveform_data: Mapping[str, np.ndarray],
+    selected_waveforms: Iterable[str],
+    *,
+    mode: str = "sum",
+    strict: bool = False,
+    verbose: bool = True,
+) -> np.ndarray:
+    """
+    Combine multiple named waveforms into a single 1D float array.
+
+    - mode='sum': additive mix (recommended; export path normalizes to [-1, 1] anyway)
+    - mode='mean': average mix (keeps amplitude comparable when adding many signals)
+    """
+    names = list(selected_waveforms)
+    ys: list[np.ndarray] = []
+    used: list[str] = []
+
+    for name in names:
+        if name in waveform_data:
+            ys.append(np.asarray(waveform_data[name], dtype=float).reshape(-1))
+            used.append(name)
+        elif strict:
+            raise KeyError(f"Requested waveform '{name}' not found in waveform_data.")
+        elif verbose:
+            print(f"Warning: requested waveform '{name}' not found in waveform_data; skipping.")
+
+    if not ys:
+        raise ValueError(
+            "No valid waveforms to mix. "
+            "Check config['selected_waveforms'] and waveform_data keys."
+        )
+
+    min_len = min(int(y.size) for y in ys)
+    if any(y.size != min_len for y in ys):
+        if verbose:
+            print(f"Warning: waveform lengths differ; trimming all to {min_len} samples.")
+        ys = [y[:min_len] for y in ys]
+
+    y_mix = np.zeros(min_len, dtype=float)
+    for y in ys:
+        y_mix += y
+
+    mode_norm = mode.strip().lower()
+    if mode_norm == "sum":
+        return y_mix
+    if mode_norm == "mean":
+        return y_mix / float(len(ys))
+    raise ValueError("mode must be 'sum' or 'mean'")
+
+
+def render_selected_waveforms(
+    waveform_data: Mapping[str, np.ndarray],
+    config: Mapping[str, Any],
+    *,
+    mix_mode: str = "sum",
+    fs_target_name: str | int | None = "44.1kHz",
+    bit_rate: int = 24,
+    custom_filename: str | None = None,
+    filename_template: str | None = None,
+    timestamp_format: str = "%H_%M_%S",
+    output_dir: str | Path | None = None,
+    save_audio: bool = True,
+    player: bool = True,
+    sanitize: bool = True,
+    verbose: bool = True,
+):
+    """
+    Notebook-friendly convenience function:
+
+    - mixes ALL waveforms listed in config['selected_waveforms'] into a single stream
+    - derives fs_initial from config['dt'] (or legacy 'n')
+    - calls render_audio(...) with the usual export/playback options
+
+    Parameters (high-level):
+      - waveform_data: dict-like mapping {name -> 1D array} (e.g. from waveform_utils.generate_waveforms)
+      - config: must contain 'selected_waveforms' (list[str]) and 'dt' (or legacy 'n')
+
+    Parameters (audio/rendering):
+      - mix_mode: how to combine selected waveforms into one stream:
+          - "sum": additive mix (recommended; export normalizes anyway)
+          - "mean": average mix (keeps level similar when adding many signals)
+      - fs_target_name: export sample rate preset, "source" to keep original, or an int Hz.
+          Examples: "44.1kHz", "48kHz", "96kHz", "source", 44100
+      - bit_rate: PCM bit depth (supported: 16, 24)
+      - custom_filename: exact output filename (basename); mutually exclusive with filename_template
+      - filename_template: format string with placeholders:
+          {fs_target_name}, {bit_rate}, {timestamp}, {timestamp_format}
+      - timestamp_format: strftime format used to fill {timestamp}
+      - output_dir: directory to write the .wav into when save_audio=True. If None, defaults to
+          ./rendered_audio relative to the current working directory.
+      - save_audio: True -> write .wav and return file path; False -> return (audio_data, fs_target)
+      - player: if True, display an IPython Audio widget
+      - sanitize: if True, replace NaN/Inf with finite values before exporting
+      - verbose: print warnings/info (missing waveforms, length mismatches, dt rounding, etc.)
+
+    Note:
+      - In notebooks, if this is the last expression in a cell, Jupyter will print the return value.
+        Assign it (e.g. `_ = render_selected_waveforms(...)`) or add a trailing ';' to suppress output.
+    """
+    fs_initial = _fs_initial_from_config(config, verbose=verbose)
+    y = mix_selected_waveforms(
+        waveform_data,
+        config.get("selected_waveforms", []),
+        mode=mix_mode,
+        strict=False,
+        verbose=verbose,
+    )
+    return render_audio(
+        y,
+        fs_initial,
+        fs_target_name=fs_target_name,
+        bit_rate=bit_rate,
+        custom_filename=custom_filename,
+        filename_template=filename_template,
+        timestamp_format=timestamp_format,
+        output_dir=output_dir,
+        save_audio=save_audio,
+        player=player,
+        sanitize=sanitize,
+        verbose=verbose,
+    )
