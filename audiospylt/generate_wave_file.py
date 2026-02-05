@@ -32,6 +32,39 @@ def ensure_finite_audio(audio_data, name="audio_data", sanitize=True, verbose=Tr
 
     raise ValueError(f"{name} contains {n_bad} NaN/Inf samples")
 
+def _resample_by_sampling(y: np.ndarray, fs_initial: int, fs_target: int) -> np.ndarray:
+    """
+    Resample by directly sampling the waveform onto the target time grid.
+
+    This is intentionally *not* anti-aliased. When downsampling, any content above the target
+    Nyquist frequency (fs_target/2) will fold back ("mirror") into the audible band, similar
+    to classic sampling/aliasing. This can be useful when your synthesis intentionally includes
+    components above the target Nyquist but you still want to export at a common rate like 44.1 kHz.
+
+    Notes:
+    - This assumes y represents a waveform sampled at fs_initial.
+    - The output length preserves the *endpoint time* convention used elsewhere in this repo:
+      if the last input sample occurs at t=(N-1)/fs_initial, the last output sample occurs at
+      approximately the same t for fs_target.
+    """
+    y = np.asarray(y, dtype=float).reshape(-1)
+    fs_initial = int(fs_initial)
+    fs_target = int(fs_target)
+    if fs_initial <= 0 or fs_target <= 0:
+        raise ValueError("fs_initial and fs_target must be > 0")
+    if y.size <= 1 or fs_target == fs_initial:
+        return y
+
+    # Preserve the "last sample time" convention: t_last = (N-1)/fs.
+    duration_s = (int(y.size) - 1) / float(fs_initial)
+    n_out = int(round(duration_s * float(fs_target))) + 1
+    n_out = max(1, n_out)
+
+    t_in = np.arange(int(y.size), dtype=float) / float(fs_initial)
+    # Use linspace so the last sample lands exactly on duration_s (helps notebook alignment).
+    t_out = np.linspace(0.0, duration_s, num=n_out, endpoint=True, dtype=float)
+    return np.interp(t_out, t_in, y).astype(float, copy=False)
+
 def scale_samples(samples, bit_rate):
     if bit_rate == 16:
         return np.int16(samples * (2**15 - 1))
@@ -189,6 +222,8 @@ def generate_wave_file(
     timestamp_format="%H_%M_%S",
     output_dir: str | Path | None = None,
     save_to_file=True,
+    *,
+    alias_above_nyquist: bool = False,
 ):
     """
     Export audio to a WAV file (or return the exported samples when save_to_file=False).
@@ -197,6 +232,12 @@ def generate_wave_file(
       - preset strings: '44.1kHz','48kHz','88.2kHz','96kHz','192kHz'
       - 'source' (or None): keep fs_initial (no resampling)
       - int: explicit Hz (e.g., 44100)
+
+    alias_above_nyquist:
+      - False (default): use bandlimited FFT resampling (scipy.signal.resample). Content above the
+        target Nyquist is removed rather than folded.
+      - True: resample by sampling onto the target time grid (no anti-aliasing). When downsampling,
+        content above target Nyquist will fold/mirror into-band (intentional aliasing).
     """
     # Normalize/validate input early so downstream operations are predictable.
     y_combined = np.asarray(y_combined, dtype=float).reshape(-1)
@@ -211,10 +252,16 @@ def generate_wave_file(
     if fs_target == fs_initial:
         y_resampled = y_combined
     else:
-        # calculate the number of samples in the resampled signal
-        num_samples_resampled = int(len(y_combined) * fs_target / fs_initial)
-        # resample the signal to the target sample rate
-        y_resampled = resample(y_combined, num_samples_resampled)
+        if alias_above_nyquist:
+            # Intentionally allow aliasing ("Nyquist mirroring") when downsampling.
+            y_resampled = _resample_by_sampling(y_combined, fs_initial=fs_initial, fs_target=fs_target)
+        else:
+            # Bandlimited FFT resampling.
+            #
+            # NOTE: scipy.signal.resample operates in the frequency domain; when downsampling it
+            # removes content above the new Nyquist instead of folding it.
+            num_samples_resampled = int(len(y_combined) * fs_target / fs_initial)
+            y_resampled = resample(y_combined, num_samples_resampled)
 
     # Normalize the resampled signal to the range of -1 to 1.
     # Guard against silent/all-zero signals to avoid division by 0 -> NaNs.
@@ -279,6 +326,8 @@ def render_audio(
     player=True,
     sanitize=True,
     verbose=True,
+    *,
+    alias_above_nyquist: bool = False,
 ):
     """
     Convenience wrapper around `generate_wave_file`:
@@ -289,6 +338,11 @@ def render_audio(
 
     fs_target_name supports the same values as `generate_wave_file`, including 'source' to keep
     the original sample rate (no resampling).
+
+    alias_above_nyquist:
+      - False (default): bandlimited resampling (out-of-band content is removed)
+      - True: intentionally allow aliasing when downsampling so >Nyquist components fold/mirror
+        into-band while still exporting at the target sample rate.
 
     Returns:
       - file path (str) if save_audio=True
@@ -307,6 +361,7 @@ def render_audio(
         timestamp_format=timestamp_format,
         output_dir=output_dir,
         save_to_file=save_audio,
+        alias_above_nyquist=alias_above_nyquist,
     )
 
     if player:
@@ -411,6 +466,7 @@ def render_selected_waveforms(
     player: bool = True,
     sanitize: bool = True,
     verbose: bool = True,
+    alias_above_nyquist: bool = False,
 ):
     """
     Notebook-friendly convenience function:
@@ -466,4 +522,5 @@ def render_selected_waveforms(
         player=player,
         sanitize=sanitize,
         verbose=verbose,
+        alias_above_nyquist=alias_above_nyquist,
     )
