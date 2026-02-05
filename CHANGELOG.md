@@ -6,11 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [0.6.0a2] - 2026-02-01
 
-### New feature
-- pip release (pip install audiospylt)
-
 ### Added
-
+- First PyPI release (`pip install audiospylt`).
 - New notebook organization:
   - `case_studies/`: narrative-driven notebooks demonstrating end-to-end workflows (analytic and creative).
   - `tutorials_tech/`: focused references explaining individual functions and parameters in isolation.

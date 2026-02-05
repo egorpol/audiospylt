@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "audiospylt"
-version = "0.6.0a1"
+version = "0.6.0a2"
 description = "Python toolbox for sound analysis, resynthesis, and visual/symbolic representations."
 authors = [{ name = "egorpol" }]
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -34,6 +34,7 @@ dependencies = [
   "scipy",
   "soundfile",
   "tqdm",
+  "typing",
   "verovio",
 ]
 
