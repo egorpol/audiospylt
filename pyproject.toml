@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "audiospylt"
-version = "0.6.0a2"
+version = "0.6.1"
 description = "Python toolbox for sound analysis, resynthesis, and visual/symbolic representations."
 authors = [{ name = "egorpol" }]
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = { file = "LICENSE" }
 keywords = ["audio", "dft", "resynthesis", "music", "mei", "visualization"]
 classifiers = [
@@ -17,8 +17,6 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
@@ -34,7 +32,6 @@ dependencies = [
   "scipy",
   "soundfile",
   "tqdm",
-  "typing",
   "verovio",
 ]
 

@@ -9,6 +9,5 @@ requests
 scipy
 soundfile
 tqdm
-typing
 verovio
 ipywidgets

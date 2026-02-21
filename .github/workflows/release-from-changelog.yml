@@ -1,0 +1,53 @@
+name: GitHub Release from Changelog
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES_FILE="release_notes.md"
+
+          awk -v version="$VERSION" '
+            $0 ~ "^## \\[" version "\\]" {found=1; next}
+            found && $0 ~ "^## \\[" {exit}
+            found {print}
+          ' CHANGELOG.md > "$NOTES_FILE"
+
+          sed -i '/./,$!d' "$NOTES_FILE"
+
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "Could not find changelog section for version ${VERSION}."
+            exit 1
+          fi
+
+          if [[ "$VERSION" =~ (a|b|rc) ]]; then
+            PRERELEASE="true"
+          else
+            PRERELEASE="false"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v${{ steps.changelog.outputs.version }}
+          body_path: release_notes.md
+          prerelease: ${{ steps.changelog.outputs.prerelease }}
