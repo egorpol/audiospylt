@@ -1,7 +1,9 @@
-IPython
-nbformat>=4.2.0
+ipython
+ipykernel
+ipywidgets
 librosa
 matplotlib
+nbformat>=4.2.0
 numpy
 pandas
 plotly
@@ -10,4 +12,3 @@ scipy
 soundfile
 tqdm
 verovio
-ipywidgets

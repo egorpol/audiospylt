@@ -12,19 +12,20 @@ def save_df_tsv(df, filename, *, index=False, verbose=True, make_dirs=True):
     - Creates parent directories by default (make_dirs=True).
     - Raises on error (so notebooks fail loudly when something is wrong).
     """
+    save_path = os.path.abspath(filename)
+
     if make_dirs:
-        parent = os.path.dirname(filename)
+        parent = os.path.dirname(save_path)
         if parent:
             os.makedirs(parent, exist_ok=True)
 
-    df.to_csv(filename, sep="\t", index=index)
+    df.to_csv(save_path, sep="\t", index=index)
 
     if verbose:
-        cwd = os.getcwd()
         ts = datetime.now()
-        print(f"Data saved successfully to {cwd}\\{filename} at {ts}.")
+        print(f"Data saved successfully to {save_path} at {ts}.")
 
-    return filename
+    return save_path
 
 
 def events_df_from_peaks_by_interval(

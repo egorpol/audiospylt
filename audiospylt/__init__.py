@@ -5,7 +5,7 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     __version__ = version("audiospylt")
 except PackageNotFoundError:  # pragma: no cover
-    __version__ = "0.6.2"
+    __version__ = "0.6.3"
 
 from .generate_wave_file import render_audio
 from .audio_utils import load_audio_sample_and_preview

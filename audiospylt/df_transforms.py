@@ -563,7 +563,13 @@ def _cdf_mapping_indices(n_src: int, n_dst: int, power: float) -> np.ndarray:
         indices[-1] = 0
     return indices
 
-def merge_cdf_analysis(df1: pd.DataFrame, df2: pd.DataFrame, plot: bool = False):
+def merge_cdf_analysis(
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+    plot: bool = False,
+    plot_width: int = None,
+    plot_height: int = None,
+):
     """
     Analyzes two DataFrames to find the valid power range for CDF-based merging.
     Ideally, we map the smaller dataframe into the larger one such that all original
@@ -573,6 +579,8 @@ def merge_cdf_analysis(df1: pd.DataFrame, df2: pd.DataFrame, plot: bool = False)
         df1: First DataFrame.
         df2: Second DataFrame.
         plot: If True, plots the CDF for min/max valid powers using Plotly.
+        plot_width: Optional Plotly figure width in pixels.
+        plot_height: Optional Plotly figure height in pixels.
 
     Returns:
         list: [min_power, max_power] range.
@@ -639,18 +647,33 @@ def merge_cdf_analysis(df1: pd.DataFrame, df2: pd.DataFrame, plot: bool = False)
         fig.add_trace(go.Scatter(x=sorted_freq_min, y=y, mode='lines', name=f'Min Power: {power_range[0]:.3f}'))
         fig.add_trace(go.Scatter(x=sorted_freq_max, y=y, mode='lines', name=f'Max Power: {power_range[1]:.3f}'))
         
+        layout_kwargs = {
+            "title": 'Cumulative Distribution Function for Min and Max Power',
+            "xaxis_title": 'Frequency',
+            "yaxis_title": 'CDF',
+            "template": 'plotly_white',
+            "legend_title": 'Power',
+        }
+        if plot_width is not None:
+            layout_kwargs["width"] = plot_width
+        if plot_height is not None:
+            layout_kwargs["height"] = plot_height
+
         fig.update_layout(
-            title='Cumulative Distribution Function for Min and Max Power',
-            xaxis_title='Frequency',
-            yaxis_title='CDF',
-            template='plotly_white',
-            legend_title='Power'
+            **layout_kwargs
         )
         fig.show()
 
     return power_range
 
-def merge_cdf(df1: pd.DataFrame, df2: pd.DataFrame, power_factor: float = None, plot: bool = False):
+def merge_cdf(
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+    power_factor: float = None,
+    plot: bool = False,
+    plot_width: int = None,
+    plot_height: int = None,
+):
     """
     Merges two spectral DataFrames using CDF-based distribution mapping with a specific power factor.
     
@@ -661,6 +684,8 @@ def merge_cdf(df1: pd.DataFrame, df2: pd.DataFrame, power_factor: float = None, 
                       Negative values flip the mapping direction (mirror the CDF).
                       If None, calculates the mean valid power automatically.
         plot: If True, plots the distribution curve for the used power_factor.
+        plot_width: Optional Plotly figure width in pixels.
+        plot_height: Optional Plotly figure height in pixels.
 
     Returns:
         DataFrame: Merged DataFrame with columns
@@ -750,12 +775,20 @@ def merge_cdf(df1: pd.DataFrame, df2: pd.DataFrame, power_factor: float = None, 
             line=dict(width=3, color='#1f77b4')
         ))
         
+        layout_kwargs = {
+            "title": f'CDF Power Mapping (Selected={float(power_factor):.3f})',
+            "xaxis_title": 'Frequency',
+            "yaxis_title": 'CDF',
+            "template": 'plotly_white',
+            "legend_title": 'Power',
+        }
+        if plot_width is not None:
+            layout_kwargs["width"] = plot_width
+        if plot_height is not None:
+            layout_kwargs["height"] = plot_height
+
         fig.update_layout(
-            title=f'CDF Power Mapping (Selected={float(power_factor):.3f})',
-            xaxis_title='Frequency',
-            yaxis_title='CDF',
-            template='plotly_white',
-            legend_title='Power'
+            **layout_kwargs
         )
         fig.show()
 
@@ -881,7 +914,13 @@ def _sigmoid_mapping_indices(n_src: int, n_dst: int, sigmoid_range: float, sigmo
     
     return indices
 
-def merge_sigmoid_analysis(df1: pd.DataFrame, df2: pd.DataFrame, plot: bool = False):
+def merge_sigmoid_analysis(
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+    plot: bool = False,
+    plot_width: int = None,
+    plot_height: int = None,
+):
     """
     Analyzes two DataFrames to find the valid sigmoid range for merging.
     Ideally, we map the smaller dataframe into the larger one such that all original
@@ -891,6 +930,8 @@ def merge_sigmoid_analysis(df1: pd.DataFrame, df2: pd.DataFrame, plot: bool = Fa
         df1: First DataFrame.
         df2: Second DataFrame.
         plot: If True, plots the Sigmoid distributions for min/max valid ranges using Plotly.
+        plot_width: Optional Plotly figure width in pixels.
+        plot_height: Optional Plotly figure height in pixels.
 
     Returns:
         list: [min_range, max_range] valid sigmoid range.
@@ -968,17 +1009,30 @@ def merge_sigmoid_analysis(df1: pd.DataFrame, df2: pd.DataFrame, plot: bool = Fa
         fig.add_trace(go.Scatter(x=sigmoid_bins, y=y_min, mode='lines', name=f'Min Range (Shape): {res_range[0]:.3f}'))
         fig.add_trace(go.Scatter(x=sigmoid_bins, y=y_max, mode='lines', name=f'Max Range (Shape): {res_range[1]:.3f}'))
         
-        fig.update_layout(
-            title='Normalized Sigmoid Mapping',
-            xaxis_title='Frequency (Hz)',
-            yaxis_title='Normalized CDF (0-1)',
-            template='plotly_white'
-        )
+        layout_kwargs = {
+            "title": 'Normalized Sigmoid Mapping',
+            "xaxis_title": 'Frequency (Hz)',
+            "yaxis_title": 'Normalized CDF (0-1)',
+            "template": 'plotly_white',
+        }
+        if plot_width is not None:
+            layout_kwargs["width"] = plot_width
+        if plot_height is not None:
+            layout_kwargs["height"] = plot_height
+
+        fig.update_layout(**layout_kwargs)
         fig.show()
 
     return res_range
 
-def merge_sigmoid(df1: pd.DataFrame, df2: pd.DataFrame, sigmoid_range: float = None, plot: bool = False):
+def merge_sigmoid(
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+    sigmoid_range: float = None,
+    plot: bool = False,
+    plot_width: int = None,
+    plot_height: int = None,
+):
     """
     Merges two spectral DataFrames using Sigmoid-based distribution mapping.
     
@@ -988,6 +1042,8 @@ def merge_sigmoid(df1: pd.DataFrame, df2: pd.DataFrame, sigmoid_range: float = N
         sigmoid_range: The range factor for the sigmoid distribution.
                       If None, calculates the mean valid range automatically.
         plot: If True, plots the distribution curve for the used sigmoid_range.
+        plot_width: Optional Plotly figure width in pixels.
+        plot_height: Optional Plotly figure height in pixels.
     
     Returns:
         DataFrame: Merged DataFrame with columns ['freq_data1', 'amp_data1', 'freq_data2', 'amp_data2'].
@@ -1070,12 +1126,18 @@ def merge_sigmoid(df1: pd.DataFrame, df2: pd.DataFrame, sigmoid_range: float = N
             line=dict(width=3, color='#1f77b4')
         ))
         
-        fig.update_layout(
-            title=f'Sigmoid Mapping Curve (Selected={float(sigmoid_range):.3f})',
-            xaxis_title='Frequency (Hz)',
-            yaxis_title='Normalized Distribution (0-1)',
-            template='plotly_white'
-        )
+        layout_kwargs = {
+            "title": f'Sigmoid Mapping Curve (Selected={float(sigmoid_range):.3f})',
+            "xaxis_title": 'Frequency (Hz)',
+            "yaxis_title": 'Normalized Distribution (0-1)',
+            "template": 'plotly_white',
+        }
+        if plot_width is not None:
+            layout_kwargs["width"] = plot_width
+        if plot_height is not None:
+            layout_kwargs["height"] = plot_height
+
+        fig.update_layout(**layout_kwargs)
         fig.show()
         
     idxs = _sigmoid_mapping_indices(n_less, n_more, sigmoid_range)

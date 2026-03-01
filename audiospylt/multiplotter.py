@@ -2,6 +2,7 @@
 
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.colors import sample_colorscale
 import random
 import numpy as np
 from typing import List, Optional, Tuple, Any, Iterator, Dict, Sequence
@@ -146,7 +147,10 @@ def _load_and_prepare_data(
 def plot_combined(
     files: Optional[List[str]] = None,
     dfs: Optional[List[pd.DataFrame]] = None,
-    df_labels: Optional[List[str]] = None
+    df_labels: Optional[List[str]] = None,
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
 ) -> None:
     """
     Plots data from multiple sources (files and/or DataFrames) on the same 2D canvas.
@@ -158,6 +162,7 @@ def plot_combined(
     - df_labels (list, optional): List of labels corresponding to each DataFrame in `dfs`.
                                  If not provided, DataFrames will be labeled "DataFrame 0", "DataFrame 1", etc.
                                  File paths are used as labels for file-based sources.
+    - plot_width / plot_height: optional Plotly figure size in pixels.
     """
     all_data = _load_and_prepare_data(files, dfs, df_labels)
     if not all_data:
@@ -196,8 +201,8 @@ def plot_combined(
         xaxis_title_text='Time (s)',
         yaxis_title_text='Frequency (Hz)',
         template='plotly_white',
-        width=900,
-        height=700,
+        width=(900 if plot_width is None else int(plot_width)),
+        height=(700 if plot_height is None else int(plot_height)),
         legend_title_text='Sources'
     )
     show_plotly(fig)
@@ -211,6 +216,9 @@ def plot_combined_3d(
     flip: Optional[Dict[str, bool]] = None,
     axis_pad_frac: float = 0.05,
     zero_based_axes: bool = True,
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
 ) -> None:
     """
     Plots data from multiple sources (files and/or DataFrames) on a 3D canvas.
@@ -233,6 +241,7 @@ def plot_combined_3d(
                                        Example: {'freq': True} or {'x': True}
     - axis_pad_frac (float): Fractional padding applied to axis ranges (when ranges are set).
     - zero_based_axes (bool): If True, range mins are clamped to <= 0 (useful for time/amp/freq plots).
+    - plot_width / plot_height: optional Plotly figure size in pixels.
     """
     all_data = _load_and_prepare_data(files, dfs, df_labels)
     if not all_data:
@@ -359,8 +368,8 @@ def plot_combined_3d(
         scene=scene_dict,
         template='plotly_white',
         showlegend=True,
-        width=900,
-        height=700,
+        width=(900 if plot_width is None else int(plot_width)),
+        height=(700 if plot_height is None else int(plot_height)),
         legend_title_text='Sources'
     )
     show_plotly(fig_3d)
@@ -387,6 +396,9 @@ def plot_scatter(
     amp_plot_pad: Optional[float] = None,
     amp_plot_pad_frac: float = 0.10,
     amp_plot_pad_ratio: float = 0.15,
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
 ) -> None:
     """
     Plots data from multiple sources (files and/or DataFrames) on a 2D scatter plot.
@@ -414,6 +426,7 @@ def plot_scatter(
     - freq_plot_pad_hz/freq_plot_pad_frac: Absolute/relative padding for x-range in Hz.
     - amp_plot_min/amp_plot_max: Override y-axis range (linear/mixed).
     - amp_plot_pad/amp_plot_pad_frac/amp_plot_pad_ratio: Padding for y-range (ratio used in log mode).
+    - plot_width / plot_height: optional Plotly figure size in pixels.
     """
     all_data = _load_and_prepare_data(files, dfs, df_labels)
     if not all_data:
@@ -534,8 +547,8 @@ def plot_scatter(
         xaxis_title_text=x_title,
         yaxis_title_text="Amplitude",
         template='plotly_white',
-        width=900,
-        height=700,
+        width=(900 if plot_width is None else int(plot_width)),
+        height=(700 if plot_height is None else int(plot_height)),
         legend_title_text='Sources'
     )
 
@@ -637,6 +650,9 @@ def plot_scatter_binned(
     amp_axis_mix: float = 0.5,
     amp_log_floor: float = 1e-12,
     title: str = "Binned Scatter (2D histogram) of Frequency vs. Amplitude",
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
 ) -> None:
     """
     "Bin-like" alternative to `plot_scatter`: aggregates points into 2D bins and visualizes density.
@@ -647,6 +663,7 @@ def plot_scatter_binned(
       - freq_axis_mode='log': x bins are in Hz (plotly log axis shows them log-scaled visually)
       - amp_axis_mode='mixed': y bins are in warped units
       - amp_axis_mode='log': y bins are in linear amplitude units (displayed log-scaled)
+    - plot_width / plot_height: optional Plotly figure size in pixels.
     """
     all_data = _load_and_prepare_data(files, dfs, df_labels)
     if not all_data:
@@ -742,14 +759,58 @@ def plot_scatter_binned(
     x_all = np.concatenate(xs)
     y_all = np.concatenate(ys)
 
+    # Keep the actual plot type as Histogram2d, but quantize the count colorscale so the
+    # legend on the right shows discrete count bands instead of a misleading smooth gradient.
+    x_step = float(x_bin_size)
+    y_step = float(y_bin_size)
+    x_min = float(np.nanmin(x_all))
+    x_max = float(np.nanmax(x_all))
+    y_min = float(np.nanmin(y_all))
+    y_max = float(np.nanmax(y_all))
+
+    x_edges = np.arange(x_min, x_max + x_step, x_step, dtype=float)
+    y_edges = np.arange(y_min, y_max + y_step, y_step, dtype=float)
+    if x_edges.size < 2:
+        x_edges = np.array([x_min, x_min + x_step], dtype=float)
+    if y_edges.size < 2:
+        y_edges = np.array([y_min, y_min + y_step], dtype=float)
+
+    counts_preview, _, _ = np.histogram2d(x_all, y_all, bins=[x_edges, y_edges])
+    max_count = max(1, int(np.max(counts_preview)))
+    level_count = (max_count + 1) if max_count <= 8 else 8
+    level_edges = np.linspace(0.0, float(max_count), num=level_count + 1)
+    base_colors = sample_colorscale("Viridis", np.linspace(0.0, 1.0, num=level_count))
+
+    quantized_colorscale: list[list[float | str]] = []
+    for i, color in enumerate(base_colors):
+        lo = float(level_edges[i] / max_count)
+        hi = float(level_edges[i + 1] / max_count)
+        quantized_colorscale.append([lo, color])
+        quantized_colorscale.append([hi, color])
+
+    tickvals: list[float] = []
+    ticktext: list[str] = []
+    for i in range(level_count):
+        lo = float(level_edges[i])
+        hi = float(level_edges[i + 1])
+        tickvals.append((lo + hi) / 2.0)
+        lo_i = int(round(lo))
+        hi_i = int(round(hi))
+        ticktext.append(str(lo_i) if lo_i == hi_i else f"{lo_i}-{hi_i}")
+
     fig = go.Figure()
     fig.add_trace(go.Histogram2d(
         x=x_all,
         y=y_all,
         xbins=dict(size=float(x_bin_size)),
         ybins=dict(size=float(y_bin_size)),
-        colorscale="Viridis",
-        colorbar=dict(title="Count"),
+        colorscale=quantized_colorscale,
+        colorbar=dict(
+            title="Count",
+            tickmode="array",
+            tickvals=tickvals,
+            ticktext=ticktext,
+        ),
     ))
 
     fig.update_layout(
@@ -757,8 +818,8 @@ def plot_scatter_binned(
         xaxis_title_text=x_title,
         yaxis_title_text="Amplitude",
         template="plotly_white",
-        width=900,
-        height=700,
+        width=(900 if plot_width is None else int(plot_width)),
+        height=(700 if plot_height is None else int(plot_height)),
     )
     fig.update_xaxes(type=x_axis_type)
     if x_tickvals is not None and x_ticktext is not None:
@@ -783,6 +844,9 @@ def plot_equalizer_bars(
     amp_axis_mix: float = 0.5,
     amp_log_floor: float = 1e-12,
     title: str = "Equalizer-style bars (binned spectrum)",
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
 ) -> None:
     """
     Equalizer-like bar visualization for peak-list TSVs (Frequency/Amplitude).
@@ -803,6 +867,7 @@ def plot_equalizer_bars(
     - amp_axis_mode (str): 'linear' | 'log' | 'mixed' (mirrors `analyze_signal()`)
     - amp_axis_mix (float): used only for amp_axis_mode='mixed' (0..1)
     - amp_log_floor (float): used for amp_axis_mode='log'/'mixed' (>0)
+    - plot_width / plot_height: optional Plotly figure size in pixels.
     """
     if x_bin_size is None or float(x_bin_size) <= 0:
         raise ValueError(f"x_bin_size must be > 0; got {x_bin_size}")
@@ -979,8 +1044,8 @@ def plot_equalizer_bars(
         xaxis_title_text=x_title,
         yaxis_title_text=f"Amplitude ({agg} per {x_bin_size} Hz bin)",
         template="plotly_white",
-        width=900,
-        height=700,
+        width=(900 if plot_width is None else int(plot_width)),
+        height=(700 if plot_height is None else int(plot_height)),
         barmode=barmode,
         legend_title_text="Sources",
     )

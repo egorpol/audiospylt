@@ -20,6 +20,10 @@ def plot_waves(
     show_waveform: bool = True,
     show_fft: bool = False,
     spectrogram_kwargs: Optional[Dict[str, Any]] = None,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    plot_width: Optional[int] = None,
+    plot_height: Optional[int] = None,
     **kwargs: Any,
 ):
     """
@@ -52,6 +56,9 @@ def plot_waves(
     - show_waveform: if True, show the synthesized waveform only
     - show_fft: if True, show a spectrogram using `audiospylt.audio_utils.plot_spectrogram`
     - spectrogram_kwargs: optional dict forwarded to `plot_spectrogram(...)`
+    - plot_width / plot_height: optional plot size in pixels (preferred; applied to waveform and,
+      when show_fft=True, spectrogram)
+    - width / height: legacy aliases for plot_width / plot_height (kept for backwards compatibility)
 
     Backwards-compat:
     - Old kwargs like disable_freq_plot/disable_amp_plot/disable_combined_plot/disable_wave_plot
@@ -74,6 +81,18 @@ def plot_waves(
     if kwargs:
         unknown = ", ".join(sorted(kwargs.keys()))
         raise TypeError(f"plot_waves() got unexpected keyword argument(s): {unknown}")
+
+    if plot_width is not None and width is not None and int(plot_width) != int(width):
+        raise ValueError(
+            f"Conflicting plot width values: plot_width={plot_width} vs width={width}"
+        )
+    if plot_height is not None and height is not None and int(plot_height) != int(height):
+        raise ValueError(
+            f"Conflicting plot height values: plot_height={plot_height} vs height={height}"
+        )
+
+    effective_plot_width = width if plot_width is None else int(plot_width)
+    effective_plot_height = height if plot_height is None else int(plot_height)
 
     required_cols = ["time_start", "time_stop", "freq_start", "freq_stop", "amp_min", "amp_max"]
     missing = [c for c in required_cols if c not in wave_params.columns]
@@ -253,11 +272,18 @@ def plot_waves(
     if show_waveform:
         fig_wave = go.Figure()
         fig_wave.add_trace(go.Scatter(x=t, y=y_combined, mode="lines", name="Synthesized"))
-        fig_wave.update_layout(
-            title="Synthesized waveform",
-            xaxis_title="Time (s)",
-            yaxis_title="Amplitude",
-        )
+        layout = {
+            "title": "Synthesized waveform",
+            "xaxis_title": "Time (s)",
+            "yaxis_title": "Amplitude",
+        }
+        if effective_plot_width is not None:
+            layout["width"] = effective_plot_width
+        if effective_plot_height is not None:
+            layout["height"] = effective_plot_height
+        if effective_plot_width is not None or effective_plot_height is not None:
+            layout["autosize"] = False
+        fig_wave.update_layout(**layout)
         # Keep time axis consistent with the spectrogram visualization (0..duration).
         if t.size:
             fig_wave.update_xaxes(range=[0.0, float(t[-1])])
@@ -271,6 +297,26 @@ def plot_waves(
         skw = dict(spectrogram_kwargs or {})
         # Ensure show=True unless user explicitly overrides.
         skw.setdefault("show", True)
+        # Accept plot_width/plot_height in the forwarded kwargs, but translate to the current
+        # plot_spectrogram(...) width/height API.
+        if "plot_width" in skw:
+            if "width" in skw and skw["width"] != skw["plot_width"]:
+                raise ValueError(
+                    "Conflicting spectrogram_kwargs values: plot_width vs width"
+                )
+            skw["width"] = skw.pop("plot_width")
+        if "plot_height" in skw:
+            if "height" in skw and skw["height"] != skw["plot_height"]:
+                raise ValueError(
+                    "Conflicting spectrogram_kwargs values: plot_height vs height"
+                )
+            skw["height"] = skw.pop("plot_height")
+
+        # Forward plot size to spectrogram when not overridden by spectrogram_kwargs.
+        if effective_plot_width is not None and "width" not in skw:
+            skw["width"] = effective_plot_width
+        if effective_plot_height is not None and "height" not in skw:
+            skw["height"] = effective_plot_height
         plot_spectrogram(y_combined, sample_rate=sr, **skw)
 
     return y_combined

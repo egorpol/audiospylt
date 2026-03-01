@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-03-02
+
+### Added
+- `ipykernel` as a dependency so notebooks run in fresh environments without requiring a separate kernel install.
+
+### Fixed
+- `save_df_tsv(...)` now logs a normalized absolute output path instead of mixing hardcoded Windows-style separators with relative notebook paths.
+
+### Changed
+- Aligned plotting size parameters across the public plotting helpers by adding `plot_width` and `plot_height` support to `plot_waves(...)`, `plot_spectrogram(...)`, the `multiplotter.py` plotting functions, and `plot_waveforms(...)`, while keeping legacy size aliases where needed for backward compatibility.
+- Added optional `plot_width` and `plot_height` to `merge_cdf_analysis(...)` and `merge_cdf(...)` so the CDF merge plots follow the same notebook plotting convention.
+- Added optional `plot_width` and `plot_height` to `merge_sigmoid_analysis(...)` and `merge_sigmoid(...)` so sigmoid merge plots now follow the same sizing convention as the rest of the merge helpers.
+- Added `show_plot`, `plot_width`, `plot_height`, and `plotly_layout` to `summarize_result(...)` so stored `search_f0(...)` figures can be displayed and resized from the summary helper without re-running the search plot.
+- `plot_scatter_binned(...)` now uses a stepped count legend so low bin counts read more clearly than with a fully smooth colorbar.
+- Expanded `tutorials_tech/symbolic_mei.ipynb` to explain `notebook_white_background`, dark-theme SVG contrast issues, and why saved SVG output remains transparent and may need a light background when viewed elsewhere.
+- Updated `tutorials_tech/2df_merge.ipynb` so all merge-analysis and merge-plot examples pass explicit `plot_width` and `plot_height` values consistently.
+
 ## [0.6.2] - 2026-03-01
 
 ### Added

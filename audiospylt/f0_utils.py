@@ -407,6 +407,10 @@ def summarize_result(
     precision: int = 3,
     suppress: bool = True,
     floatmode: str = "fixed",
+    show_plot: bool = False,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+    plotly_layout: dict[str, Any] | None = None,
 ) -> None:
     """
     Print a compact summary for a `search_f0(...)` result dict.
@@ -421,6 +425,10 @@ def summarize_result(
         Number of top candidates to print.
     precision, suppress, floatmode:
         Forwarded to NumPy print settings for readability.
+    show_plot:
+        If True and `result["fig"]` is present, render the stored Plotly figure.
+    plot_width, plot_height, plotly_layout:
+        Optional Plotly layout overrides applied to `result["fig"]` before display.
     """
     top_n = int(top_n)
     precision = int(precision)
@@ -449,3 +457,24 @@ def summarize_result(
                 f"RMS={cand['rms_cents']:.{precision}f}"
             )
         print()
+
+    fig = result.get("fig")
+    if fig is None:
+        return
+
+    if show_plot or plot_width is not None or plot_height is not None or plotly_layout:
+        fig = go.Figure(fig)
+        layout_updates: dict[str, Any] = {}
+        if plot_width is not None:
+            layout_updates["width"] = int(plot_width)
+        if plot_height is not None:
+            layout_updates["height"] = int(plot_height)
+        if layout_updates:
+            layout_updates["autosize"] = False
+            fig.update_layout(**layout_updates)
+        if plotly_layout:
+            fig.update_layout(**plotly_layout)
+        result["fig"] = fig
+
+    if show_plot:
+        _show_plotly(result["fig"])

@@ -139,7 +139,14 @@ def apply_window_to_waveforms(
         waveform_data[waveform] *= window
     return waveform_data
 
-def plot_waveforms(waveform_data: Mapping[str, np.ndarray], t: np.ndarray, config: Mapping[str, Any]) -> None:
+def plot_waveforms(
+    waveform_data: Mapping[str, np.ndarray],
+    t: np.ndarray,
+    config: Mapping[str, Any],
+    *,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
+) -> None:
     """Plot waveform data and their DFTs based on the provided configuration."""
     # Create the Plotly figure for waveforms
     fig_waveforms = go.Figure()
@@ -206,7 +213,15 @@ def plot_waveforms(waveform_data: Mapping[str, np.ndarray], t: np.ndarray, confi
                 line=dict(color="Black", width=1, dash="dot"),
             )
 
-    fig_waveforms.update_layout(title='Sine Waves', xaxis_title='Time (s)', yaxis_title='Amplitude', autosize=False, width=800, height=600, showlegend=True)
+    fig_waveforms.update_layout(
+        title='Sine Waves',
+        xaxis_title='Time (s)',
+        yaxis_title='Amplitude',
+        autosize=False,
+        width=(800 if plot_width is None else int(plot_width)),
+        height=(600 if plot_height is None else int(plot_height)),
+        showlegend=True,
+    )
     show_plotly(fig_waveforms)
 
     # Create the DFT Magnitude and Phase Plots
@@ -252,10 +267,26 @@ def plot_waveforms(waveform_data: Mapping[str, np.ndarray], t: np.ndarray, confi
             fig_dft_phase.add_shape(type="line", x0=x, y0=min_dft_phase - range_25_percent_phase, x1=x, y1=np.pi + range_25_percent_phase, line=dict(color="Black", width=1, dash="dot"))
 
     # Update layout for DFT Magnitude
-    fig_dft_magnitude.update_layout(title='Magnitude Spectrum of the DFT', xaxis_title='Frequency (Hz)', yaxis_title='Magnitude', autosize=False, width=800, height=600, showlegend=True)
+    fig_dft_magnitude.update_layout(
+        title='Magnitude Spectrum of the DFT',
+        xaxis_title='Frequency (Hz)',
+        yaxis_title='Magnitude',
+        autosize=False,
+        width=(800 if plot_width is None else int(plot_width)),
+        height=(600 if plot_height is None else int(plot_height)),
+        showlegend=True,
+    )
 
     # Update layout for DFT Phase
-    fig_dft_phase.update_layout(title='Phase Spectrum of the DFT', xaxis_title='Frequency (Hz)', yaxis_title='Phase (radians)', autosize=False, width=800, height=600, showlegend=True)
+    fig_dft_phase.update_layout(
+        title='Phase Spectrum of the DFT',
+        xaxis_title='Frequency (Hz)',
+        yaxis_title='Phase (radians)',
+        autosize=False,
+        width=(800 if plot_width is None else int(plot_width)),
+        height=(600 if plot_height is None else int(plot_height)),
+        showlegend=True,
+    )
 
     # Calculate and print sampling rate and Nyquist frequency
     dt = float(config["dt"]) if "dt" in config else float(config["n"])

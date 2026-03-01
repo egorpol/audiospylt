@@ -737,6 +737,10 @@ def plot_spectrogram(
     time_range="signal",
     time_reference="center",
     show=True,
+    width=None,
+    height=None,
+    plot_width: int | None = None,
+    plot_height: int | None = None,
 ):
     """
     Build a Plotly spectrogram figure with optional log/mel scaling and FFT controls.
@@ -766,7 +770,22 @@ def plot_spectrogram(
     - time_range:
       - "stft": show only the time span covered by returned STFT frames
       - "signal": force x-axis to [0, duration] for easier comparison with waveform
+
+    - plot_width / plot_height: optional figure size in pixels (preferred; disables autosize).
+    - width / height: legacy aliases for plot_width / plot_height.
     """
+    if plot_width is not None and width is not None and int(plot_width) != int(width):
+        raise ValueError(
+            f"Conflicting plot width values: plot_width={plot_width} vs width={width}"
+        )
+    if plot_height is not None and height is not None and int(plot_height) != int(height):
+        raise ValueError(
+            f"Conflicting plot height values: plot_height={plot_height} vs height={height}"
+        )
+
+    effective_plot_width = width if plot_width is None else int(plot_width)
+    effective_plot_height = height if plot_height is None else int(plot_height)
+
     def _mixed_warp(freqs_hz, mix, fmax_hz, log_floor_hz):
         """
         Warp frequency coordinates to continuously blend linear->log spacing.
@@ -1084,6 +1103,14 @@ def plot_spectrogram(
 
     # Hide the colorbar ("amplitude legend") on the right.
     fig.update_layout(coloraxis_showscale=False)
+    if effective_plot_width is not None or effective_plot_height is not None:
+        layout_kw = {}
+        if effective_plot_width is not None:
+            layout_kw["width"] = effective_plot_width
+        if effective_plot_height is not None:
+            layout_kw["height"] = effective_plot_height
+        layout_kw["autosize"] = False
+        fig.update_layout(**layout_kw)
 
     # With "valid" STFT framing (no padding), the last time bin is often < signal duration.
     # Showing the full signal duration on the x-axis avoids confusion when comparing
