@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-03-01
+
+### Added
+- New `search_f0(...)` utility for f0 detection from measured partial frequencies, with optional RMS-cents search-curve plotting.
+- `search_f0(...)` now supports `top_k` candidate reporting, manual/amplitude-based weighting, robust outlier handling, dataframe input (`peaks_df`), and optional coarse-to-fine search.
+- Added package-level `summarize_result(...)` helper for formatted `search_f0(...)` output with configurable precision settings.
+- Added `notebook_white_background` to MEI notebook rendering helpers so Verovio previews can be shown on a white panel in dark notebook themes without changing saved transparent SVG output.
+
+### Changed
+- Enhanced `analyze_signal(...)` partial tracking overlays for multi-f0 workflows, with one color group per f0 and dotted center lines.
+- Partial bandwidth highlights now toggle together with their matching partial center lines in the Plotly legend (per f0 group).
+- Updated `case_studies/showcase_parm_v1.ipynb` to reflect current API and track ongoing case-study revisions.
+- Added explicit `search_f0(...)` parameter reference and annotated usage example to the README.
+- MEI notebook previews now default to a white canvas wrapper for better legibility in dark-themed Jupyter environments.
+
 ## [0.6.1] - 2026-02-21
 
 ### Added

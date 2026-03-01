@@ -141,6 +141,50 @@ def _format_hz(v):
         return f"{v/1000:.1f} kHz"
     return f"{v:.0f} Hz"
 
+
+def _partial_color_pairs(n_groups: int):
+    """
+    Return (line_colors, fill_colors) for partial overlays.
+    """
+    n = max(0, int(n_groups))
+    palette_rgb = [
+        (0, 180, 0),
+        (255, 127, 14),
+        (31, 119, 180),
+        (214, 39, 40),
+        (148, 103, 189),
+        (140, 86, 75),
+        (227, 119, 194),
+        (127, 127, 127),
+        (188, 189, 34),
+        (23, 190, 207),
+    ]
+    line_colors = []
+    fill_colors = []
+    for i in range(n):
+        r, g, b = palette_rgb[i % len(palette_rgb)]
+        line_colors.append(f"rgba({r}, {g}, {b}, 0.75)")
+        fill_colors.append(f"rgba({r}, {g}, {b}, 0.12)")
+    return line_colors, fill_colors
+
+
+def _expand_color_spec(color_spec, n: int, fallback: list[str]) -> list[str]:
+    """
+    Expand a scalar/list color spec to n items.
+    """
+    n = max(0, int(n))
+    if n == 0:
+        return []
+    if isinstance(color_spec, (list, tuple)):
+        seq = [str(c) for c in color_spec if str(c).strip()]
+        if seq:
+            return [seq[i % len(seq)] for i in range(n)]
+    if isinstance(color_spec, str) and color_spec.strip():
+        return [color_spec] * n
+    if fallback:
+        return [fallback[i % len(fallback)] for i in range(n)]
+    return ["rgba(0, 180, 0, 0.75)"] * n
+
 def filter_peaks(
     spec,
     freqs,
@@ -230,13 +274,14 @@ def plot_spectrum(
     title: str | None = None,
     plot_partials: bool = False,
     partials_hz: list[float] | None = None,
+    partials_by_f0: dict[float, list[float]] | None = None,
     partial_bandwidth_hz: float = 20.0,
-    f0_hz: float | None = None,
+    f0_hz: float | list[float] | None = None,
     spectrum_color: str | None = None,
     peaks_color: str | None = None,
     threshold_color: str = "Red",
-    partials_color: str = "rgba(0, 180, 0, 0.65)",
-    partials_band_fill: str = "rgba(0, 180, 0, 0.10)",
+    partials_color: str | list[str] = "rgba(0, 180, 0, 0.65)",
+    partials_band_fill: str | list[str] = "rgba(0, 180, 0, 0.10)",
 ):
     max_amp = np.max(spec)
     fig = go.Figure()
@@ -461,56 +506,105 @@ def plot_spectrum(
         _maybe_add_freq_line(thresh_freq_high, "Freq high")
 
     # Optional: overlay partial grid (k*f0) and +/- bandwidth bands.
-    if plot_partials and partials_hz:
+    if plot_partials and (partials_hz or partials_by_f0):
         bw = float(partial_bandwidth_hz)
         if bw < 0:
             raise ValueError(f"partial_bandwidth_hz must be >= 0; got {partial_bandwidth_hz}")
 
-        # Cap to keep figures responsive when f0 is very low.
-        max_partials = 200
-        partials_use = list(partials_hz)[:max_partials]
+        grouped_partials = []
+        if partials_by_f0:
+            for f0_i, partials_i in partials_by_f0.items():
+                f0_val = float(f0_i)
+                if f0_val <= 0:
+                    continue
+                pts = [float(p) for p in partials_i if float(p) > 0]
+                if pts:
+                    grouped_partials.append((f0_val, pts))
+        elif partials_hz:
+            grouped_partials.append((None, [float(p) for p in partials_hz if float(p) > 0]))
 
-        # Draw translucent bands as shapes (not in legend) + center lines as traces (in legend).
-        band_fill = partials_band_fill
-        center_line = dict(color=partials_color, width=1, dash="dot")
-        if f0_hz is not None and float(f0_hz) > 0:
-            band_label = f"Partials (f0={_format_hz(float(f0_hz))}) ±{bw:g} Hz"
-        else:
-            band_label = f"Partials ±{bw:g} Hz"
+        if grouped_partials:
+            n_groups = len(grouped_partials)
+            palette_line, palette_fill = _partial_color_pairs(n_groups)
 
-        for i, f_hz in enumerate(partials_use):
-            f_hz = float(f_hz)
-            if x_axis_type == "log" and f_hz <= 0:
-                continue
-            x0 = _map_freq_for_axis(max(0.0, f_hz - bw))
-            x1 = _map_freq_for_axis(f_hz + bw)
-            x_center = _map_freq_for_axis(f_hz)
+            # Keep figures responsive when f0 is very low and multiple fundamentals are used.
+            max_partials_total = 200
+            max_partials_per_group = max(1, max_partials_total // n_groups)
 
-            # Band.
-            fig.add_shape(
-                type="rect",
-                x0=x0,
-                x1=x1,
-                y0=y_min,
-                y1=y_max,
-                fillcolor=band_fill,
-                line=dict(width=0),
-                layer="below",
-            )
+            if n_groups > 1:
+                line_colors = _expand_color_spec(partials_color, n_groups, palette_line)
+                if isinstance(partials_color, str):
+                    line_colors = palette_line
 
-            # Center line (legend only once).
-            fig.add_trace(
-                go.Scatter(
-                    x=[x_center, x_center],
-                    y=[y_min, y_max],
-                    mode="lines",
-                    name=band_label,
-                    line=center_line,
-                    hoverinfo="skip",
-                    legendgroup="partials",
-                    showlegend=(i == 0),
+                fill_colors = _expand_color_spec(partials_band_fill, n_groups, palette_fill)
+                if isinstance(partials_band_fill, str):
+                    fill_colors = palette_fill
+            else:
+                line_colors = _expand_color_spec(partials_color, 1, palette_line)
+                fill_colors = _expand_color_spec(partials_band_fill, 1, palette_fill)
+
+            for gi, (f0_i, partials_i) in enumerate(grouped_partials):
+                partials_use = list(partials_i)[:max_partials_per_group]
+                if not partials_use:
+                    continue
+
+                band_label = (
+                    f"Partials (f0={_format_hz(f0_i)}) ±{bw:g} Hz"
+                    if f0_i is not None
+                    else f"Partials ±{bw:g} Hz"
                 )
-            )
+                center_line = dict(color=line_colors[gi], width=1, dash="dot")
+                band_fill = fill_colors[gi]
+                legend_group = f"partials_{gi}"
+                band_x = []
+                band_y = []
+                center_x = []
+                center_y = []
+
+                for f_hz in partials_use:
+                    if x_axis_type == "log" and f_hz <= 0:
+                        continue
+                    x0 = _map_freq_for_axis(max(0.0, f_hz - bw))
+                    x1 = _map_freq_for_axis(f_hz + bw)
+                    x_center = _map_freq_for_axis(f_hz)
+
+                    # Build one multi-polygon trace so it can be legend-group toggled with center lines.
+                    band_x.extend([x0, x1, x1, x0, x0, None])
+                    band_y.extend([y_min, y_min, y_max, y_max, y_min, None])
+
+                    # Build one multi-segment trace for all dotted center lines in this group.
+                    center_x.extend([x_center, x_center, None])
+                    center_y.extend([y_min, y_max, None])
+
+                if not center_x:
+                    continue
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=band_x,
+                        y=band_y,
+                        mode="lines",
+                        fill="toself",
+                        fillcolor=band_fill,
+                        line=dict(width=0, color=band_fill),
+                        hoverinfo="skip",
+                        legendgroup=legend_group,
+                        showlegend=False,
+                    )
+                )
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=center_x,
+                        y=center_y,
+                        mode="lines",
+                        name=band_label,
+                        line=center_line,
+                        hoverinfo="skip",
+                        legendgroup=legend_group,
+                        showlegend=True,
+                    )
+                )
     
     fig.update_layout(
         title=('Spectrum and Peaks' if title is None else title),
@@ -519,7 +613,8 @@ def plot_spectrum(
         autosize=False,
         width=(900 if plot_width is None else int(plot_width)),
         height=(600 if plot_height is None else int(plot_height)),
-        showlegend=True
+        showlegend=True,
+        legend=dict(groupclick="togglegroup"),
     )
 
     fig.update_xaxes(type=x_axis_type)
@@ -681,14 +776,14 @@ def analyze_signal(
     plotly_layout: dict | None = None,
     show_windowed_waveform: bool = False,
     partial_tracking: bool = False,
-    f0: float | None = None,
+    f0: float | list[float] | None = None,
     partial_bandwidth_hz: float = 20.0,
     plot_partials: bool = False,
     spectrum_color: str | None = None,
     peaks_color: str | None = None,
     threshold_color: str = "Red",
-    partials_color: str = "rgba(0, 180, 0, 0.65)",
-    partials_band_fill: str = "rgba(0, 180, 0, 0.10)",
+    partials_color: str | list[str] = "rgba(0, 180, 0, 0.65)",
+    partials_band_fill: str | list[str] = "rgba(0, 180, 0, 0.10)",
 ):
     # Normalize input signal once; apply the window for FFT/analysis.
     y = np.asarray(signal, dtype=float).reshape(-1)
@@ -726,44 +821,67 @@ def analyze_signal(
     )
 
     # Optional: partial tracking relative to f0 (applies AFTER initial peak filtering).
+    # f0 can be a single float or a list of fundamentals (e.g. chord).
     partials_hz = None
-    f0_hz = None
+    partials_by_f0 = None
+    f0_hz = None  # passed to plot: float or list[float]
     if partial_tracking:
         if f0 is None:
-            raise ValueError("partial_tracking=True requires f0 (Hz)")
-        f0_hz = float(f0)
-        if f0_hz <= 0:
-            raise ValueError(f"f0 must be > 0; got {f0}")
+            raise ValueError("partial_tracking=True requires f0 (Hz) or list of f0")
+        f0_list = [float(x) for x in (f0 if isinstance(f0, (list, tuple)) else [f0])]
+        if not f0_list or any(x <= 0 for x in f0_list):
+            raise ValueError(f"each f0 must be > 0; got {f0}")
+        f0_hz = f0_list[0] if len(f0_list) == 1 else f0_list
         bw = float(partial_bandwidth_hz)
         if bw < 0:
             raise ValueError(f"partial_bandwidth_hz must be >= 0; got {partial_bandwidth_hz}")
 
-        # Determine which partial (k) each peak is closest to.
+        # For each peak: find closest partial across all f0s; keep if within bw.
         peak_freqs = freqs[peaks] if len(peaks) else np.array([], dtype=float)
         if peak_freqs.size:
-            k = np.rint(peak_freqs / f0_hz).astype(int)
-            k = np.maximum(k, 0)
-            target = k.astype(float) * f0_hz
-            delta = peak_freqs - target
-            mask = (k >= 1) & (np.abs(delta) <= bw)
+            best_k = np.zeros(peak_freqs.size, dtype=int)
+            best_f0_idx = np.zeros(peak_freqs.size, dtype=int)
+            best_delta = np.full(peak_freqs.size, np.inf)
+            for fi, f0_i in enumerate(f0_list):
+                k = np.rint(peak_freqs / f0_i).astype(int)
+                k = np.maximum(k, 0)
+                target = k.astype(float) * f0_i
+                delta = np.abs(peak_freqs - target)
+                # for each peak, see if this (f0_i, k) is better
+                better = (k >= 1) & (delta < best_delta)
+                best_delta = np.where(better, delta, best_delta)
+                best_k = np.where(better, k, best_k)
+                best_f0_idx = np.where(better, fi, best_f0_idx)
+            mask = (best_k >= 1) & (best_delta <= bw)
             peaks = [p for p, keep in zip(peaks, mask) if bool(keep)]
-            k_kept = k[mask]
-            delta_kept = delta[mask]
+            k_kept = best_k[mask]
+            f0_vals = np.array([f0_list[i] for i in best_f0_idx], dtype=float)
+            delta_kept = (peak_freqs - best_k.astype(float) * f0_vals)[mask]
+            f0_kept = f0_vals[mask]
         else:
             k_kept = np.array([], dtype=int)
             delta_kept = np.array([], dtype=float)
+            f0_kept = np.array([], dtype=float)
 
-        # Build a partial grid for overlay plotting.
+        # Build partial grid for overlay, grouped by f0 so each f0 can get its own style.
         fmax_partials = float(thresh_freq_high) if thresh_freq_high is not None else float(freqs[-1] if len(freqs) else 0.0)
-        n_partials = int(np.floor(fmax_partials / f0_hz)) if fmax_partials > 0 else 0
-        if n_partials > 0:
-            partials_hz = [f0_hz * k_ for k_ in range(1, n_partials + 1)]
+        partials_by_f0 = {}
+        partial_set = set()
+        for f0_i in f0_list:
+            n_partials = int(np.floor(fmax_partials / f0_i)) if fmax_partials > 0 else 0
+            partials_i = [f0_i * k_ for k_ in range(1, n_partials + 1)]
+            if partials_i:
+                partials_by_f0[float(f0_i)] = partials_i
+                partial_set.update(partials_i)
+        if partial_set:
+            partials_hz = sorted(partial_set)
 
     peaks_df = pd.DataFrame({'Frequency (Hz)': freqs[peaks], 'Amplitude': spec[peaks]})
     if partial_tracking:
         # Attach partial info if available (align to the kept peaks order).
         peaks_df["Partial #"] = k_kept[: len(peaks_df)]
         peaks_df["Delta from partial (Hz)"] = delta_kept[: len(peaks_df)]
+        peaks_df["f0 (Hz)"] = f0_kept[: len(peaks_df)]
 
     # Print results
     print('File name:', filename)
@@ -831,6 +949,7 @@ def analyze_signal(
             title=spec_title,
             plot_partials=bool(plot_partials),
             partials_hz=partials_hz,
+            partials_by_f0=partials_by_f0,
             partial_bandwidth_hz=partial_bandwidth_hz,
             f0_hz=f0_hz,
             spectrum_color=spectrum_color,

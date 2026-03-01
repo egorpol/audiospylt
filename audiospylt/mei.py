@@ -587,18 +587,48 @@ def _load_dataframe_from_input(data: Union[str, pd.DataFrame]) -> pd.DataFrame:
         raise TypeError("Invalid input data type. Must be a file path (str) or pandas.DataFrame.")
     return df
 
+
+def _display_notation_svg(svg_code: str, *, white_background: bool = True) -> None:
+    """
+    Display rendered notation on a light panel so it remains legible in dark notebook themes.
+
+    Verovio's SVG output is typically drawn in dark strokes on a transparent background, which can
+    become hard to read when the notebook output area also uses a dark background.
+    """
+    if white_background:
+        wrapped_html = (
+            '<div style="'
+            'display:block;'
+            'overflow-x:auto;'
+            'padding:12px;'
+            'margin:8px 0;'
+            'background:#ffffff;'
+            'border:1px solid #d9d9d9;'
+            'border-radius:8px;'
+            '">'
+            f"{svg_code}"
+            "</div>"
+        )
+        display(HTML(wrapped_html))
+        return
+
+    display(HTML(svg_code))
+
 def _render_and_save_mei(
     mei_string: str,
     verovio_options: Dict,
     save_mei: bool,
     mei_save_path: str, # Renamed from save_path for clarity
     save_svg: bool = False, # New parameter
-    svg_save_path: str = 'output.svg' # New parameter
+    svg_save_path: str = 'output.svg', # New parameter
+    notebook_white_background: bool = True,
     # Add save_png and png_save_path if doing direct PNG conversion here
 ):
     """
     Renders MEI using Verovio, optionally saves the MEI string,
     and optionally saves the rendered SVG.
+
+    notebook_white_background controls notebook display only and does not alter saved SVG output.
     """
     if not mei_string:
         logging.info("MEI string is empty. Skipping Verovio rendering and saving.")
@@ -655,7 +685,7 @@ def _render_and_save_mei(
 
         svg_code = vrvToolkit.renderToSVG(1)
         logging.info("Verovio rendering successful.")
-        display(HTML(svg_code)) # Display in notebook
+        _display_notation_svg(svg_code, white_background=notebook_white_background)
     except ET.ParseError as e:
         logging.error(f"Generated MEI string is not valid XML: {e}")
         logging.error(f"Problematic MEI string snippet:\n{mei_string[:500]}...")
@@ -722,11 +752,15 @@ def process_and_visualize(
     save_mei: bool = False,
     mei_save_path: str = 'output.mei', # Renamed
     save_svg: bool = False,          # New
-    svg_save_path: str = 'output.svg'  # New
+    svg_save_path: str = 'output.svg',  # New
+    notebook_white_background: bool = True,
 ):
     """
     Processes pitch data, sorts it, and visualizes as musical notation
     either sequentially or as a chord.
+
+    notebook_white_background adds a white canvas behind the rendered SVG in notebooks for better
+    legibility in dark themes. Saved SVG files remain unchanged and transparent.
     """
     # --- Input Validation ---
     if resolution not in ['half_tone', 'quarter_tone', 'half_tone_deviation', 'eighth_tone']:
@@ -841,7 +875,8 @@ def process_and_visualize(
         save_mei,
         mei_save_path, # Pass renamed parameter
         save_svg=save_svg, # Pass new parameter
-        svg_save_path=svg_save_path # Pass new parameter
+        svg_save_path=svg_save_path, # Pass new parameter
+        notebook_white_background=notebook_white_background,
     )
 
 def process_temporal_chords(
@@ -862,7 +897,8 @@ def process_temporal_chords(
     mei_save_path: str = 'output_temporal.mei', # Renamed
     save_svg: bool = False,                   # New
     svg_save_path: str = 'output_temporal.svg', # New
-    display_df: bool = True
+    display_df: bool = True,
+    notebook_white_background: bool = True,
 ):
     """
     Processes time-structured data, visualizing simultaneous frequencies as chords.
@@ -871,6 +907,8 @@ def process_temporal_chords(
         ...
         measure_represents_sec: The visual duration (in seconds) that each MEI measure
                                 (containing a chord or padding) should represent.
+        notebook_white_background: If True, show the notebook preview on a white panel without
+                                   changing the saved transparent SVG output.
     """
     # --- Input Validation ---
     if resolution not in ['half_tone', 'quarter_tone', 'eighth_tone', 'half_tone_deviation']:
@@ -998,5 +1036,6 @@ def process_temporal_chords(
         save_mei,
         mei_save_path, # Pass renamed parameter
         save_svg=save_svg, # Pass new parameter
-        svg_save_path=svg_save_path # Pass new parameter
+        svg_save_path=svg_save_path, # Pass new parameter
+        notebook_white_background=notebook_white_background,
     )
