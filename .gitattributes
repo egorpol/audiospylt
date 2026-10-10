@@ -1,0 +1,14 @@
+# Normalise text files to LF in the repository and working tree.
+* text=auto eol=lf
+
+# Notebooks: left untouched until their outputs are stripped (PLAN step 0.3),
+# to avoid re-adding multi-megabyte blobs to history.
+*.ipynb -text
+
+# Binary assets
+*.wav binary
+*.png binary
+*.gif binary
+*.pdf binary
+*.pptx binary
+*.adv binary
