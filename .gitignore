@@ -49,3 +49,8 @@ rendered_audio/
 tsv/
 mei/
 _tmp_*.py
+
+# ===================================================================
+# Paper revision workspace (reviews, drafts, findings) — local only
+# ===================================================================
+revision/
