@@ -1,0 +1,3 @@
+.pytest-tmp/
+.tmp/
+__pycache__/
