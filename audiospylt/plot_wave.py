@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from typing import Any, Dict, Optional, Tuple, Iterable, Sequence
+from typing import Any, Dict, Optional, Tuple, Sequence
 
 try:  # pragma: no cover
     from .plotting import show_plotly
@@ -201,7 +201,6 @@ def plot_waves(
         tau = t[idx] - time_start
         dur = max(1e-12, time_stop - time_start)
 
-        freq = freq_start + (freq_stop - freq_start) * (tau / dur)
         amp = amp_min + (amp_max - amp_min) * (tau / dur)
 
         # Per-event fades (seconds): per-row overrides take precedence over function args.

@@ -8,7 +8,7 @@ version = "0.6.3"
 description = "Python toolbox for sound analysis, resynthesis, and visual/symbolic representations."
 authors = [{ name = "egorpol" }]
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 keywords = ["audio", "dft", "resynthesis", "music", "mei", "visualization"]
 classifiers = [
@@ -17,7 +17,10 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
   "ipython",
@@ -37,7 +40,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["build", "pytest", "ruff", "twine"]
+dev = ["build", "pytest", "pytest-timeout", "ruff", "twine", "nbstripout"]
 
 [project.urls]
 Changelog = "https://github.com/egorpol/audiospylt/blob/main/CHANGELOG.md"
@@ -46,3 +49,28 @@ Repository = "https://github.com/egorpol/audiospylt"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["audiospylt*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+xfail_strict = true
+addopts = "-ra"
+timeout = 300
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = [
+  "notebooks_legacy",
+  "conferences",
+  "revision",
+  "audiospylt/mei_old.py",
+  "*.ipynb",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# imports kept so string-based patch() targets are loaded
+"tests/_support.py" = ["F401"]
+# sys.path is set before importing the package on purpose
+"tests/golden/regenerate.py" = ["E402"]

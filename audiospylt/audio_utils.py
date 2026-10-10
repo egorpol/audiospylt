@@ -3,7 +3,6 @@ import numpy as np
 import plotly.graph_objs as go
 import plotly.express as px
 import os
-import io
 import tempfile
 import librosa
 from scipy.signal import spectrogram, get_window

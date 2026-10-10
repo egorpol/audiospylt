@@ -283,7 +283,6 @@ def plot_spectrum(
     partials_color: str | list[str] = "rgba(0, 180, 0, 0.65)",
     partials_band_fill: str | list[str] = "rgba(0, 180, 0, 0.10)",
 ):
-    max_amp = np.max(spec)
     fig = go.Figure()
 
     freqs_hz = np.asarray(freqs_hz, dtype=float)

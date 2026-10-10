@@ -1,3 +1,4 @@
+# ruff: noqa: E701, E702  # compact one-liners retained to avoid mass reformat before v1 refactor
 import numpy as np
 import pandas as pd
 from typing import List, Tuple, Dict, Optional, Union, Any

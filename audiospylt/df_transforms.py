@@ -937,10 +937,10 @@ def merge_sigmoid_analysis(
         list: [min_range, max_range] valid sigmoid range.
     """
     if len(df1) < len(df2):
-        df_less_src, df_more_src = df1.copy(), df2.copy()
+        df_less_src = df1.copy()
         n_less, n_more = len(df1), len(df2)
     else:
-        df_less_src, df_more_src = df2.copy(), df1.copy()
+        df_less_src = df2.copy()
         n_less, n_more = len(df2), len(df1)
 
     if n_less == 0 or n_more == 0:
