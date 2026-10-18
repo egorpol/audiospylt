@@ -59,8 +59,6 @@ timeout = 300
 [tool.ruff]
 target-version = "py311"
 extend-exclude = [
-  "notebooks_legacy",
-  "conferences",
   "revision",
   "audiospylt/mei_old.py",
   "*.ipynb",

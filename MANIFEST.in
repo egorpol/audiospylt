@@ -1,0 +1,5 @@
+# Keep example data and notebooks out of the sdist (the wheel only ships audiospylt/).
+prune samples
+prune data
+prune case_studies
+prune tutorials_tech

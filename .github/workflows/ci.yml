@@ -15,10 +15,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install ruff
-        run: python -m pip install ruff
+      - name: Install ruff and nbstripout
+        run: python -m pip install ruff nbstripout
       - name: Ruff check
         run: ruff check .
+      - name: Notebooks have no outputs
+        run: git ls-files -z '*.ipynb' | xargs -0 nbstripout --verify
 
   test:
     runs-on: ubuntu-latest

@@ -21,13 +21,14 @@ For a detailed history of changes, see the [CHANGELOG.md](https://github.com/ego
 
 The toolbox is organized into the following main categories:
 
+- `/audiospylt` - the Python package
 - `/case_studies` - narrative notebooks with end-to-end analytic and creative workflows
-- `/conferences` - materials from conference presentations featuring AudioSpylt
-- `/mei` - test output directory for generated MEI files
-- `/samples` - audio files and score sheets used in the case studies
-- `/tsv` - sample TSV files used in notebooks
+- `/data/tables` - small example tables (TSV) read by the notebooks
+- `/samples` - audio excerpts and a score page used in the case studies (sources and rights in `samples/README.md`)
+- `/tests` - test suite
 - `/tutorials_tech` - function-focused references for individual parameters and utilities
-- `/tutorials_workflow` - workflow examples that combine multiple tools for analysis, transformation, and synthesis
+
+Older notebooks and conference material are kept on the `archive` branch.
 
 ## Google Colab Demos
 
@@ -41,13 +42,28 @@ Demo notebooks are available in this [Google Drive folder](https://drive.google.
 pip install audiospylt
 ```
 
-AudioSpylt targets Python 3.12+. When installed from PyPI, `pip` will install the runtime dependencies automatically.
+AudioSpylt targets Python 3.11+. When installed from PyPI, `pip` will install the runtime dependencies automatically.
 
 If you are working from a local clone for notebooks or development, you can also install the mirrored dependency list with:
 
 ```bash
 pip install -r requirements.txt
 ```
+
+### Running the notebooks
+
+Clone the repository and install the package into the environment that runs your Jupyter kernel:
+
+```bash
+git clone https://github.com/egorpol/audiospylt.git
+cd audiospylt
+pip install -e .
+```
+
+The notebooks use paths relative to their own folder (Jupyter's default working directory). They read example
+data from `data/tables/` and `samples/` and write their outputs (`tsv/`, `mei/`, `rendered_audio/`) next to the
+notebook; these output folders are ignored by git. `tutorials_tech/audio_load_dft_single.ipynb` loads its example
+sound from a URL and needs network access.
 
 ## Dependencies
 
