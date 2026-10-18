@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["build", "pytest", "pytest-timeout", "ruff", "twine", "nbstripout"]
+dev = ["build", "nbclient", "nbstripout", "pytest", "pytest-timeout", "ruff", "twine"]
 
 [project.urls]
 Changelog = "https://github.com/egorpol/audiospylt/blob/main/CHANGELOG.md"

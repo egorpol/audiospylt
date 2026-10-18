@@ -65,6 +65,14 @@ data from `data/tables/` and `samples/` and write their outputs (`tsv/`, `mei/`,
 notebook; these output folders are ignored by git. `tutorials_tech/audio_load_dft_single.ipynb` loads its example
 sound from a URL and needs network access.
 
+To check that every notebook runs from start to finish, install the development extra and run the headless
+runner; `--offline` skips the notebooks that need network access:
+
+```bash
+pip install -e ".[dev]"
+python scripts/run_notebooks.py --offline
+```
+
 ## Dependencies
 
 Current runtime dependencies:
