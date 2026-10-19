@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `audiospylt.model.schema`: column contracts for `snapshot`, `events` and `tracks` tables, with `validate()` reporting every problem at once, `infer_kind()` and `upgrade()` for 0.6 column names (`LegacyFormatWarning`).
 - `audiospylt.io.tables`: `read_table()` / `write_table()` for versioned TSV files (`# audiospylt-table: <kind> v1`, optional metadata lines, exact float round trips); headerless 0.6 files load with their columns upgraded.
 - `audiospylt.io.audio`: `load_audio()` for paths, binary streams and URLs (memory by default, optional atomic kept copies), with float64 channel-first audio, optional mono conversion and resampling; pure `to_mono()`, `trim()` and `fade()` helpers with explicit bounds checks.
+- `audiospylt.analysis`: compute-only `spectrum()` scaled to peak amplitude (a sine of amplitude *a* reads *a*), `find_peaks()` with quadratic interpolation on dB magnitudes (QIFFT) returning snapshot tables with provenance, a matching vectorized `spectrogram()` and an energy-normalized `mel_spectrogram()`; dB is 20·log10 re full scale.
 - Table format specification in `docs/table-format.md`.
 
 ## [0.6.3] - 2026-03-02
