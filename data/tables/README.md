@@ -1,7 +1,8 @@
 # Example tables
 
 Small tab-separated tables read by the notebooks in `tutorials_tech/`. They use the column names of
-AudioSpylt 0.6:
+AudioSpylt 0.6 (the v1 format and the upgrade rules for these files are specified in
+[`docs/table-format.md`](../../docs/table-format.md)):
 
 - **peak list** (peaks of one DFT frame): `Frequency (Hz)`, `Amplitude`
 - **event table** (input for additive resynthesis): `freq_start`, `freq_stop`, `time_start`, `time_stop`,

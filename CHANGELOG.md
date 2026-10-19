@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- v1 subpackage layout (`io`, `analysis`, `model`, `transform`, `synth`, `notation`, `viz`, `nb`); the 0.6 modules are unchanged.
+- `audiospylt.model.schema`: column contracts for `snapshot`, `events` and `tracks` tables, with `validate()` reporting every problem at once, `infer_kind()` and `upgrade()` for 0.6 column names (`LegacyFormatWarning`).
+- `audiospylt.io.tables`: `read_table()` / `write_table()` for versioned TSV files (`# audiospylt-table: <kind> v1`, optional metadata lines, exact float round trips); headerless 0.6 files load with their columns upgraded.
+- Table format specification in `docs/table-format.md`.
+
 ## [0.6.3] - 2026-03-02
 
 ### Added
