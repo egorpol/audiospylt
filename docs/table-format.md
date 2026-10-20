@@ -109,6 +109,9 @@ frequency/amplitude to the stop frequency/amplitude over its time interval:
 
 Sample-level endpoint conventions belong to the synthesis API, not this table
 format. The format does not impose an upper frequency limit or a sample rate.
+`audiospylt.synth.additive.synthesize()` reads an integer extra column named
+`track_id`, when present, to limit which rows its `continuous` phase mode links
+into one voice; the column stays an extra and is not validated by the format.
 
 ### `tracks`
 

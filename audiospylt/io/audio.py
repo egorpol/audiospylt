@@ -328,3 +328,88 @@ def fade(
     if n_out:
         result[..., -n_out:] *= np.linspace(1, 0, n_out) ** out_exponent
     return result
+
+
+_FLOAT_SUBTYPES = frozenset({"FLOAT", "DOUBLE"})
+
+
+def write_audio(
+    path: str | os.PathLike[str],
+    audio: np.ndarray,
+    sr: int,
+    *,
+    subtype: str = "PCM_24",
+    normalize: float | None = None,
+) -> Path:
+    """Write audio unchanged, or peak-normalised on request, without clipping.
+
+    Parameters
+    ----------
+    path : str or os.PathLike
+        Destination file, whose parent must already exist. The extension
+        selects the container (``.wav``, ``.flac``, ``.aiff``, …, as
+        soundfile infers it). An existing file is replaced.
+    audio : numpy.ndarray
+        Finite mono ``(samples,)`` or multichannel ``(channels, samples)``
+        samples, at least one sample long. Full scale is ±1.0 (D4).
+    sr : int
+        Positive sample rate. The audio is written at this rate as given;
+        nothing is resampled.
+    subtype : str, default 'PCM_24'
+        soundfile subtype, e.g. ``'PCM_16'``, ``'PCM_24'``, ``'FLOAT'``.
+    normalize : float, optional
+        Peak level in dBFS (<= 0). When given, the audio is scaled so its
+        largest absolute sample sits at that level. None writes the samples
+        as they are, so analysed and synthesised levels survive the export.
+
+    Returns
+    -------
+    pathlib.Path
+        Destination as supplied, without resolving it to an absolute path.
+
+    Raises
+    ------
+    ValueError
+        Invalid audio, rate, subtype or level; normalising silence; or a peak
+        above full scale for any subtype other than ``'FLOAT'``/``'DOUBLE'``,
+        which soundfile would clip silently. All checks run before the file is
+        opened, so these errors leave an existing file intact.
+    FileNotFoundError
+        The parent directory does not exist.
+    """
+    array = _audio_array(audio)
+    sr = _sample_rate(sr)
+    if array.shape[-1] == 0:
+        raise ValueError(f"audio has no samples ({_layout(array)})")
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"audio must contain only finite samples ({_layout(array)})")
+    if not isinstance(subtype, str):
+        raise ValueError(f"subtype must be a soundfile subtype string; got {subtype!r}")
+    destination = Path(path)
+    if not destination.parent.is_dir():
+        raise FileNotFoundError(f"parent directory {str(destination.parent)!r} does not exist")
+    peak = float(np.max(np.abs(array)))
+    if normalize is not None:
+        try:
+            if isinstance(normalize, (bool, np.bool_)):
+                raise TypeError
+            level = float(normalize)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"normalize must be a finite dBFS level <= 0; got {normalize!r}") from error
+        if not np.isfinite(level) or level > 0:
+            raise ValueError(f"normalize must be a finite dBFS level <= 0; got {normalize!r}")
+        if peak == 0:
+            raise ValueError("cannot normalize silence: every sample is 0")
+        # Divide first: a subnormal peak would overflow the gain 10**(level/20) / peak.
+        array = (array / peak) * 10 ** (level / 20)
+    elif peak > 1.0 and subtype.upper() not in _FLOAT_SUBTYPES:
+        raise ValueError(
+            f"audio peaks at {20 * np.log10(peak):+.2f} dBFS ({peak:.6g}), above full scale; "
+            f"a {subtype} file would clip. Pass normalize=-1.0 to set the peak to -1 dBFS, "
+            "scale the audio, or write subtype='FLOAT'."
+        )
+    try:
+        sf.write(destination, array.T if array.ndim == 2 else array, sr, subtype=subtype)
+    except (TypeError, ValueError, RuntimeError) as error:
+        raise ValueError(f"Cannot write {str(destination)!r} as {subtype}: {error}") from error
+    return Path(path)

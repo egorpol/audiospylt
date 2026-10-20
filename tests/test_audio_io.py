@@ -13,7 +13,7 @@ import pytest
 import requests
 import soundfile as sf
 
-from audiospylt.io.audio import fade, load_audio, to_mono, trim
+from audiospylt.io.audio import fade, load_audio, to_mono, trim, write_audio
 
 
 SAMPLES = Path(__file__).resolve().parents[1] / "samples"
@@ -601,3 +601,95 @@ def test_real_audio_against_independent_pcm_and_fixed_channel_sums(name):
     cropped = trim(result, result_rate, 0.4, 1.6)
     assert cropped.shape == (2, 52920)
     np.testing.assert_array_equal(cropped, reference[:, 17640:70560])
+
+
+# ---------------------------------------------------------------- write_audio
+
+
+def _sine(amplitude=0.5, n=4410, rate=44100):
+    return amplitude * np.sin(2 * np.pi * 441.3 * np.arange(n) / rate)
+
+
+@pytest.mark.parametrize("subtype, width", [("PCM_16", 16), ("PCM_24", 24)])
+def test_write_audio_keeps_level_in_pcm(tmp_path, subtype, width):
+    audio = _sine()
+    path = tmp_path / "x.wav"
+    assert write_audio(path, audio, 44100, subtype=subtype) == path
+    decoded, rate = _read_pcm(path)
+    assert rate == 44100 and decoded.shape == (1, audio.size)
+    assert np.abs(decoded[0] - audio).max() <= 2.0 ** -(width - 1)
+    assert write_audio(str(path), audio, 44100) == Path(str(path))
+
+
+def test_write_audio_stereo_layout_and_float_overrange(tmp_path):
+    stereo = np.stack([_sine(0.5), _sine(1.5)])
+    with pytest.raises(ValueError, match=r"\+3\.52 dBFS"):
+        write_audio(tmp_path / "x.wav", stereo, 44100)
+    write_audio(tmp_path / "x.wav", stereo, 44100, subtype="FLOAT")
+    decoded, rate = sf.read(tmp_path / "x.wav", dtype="float64", always_2d=True)
+    assert rate == 44100
+    np.testing.assert_allclose(decoded.T, stereo, rtol=0, atol=1e-7)
+    assert np.abs(decoded[:, 1]).max() > 1.4
+
+
+def test_write_audio_full_scale_is_allowed_and_clipping_raises(tmp_path):
+    write_audio(tmp_path / "x.wav", np.array([1.0, -1.0, 0.0]), 8000, subtype="PCM_16")
+    path = tmp_path / "y.wav"
+    write_audio(path, _sine(0.25), 44100)
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="clip.*normalize=-1.0"):
+        write_audio(path, _sine(1.0001), 44100)
+    with pytest.raises(ValueError):
+        write_audio(path, _sine(0.25), 44100, subtype="NOT_A_SUBTYPE")
+    assert path.read_bytes() == before
+
+
+def test_write_audio_normalize_sets_the_peak(tmp_path):
+    audio = _sine(6.3)
+    original = audio.copy()
+    write_audio(tmp_path / "x.wav", audio, 44100, subtype="FLOAT", normalize=-1.0)
+    decoded, _ = sf.read(tmp_path / "x.wav", dtype="float64")
+    assert np.abs(decoded).max() == pytest.approx(10 ** (-1 / 20), abs=1e-7)
+    np.testing.assert_allclose(decoded / np.abs(decoded).max(), audio / np.abs(audio).max(), atol=1e-6)
+    np.testing.assert_array_equal(audio, original)
+    write_audio(tmp_path / "q.wav", _sine(0.1), 44100, normalize=0.0)
+    decoded, _ = _read_pcm(tmp_path / "q.wav")
+    assert np.abs(decoded).max() == pytest.approx(1.0, abs=2.0 ** -22)
+
+
+def test_write_audio_normalizes_a_subnormal_peak(tmp_path):
+    write_audio(tmp_path / "x.wav", np.array([1e-310, 0.0, -5e-311]), 8000, normalize=-1.0)
+    decoded, _ = _read_pcm(tmp_path / "x.wav")
+    assert np.all(np.isfinite(decoded))
+    assert np.abs(decoded).max() == pytest.approx(10 ** (-1 / 20), abs=2.0 ** -22)
+
+
+@pytest.mark.parametrize("audio, options, error, fragment", [
+    (np.zeros(10), {"normalize": -1.0}, ValueError, "silence"),
+    (np.full(10, 0.1), {"normalize": 1.0}, ValueError, "normalize"),
+    (np.full(10, 0.1), {"normalize": np.nan}, ValueError, "normalize"),
+    (np.full(10, 0.1), {"normalize": "loud"}, ValueError, "normalize"),
+    (np.full(10, 0.1), {"normalize": False}, ValueError, "normalize"),
+    (np.array([0.1, np.nan]), {}, ValueError, "finite"),
+    (np.zeros(0), {}, ValueError, "no samples"),
+    (np.zeros((2, 2, 2)), {}, ValueError, "1-D"),
+    (np.full(10, 0.1), {"subtype": 24}, ValueError, "subtype"),
+    (np.array([0, 2, -1]), {}, ValueError, "clip"),
+    (np.array([0.1, np.inf]), {}, ValueError, "finite"),
+])
+def test_write_audio_errors(tmp_path, audio, options, error, fragment):
+    with pytest.raises(error, match=fragment):
+        write_audio(tmp_path / "x.wav", audio, 44100, **options)
+    assert not (tmp_path / "x.wav").exists()
+
+
+def test_write_audio_rate_extension_and_parent(tmp_path):
+    for rate in (0, 44100.0, True):
+        with pytest.raises(ValueError, match="sr"):
+            write_audio(tmp_path / "x.wav", _sine(), rate)
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        write_audio(tmp_path / "missing" / "x.wav", _sine(), 44100)
+    with pytest.raises(ValueError, match="Cannot write"):
+        write_audio(tmp_path / "x", _sine(), 44100)
+    write_audio(tmp_path / "x.flac", _sine(), 44100, subtype="PCM_16")
+    assert sf.info(tmp_path / "x.flac").format == "FLAC"
