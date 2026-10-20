@@ -19,6 +19,8 @@ safety net, not exhaustive input validation or a quality score.
 | `test_dft_analysis.py` | `compute_fft`, `apply_window`, `filter_peaks`, `analyze_signal`, `plot_spectrum`, `plot_windowed_waveform` | DSP-1, DSP-2 (desired behaviour in `test_known_bugs.py`) |
 | `test_f0_utils.py` | `search_f0`, `summarize_result`; harmonic/inharmonic inputs, explicit/amplitude weights, `top_k`, cents/fraction trimming, `peaks_df`, coarse refinement | — |
 | `test_df_transforms.py` | `process_spectral_dataframe`, `create_time_transition_df`, `merge_equal_split`, `merge_cdf`, `merge_cdf_analysis`, `merge_sigmoid`, `merge_sigmoid_analysis`, `add_time_cues`, `expand_to_multi`, `detect_dataframe_type` | DSP-9 (desired behaviour in `test_known_bugs.py`) |
+| `test_transform_scale.py` | v1 `transpose`, `stretch`, `split_events`; all kinds, bounds, per-cue factors, 0.6 characterization, validation and metadata | DSP-9 |
+| `test_transform_morph.py` | v1 `parameter_range`, `pair`, `morph`; 0.6 mappings, D13 gains and emission order, transport marginals, endpoint and chained render levels | DSP-9, POS-6 |
 | `test_plot_wave.py` | `plot_waves`: all `chirp`/`reset`/`global` × closed/half-open intervals × no/linear/cosine/sqrt-Hann fades; per-row fades and overlapping crossfades via `crossfade_adjacent_events` | DSP-4, DSP-7 (desired behaviour in `test_known_bugs.py`) |
 | `test_generate_wave_file.py` | `generate_wave_file`, `render_audio`, `render_selected_waveforms`, `mix_selected_waveforms`, `scale_samples`; native 16/24-bit WAVs, bandlimited/intentional-alias resampling, silence, mixed lengths, legacy `n`/preferred `dt` | DSP-8 (desired behaviour in `test_known_bugs.py`) |
 | `test_io_utils.py` | `save_df_tsv`, `events_df_from_peaks_by_interval` | — |
@@ -26,7 +28,7 @@ safety net, not exhaustive input validation or a quality score.
 | `test_notation_pitch.py` | v1 `pitch_table`, `cents_label`; exhaustive C1–B8 spelling/quantisation sweep, half-up ties, eighth-mode accuracy, input validation | DSP-5, CLM-8 |
 | `test_notation_mei.py` | v1 `snapshot_to_mei`, `events_to_mei`, `render_svg`, `render_svg_pages`; MEI 5.1 schema, labels/staves, temporal gaps, range, fd-level warning capture, lazy/display-free imports | DSP-5, CLM-8, ENG-4 |
 | `test_multiplotter.py` | `plot_combined`, `plot_combined_3d`, `plot_equalizer_bars`; local small TSVs, all three bar aggregations | — |
-| `test_known_bugs.py` | `analyze_signal`, both spectrogram entry points, `plot_waves`, `estimate_sampling_frequency_and_time_vector`, pitch spelling, stereo trimming, `_resample_by_sampling`, all three morph pairings, transitions, wide pitch scaling, negative stretch | DSP-1 through DSP-9; 20 strict xfail cases |
+| `test_known_bugs.py` | `analyze_signal`, both spectrogram entry points, `plot_waves`, `estimate_sampling_frequency_and_time_vector`, pitch spelling, stereo trimming, `_resample_by_sampling`, all three morph pairings, transitions, wide pitch scaling, negative stretch | DSP-1 through DSP-9; 26 strict xfail cases |
 
 ## Goldens and tolerances
 

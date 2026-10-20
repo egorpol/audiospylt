@@ -112,26 +112,27 @@ def test_non_antialiased_resampling_uses_exact_sample_spacing():
     np.testing.assert_allclose(np.diff(sampled_times), 1 / sr_out, rtol=0, atol=1e-9)
 
 
-# PROVISIONAL criterion — to be decided in PLAN step 1.6 before anyone "fixes" this test.
-# Duplicated rows share frequency and phase at the morph start, so they add coherently
-# (amplitudes sum); Σamp² only holds once they decorrelate or if duplicates get distinct
-# phases. Splitting by 1/sqrt(k) to satisfy this test would make onsets ~10·log10(k) dB louder.
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="DSP-9 (provisional, see step 1.6): duplicated morph pairings must preserve source sum of squared amplitudes")
+# D13: each partial of the smaller snapshot carries its amplitude in exactly one
+# row at its morph end; the other rows are births (0 at start) or deaths (0 at stop).
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="DSP-9 D13: each partial of the smaller snapshot carries its amplitude in exactly one row at its morph end")
 @pytest.mark.parametrize("method", ["equal", "cdf", "sigmoid"])
 @pytest.mark.parametrize("source_side", [1, 2])
-def test_morph_start_energy_is_preserved(method, source_side):
+@pytest.mark.parametrize("end", ["start", "stop"])
+def test_morph_start_energy_is_preserved(method, source_side, end):
     small, large = cases.spectra()
     a, b = (small, large) if source_side == 1 else (large, small)
     merge = {"equal": dfm.merge_equal_split, "cdf": dfm.merge_cdf, "sigmoid": dfm.merge_sigmoid}[method]
     paired = merge(a, b)
-    # Treat each direction as a morph start, ensuring duplication is corrected on either side.
-    if source_side == 2:
+    # Exercise each merge argument order at both the diverging and converging
+    # morph end. Reverse the paired columns when needed to put the smaller side
+    # at the end under test; its nonshared opposite end is already correct in 0.6.
+    if (source_side == 1) != (end == "start"):
         paired = paired.rename(columns={"freq_data1": "freq_data2", "amp_data1": "amp_data2",
                                         "freq_data2": "freq_data1", "amp_data2": "amp_data1"})
     transition = dfm.create_time_transition_df(paired, 0.1, scale_amp=False)
     original_energy = float(np.square(small["Amplitude"]).sum())
-    start_energy = float(np.square(transition["amp_min"]).sum())
-    assert start_energy == pytest.approx(original_energy, rel=0.01)
+    energy = float(np.square(transition["amp_min" if end == "start" else "amp_max"]).sum())
+    assert energy == pytest.approx(original_energy, rel=0.01)
 
 
 @pytest.mark.xfail(strict=True, raises=AssertionError, reason="DSP-9: pitch scaling must apply to every frequency column in wide snapshots")
