@@ -150,3 +150,44 @@ def test_negative_time_stretch_raises(stretch):
     except ValueError:
         return
     assert False, "Negative time stretch must raise ValueError"
+
+
+@pytest.mark.xfail(
+    strict=True, raises=AssertionError,
+    reason="ENG-4: audiospylt/__init__ still imports the 0.6 modules, which load "
+           "IPython; flips in 1.7b",
+)
+def test_v1_modules_import_without_notebook_stack():
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    script = r"""
+import sys
+modules = [
+    "audiospylt.io", "audiospylt.io.audio", "audiospylt.io.tables",
+    "audiospylt.analysis", "audiospylt.analysis.spectrum",
+    "audiospylt.analysis.spectrogram", "audiospylt.analysis.peaks",
+    "audiospylt.model", "audiospylt.model.schema", "audiospylt.model.convert",
+    "audiospylt.synth", "audiospylt.synth.additive",
+    "audiospylt.notation", "audiospylt.notation.pitch", "audiospylt.notation.mei",
+    "audiospylt.notation.render",
+    "audiospylt.transform", "audiospylt.transform.scale", "audiospylt.transform.morph",
+    "audiospylt.viz", "audiospylt.viz._common", "audiospylt.viz.signal",
+    "audiospylt.viz.tables", "audiospylt.viz.morph",
+    "audiospylt.nb", "audiospylt.nb.display",
+]
+for name in modules:
+    __import__(name)
+forbidden = {"IPython", "ipywidgets", "nbformat", "matplotlib"}
+found = sorted(forbidden.intersection(sys.modules))
+assert not found, found
+"""
+    env = {**os.environ, "PYTHONPATH": str(root)}
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=root, capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout

@@ -27,8 +27,13 @@ safety net, not exhaustive input validation or a quality score.
 | `test_mei.py` | `midi_value`, `midi_cent_value`, `acoustical_pitch_name`, `pitch_name_and_deviation_to_step_octave_alter`, `map_alteration_to_mei_accid`, `convert_frequencies`, `create_mei_string`, `create_temporal_mei_string`, `process_and_visualize`, `process_temporal_chords` | DSP-5 (desired behaviour in `test_known_bugs.py`) |
 | `test_notation_pitch.py` | v1 `pitch_table`, `cents_label`; exhaustive C1–B8 spelling/quantisation sweep, half-up ties, eighth-mode accuracy, input validation | DSP-5, CLM-8 |
 | `test_notation_mei.py` | v1 `snapshot_to_mei`, `events_to_mei`, `render_svg`, `render_svg_pages`; MEI 5.1 schema, labels/staves, temporal gaps, range, fd-level warning capture, lazy/display-free imports | DSP-5, CLM-8, ENG-4 |
+| `test_viz_signal.py` | v1 `plot_waveform`, `plot_spectrum`, `plot_spectrogram`; theme palette, `_minmax`, WebGL opt-in, mel axis, overlays, side-effect free | CLM-4, ENG-4 |
+| `test_viz_tables.py` | v1 `plot_snapshot`, `plot_events`, `plot_events_3d`; stems, opacity bins, tracks, log-axis warnings | ENG-4, TXT-9 |
+| `test_viz_morph.py` | v1 `plot_morph_map`; speech1↔conga3 category counts and widths for equal/power/sigmoid/transport | TXT-9, DSP-9 |
+| `test_nb_display.py` | v1 `show`, `show_svg`, `show_mei`, `play`; lazy IPython, SVG white background, peak policy | ENG-4 |
+| `test_layering.py` | AST: core/viz/nb import boundaries; `__init__` docstring-only; librosa/IPython laziness | ENG-4 |
 | `test_multiplotter.py` | `plot_combined`, `plot_combined_3d`, `plot_equalizer_bars`; local small TSVs, all three bar aggregations | — |
-| `test_known_bugs.py` | `analyze_signal`, both spectrogram entry points, `plot_waves`, `estimate_sampling_frequency_and_time_vector`, pitch spelling, stereo trimming, `_resample_by_sampling`, all three morph pairings, transitions, wide pitch scaling, negative stretch | DSP-1 through DSP-9; 26 strict xfail cases |
+| `test_known_bugs.py` | `analyze_signal`, both spectrogram entry points, `plot_waves`, `estimate_sampling_frequency_and_time_vector`, pitch spelling, stereo trimming, `_resample_by_sampling`, all three morph pairings, transitions, wide pitch scaling, negative stretch, v1 import without notebook stack | DSP-1 through DSP-9, ENG-4; 27 strict xfail cases |
 
 ## Goldens and tolerances
 
