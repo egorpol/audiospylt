@@ -31,9 +31,11 @@ safety net, not exhaustive input validation or a quality score.
 | `test_viz_tables.py` | v1 `plot_snapshot`, `plot_events`, `plot_events_3d`; stems, opacity bins, tracks, log-axis warnings | ENG-4, TXT-9 |
 | `test_viz_morph.py` | v1 `plot_morph_map`; speech1↔conga3 category counts and widths for equal/power/sigmoid/transport | TXT-9, DSP-9 |
 | `test_nb_display.py` | v1 `show`, `show_svg`, `show_mei`, `play`; lazy IPython, SVG white background, peak policy | ENG-4 |
-| `test_layering.py` | AST: core/viz/nb import boundaries; `__init__` docstring-only; librosa/IPython laziness | ENG-4 |
+| `test_layering.py` | AST: core/viz/nb import boundaries; viz/nb `__init__` docstring-only; `_compat` dependency allowlist, package `__init__` stdlib-only imports, no v1 `_compat` imports; librosa/IPython laziness | ENG-4 |
 | `test_multiplotter.py` | `plot_combined`, `plot_combined_3d`, `plot_equalizer_bars`; local small TSVs, all three bar aggregations | — |
-| `test_known_bugs.py` | `analyze_signal`, both spectrogram entry points, `plot_waves`, `estimate_sampling_frequency_and_time_vector`, pitch spelling, stereo trimming, `_resample_by_sampling`, all three morph pairings, transitions, wide pitch scaling, negative stretch, v1 import without notebook stack | DSP-1 through DSP-9, ENG-4; 27 strict xfail cases |
+| `test_compat.py` | Registry/code and footer agreement, wrapper metadata and isolation, warning messages/locations, exception cleanup, lazy package exports | ENG-4 |
+| `test_migration_doc.py` | Migration table/registry agreement, resolvable v1 names, all Python examples executed on local audio/tables in isolated directories | — |
+| `test_known_bugs.py` | `analyze_signal`, both spectrogram entry points, `plot_waves`, `estimate_sampling_frequency_and_time_vector`, pitch spelling, stereo trimming, `_resample_by_sampling`, all three morph pairings, transitions, wide pitch scaling, negative stretch, v1 import without notebook stack | DSP-1 through DSP-9, ENG-4; 26 strict xfail cases; v1 import case now passes |
 
 ## Goldens and tolerances
 

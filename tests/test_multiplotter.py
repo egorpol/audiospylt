@@ -5,6 +5,11 @@ from audiospylt import multiplotter
 from tests import _cases as cases
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 @pytest.mark.parametrize("three_d", [False, True], ids=["plot_combined", "plot_combined_3d"])
 def test_event_plots_from_tsv(tmp_path, inert_environment, three_d):
     frame = cases.events()

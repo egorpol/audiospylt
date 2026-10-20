@@ -4,6 +4,11 @@ from audiospylt import plot_wave
 from tests import _cases as cases
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 @pytest.mark.parametrize("name", cases.WAVE_CASES)
 def test_synthesized_phases_intervals_and_fades(golden, name):
     y = cases.wave_case(name)

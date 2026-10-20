@@ -1168,3 +1168,6 @@ def merge_sigmoid(
     df_out.attrs["sigmoid_range_used"] = float(sigmoid_range)
     
     return df_out
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

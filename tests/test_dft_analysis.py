@@ -5,6 +5,11 @@ from audiospylt import dft_analysis as dft
 from tests import _cases as cases
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 def test_fft_window_filter_and_analysis(golden):
     golden("dft", cases.dft_case())
 

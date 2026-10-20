@@ -1054,3 +1054,6 @@ def plot_equalizer_bars(
         fig.update_xaxes(tickmode="array", tickvals=x_tickvals, ticktext=x_ticktext)
     fig.update_yaxes(type=y_axis_type)
     show_plotly(fig)
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

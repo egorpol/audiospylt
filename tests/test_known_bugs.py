@@ -10,6 +10,11 @@ from audiospylt import generate_wave_file as wav, mei, plot_wave
 from tests import _cases as cases
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 @pytest.mark.xfail(strict=True, raises=AssertionError, reason="DSP-1: analysis peak amplitudes need one-sided and coherent-gain correction")
 @pytest.mark.parametrize("window", ["boxcar", "hann"])
 def test_analysis_reports_unit_sine_amplitude(window):
@@ -152,11 +157,6 @@ def test_negative_time_stretch_raises(stretch):
     assert False, "Negative time stretch must raise ValueError"
 
 
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError,
-    reason="ENG-4: audiospylt/__init__ still imports the 0.6 modules, which load "
-           "IPython; flips in 1.7b",
-)
 def test_v1_modules_import_without_notebook_stack():
     import os
     import subprocess

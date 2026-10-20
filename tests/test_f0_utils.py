@@ -5,6 +5,11 @@ from audiospylt import f0_utils
 from tests import _cases as cases
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 @pytest.mark.parametrize("name", cases.F0_CASES)
 def test_fundamental_search(golden, name):
     result = cases.f0_case(name, plot=True)

@@ -1040,3 +1040,6 @@ def process_temporal_chords(
         svg_save_path=svg_save_path, # Pass new parameter
         notebook_white_background=notebook_white_background,
     )
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

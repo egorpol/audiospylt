@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parents[1] / "audiospylt"
 
@@ -88,3 +89,22 @@ def test_viz_and_nb_init_are_single_docstring():
         assert len(init.body) == 1 and isinstance(init.body[0], ast.Expr)
         assert isinstance(init.body[0].value, ast.Constant)
         assert isinstance(init.body[0].value.value, str)
+
+
+def test_compat_imports_only_its_four_stdlib_dependencies():
+    imports = {name for _, _, name in _iter_imports(ROOT / "_compat.py")}
+    assert imports == {"__future__", "contextvars", "functools", "warnings"}
+
+
+def test_package_init_has_only_stdlib_imports_at_module_level():
+    for node, parents, name in _iter_imports(ROOT / "__init__.py"):
+        if not _inside_function(node, parents):
+            assert not isinstance(node, ast.ImportFrom) or node.level == 0
+            assert _top(name) in sys.stdlib_module_names, name
+
+
+def test_v1_packages_never_import_compat():
+    for package in (*_CORE, "viz", "nb"):
+        for path in sorted((ROOT / package).rglob("*.py")):
+            for _, _, name in _iter_imports(path):
+                assert "_compat" not in name.split("."), f"{path}: imports {name}"

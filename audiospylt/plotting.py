@@ -57,3 +57,6 @@ def show_plotly(
             return fig
 
 
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

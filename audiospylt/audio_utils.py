@@ -1488,3 +1488,6 @@ def _print_spectrogram_info(sample_rate, spec_info: dict, spectrogram_kwargs: di
     if n_frames is not None:
         print(f"- frames: {n_frames}{padding_info_str}")
 
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

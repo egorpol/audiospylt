@@ -6,6 +6,11 @@ from audiospylt import audio_utils as audio
 from tests import _cases as cases
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 @pytest.mark.parametrize("mono", [True, False], ids=["mono", "channel_first_stereo"])
 def test_local_loading(tmp_path, golden, mono):
     path, _, sr = cases.local_wav(tmp_path)

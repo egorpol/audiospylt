@@ -12,6 +12,11 @@ from audiospylt.synth.additive import synthesize
 from audiospylt.transform.morph import METHODS, morph, pair, parameter_range
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 def snapshot(freq, amp=None):
     return validate(pd.DataFrame({"freq": freq, "amp": np.ones(len(freq)) if amp is None else amp}),
                     "snapshot")

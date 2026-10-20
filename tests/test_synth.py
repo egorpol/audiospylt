@@ -25,6 +25,11 @@ VOICE = [
 ]
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 def _events(rows, **extra):
     table = pd.DataFrame(rows, columns=COLUMNS, dtype=float)
     for name, values in extra.items():

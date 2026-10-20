@@ -959,3 +959,6 @@ def analyze_signal(
         )
 
     return peaks_df
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

@@ -6,6 +6,11 @@ from audiospylt import generate_wave_file as wav
 from tests import _cases as cases
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 @pytest.mark.parametrize("bits", [16, 24])
 def test_scaling_and_native_export(tmp_path, golden, goldens, bits):
     actual = cases.export_case(tmp_path, bits)

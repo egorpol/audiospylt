@@ -478,3 +478,6 @@ def summarize_result(
 
     if show_plot:
         _show_plotly(result["fig"])
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

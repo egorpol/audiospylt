@@ -24,6 +24,11 @@ from audiospylt.model.schema import (
 import audiospylt.model.schema as schema
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 def _frame(kind):
     values = {
         "snapshot": {"freq": [0.0, 440.0], "amp": [1.0, 0.5]},

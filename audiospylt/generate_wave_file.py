@@ -524,3 +524,6 @@ def render_selected_waveforms(
         verbose=verbose,
         alias_above_nyquist=alias_above_nyquist,
     )
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

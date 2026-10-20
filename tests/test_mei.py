@@ -4,6 +4,11 @@ from tests import _cases as cases
 from tests._support import normalize_xml
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 def test_pitch_helpers(golden):
     golden("mei/pitch", cases.mei_pitch_case())
 

@@ -4,6 +4,11 @@ from audiospylt import df_transforms as transforms
 from tests import _cases as cases
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 @pytest.mark.parametrize("name", cases.TRANSFORM_CASES)
 def test_spectral_transforms(golden, name):
     golden(f"df/{name}", cases.transform_case(name))

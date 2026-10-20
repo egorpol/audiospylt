@@ -1,7 +1,13 @@
 from pathlib import Path
 import pandas as pd
+import pytest
 from audiospylt import io_utils
 from tests import _cases as cases
+
+
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
 
 
 def test_interval_events(golden):

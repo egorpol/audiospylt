@@ -14,6 +14,11 @@ from audiospylt.transform.scale import split_events, stretch, transpose
 from tests import _cases as cases
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 def canonical(table):
     return validate(table.rename(columns={"Frequency (Hz)": "freq", "Amplitude": "amp",
                                          "amp_min": "amp_start", "amp_max": "amp_stop"}),

@@ -37,6 +37,11 @@ CELLO_PARTIALS = [
 ]
 
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::audiospylt._compat.AudiospyltDeprecationWarning"
+)
+
+
 def _sine(freq, amp=0.37, *, sr=1000, length=1000, phase=0.0):
     return amp * np.sin(2 * np.pi * freq * np.arange(length) / sr + phase)
 

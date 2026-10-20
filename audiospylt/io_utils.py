@@ -91,3 +91,6 @@ def events_df_from_peaks_by_interval(
 
     return events_df
 
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

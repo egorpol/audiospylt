@@ -462,3 +462,6 @@ def estimate_sampling_frequency_and_time_vector(
 #     'amp_max': [1, 1],
 # })
 # y_combined = plot_waves(wave_params, k=0.001)
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())

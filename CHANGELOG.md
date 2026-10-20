@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Deprecated
+- The 0.6 modules and their top-level function names now warn on calls with `AudiospyltDeprecationWarning`; they are removed in 1.1. See `docs/migration.md` for replacements and changed conventions.
+
+### Changed
+- `import audiospylt` no longer imports the 0.6 modules or IPython; old names load lazily on first access.
+
 ### Added
 - v1 subpackage layout (`io`, `analysis`, `model`, `transform`, `synth`, `notation`, `viz`, `nb`); the 0.6 modules are unchanged.
 - `audiospylt.model.schema`: column contracts for `snapshot`, `events` and `tracks` tables, with `validate()` reporting every problem at once, `infer_kind()` and `upgrade()` for 0.6 column names (`LegacyFormatWarning`).

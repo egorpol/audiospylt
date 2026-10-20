@@ -300,3 +300,6 @@ def plot_waveforms(
 
     show_plotly(fig_dft_magnitude)
     show_plotly(fig_dft_phase)
+
+from ._compat import deprecate_module  # noqa: E402
+deprecate_module(globals())
