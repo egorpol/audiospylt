@@ -23,6 +23,8 @@ safety net, not exhaustive input validation or a quality score.
 | `test_generate_wave_file.py` | `generate_wave_file`, `render_audio`, `render_selected_waveforms`, `mix_selected_waveforms`, `scale_samples`; native 16/24-bit WAVs, bandlimited/intentional-alias resampling, silence, mixed lengths, legacy `n`/preferred `dt` | DSP-8 (desired behaviour in `test_known_bugs.py`) |
 | `test_io_utils.py` | `save_df_tsv`, `events_df_from_peaks_by_interval` | — |
 | `test_mei.py` | `midi_value`, `midi_cent_value`, `acoustical_pitch_name`, `pitch_name_and_deviation_to_step_octave_alter`, `map_alteration_to_mei_accid`, `convert_frequencies`, `create_mei_string`, `create_temporal_mei_string`, `process_and_visualize`, `process_temporal_chords` | DSP-5 (desired behaviour in `test_known_bugs.py`) |
+| `test_notation_pitch.py` | v1 `pitch_table`, `cents_label`; exhaustive C1–B8 spelling/quantisation sweep, half-up ties, eighth-mode accuracy, input validation | DSP-5, CLM-8 |
+| `test_notation_mei.py` | v1 `snapshot_to_mei`, `events_to_mei`, `render_svg`, `render_svg_pages`; MEI 5.1 schema, labels/staves, temporal gaps, range, fd-level warning capture, lazy/display-free imports | DSP-5, CLM-8, ENG-4 |
 | `test_multiplotter.py` | `plot_combined`, `plot_combined_3d`, `plot_equalizer_bars`; local small TSVs, all three bar aggregations | — |
 | `test_known_bugs.py` | `analyze_signal`, both spectrogram entry points, `plot_waves`, `estimate_sampling_frequency_and_time_vector`, pitch spelling, stereo trimming, `_resample_by_sampling`, all three morph pairings, transitions, wide pitch scaling, negative stretch | DSP-1 through DSP-9; 20 strict xfail cases |
 

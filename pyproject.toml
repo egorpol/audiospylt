@@ -40,7 +40,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["build", "nbclient", "nbstripout", "pytest", "pytest-timeout", "ruff", "twine"]
+dev = ["build", "lxml", "nbclient", "nbstripout", "pytest", "pytest-timeout", "ruff", "twine"]
+notation = ["verovio"]
 
 [project.urls]
 Changelog = "https://github.com/egorpol/audiospylt/blob/main/CHANGELOG.md"

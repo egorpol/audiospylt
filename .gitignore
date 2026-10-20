@@ -48,6 +48,8 @@ dist/
 rendered_audio/
 tsv/
 mei/
+# ...but not the vendored MEI schema the tests validate against
+!tests/data/mei/
 _tmp_*.py
 
 # ===================================================================
