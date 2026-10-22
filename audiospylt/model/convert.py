@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
 
 from audiospylt.model.schema import validate
 
-__all__ = ["snapshot_to_events"]
+if TYPE_CHECKING:
+    from audiospylt.analysis.f0 import F0Contour
+
+__all__ = ["snapshot_to_events", "f0_to_tracks"]
 
 
 def snapshot_to_events(snapshot: pd.DataFrame, time_start: float, time_stop: float) -> pd.DataFrame:
@@ -52,3 +57,42 @@ def snapshot_to_events(snapshot: pd.DataFrame, time_start: float, time_stop: flo
     if "meta" in table.attrs:
         events.attrs["meta"] = dict(table.attrs["meta"])
     return events
+
+
+def f0_to_tracks(contour: F0Contour) -> pd.DataFrame:
+    """Turn the voiced frames of an f0 contour into a tracks table.
+
+    Parameters
+    ----------
+    contour : F0Contour
+        Result of ``analysis.f0.pyin``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A validated ``tracks`` table with one row per voiced frame, in time
+        order: ``time``, ``freq`` = f0, ``amp`` = the fundamental's D4
+        amplitude (0 where the fundamental is missing, so those frames draw
+        and synthesise silent), and ``track_id`` counting voiced runs from 0
+        (an unvoiced frame ends a run). Extra columns ``voiced_prob`` and
+        ``refined`` copy the contour's. ``attrs["meta"]`` records the method
+        and analysis settings. No voiced frame gives an empty table.
+    """
+    voiced = np.asarray(contour.voiced, dtype=bool)
+    previous = np.zeros_like(voiced)
+    previous[1:] = voiced[:-1]
+    track_id = np.cumsum(voiced & ~previous) - 1
+    rows = np.flatnonzero(voiced)
+    tracks = validate(pd.DataFrame({
+        "track_id": track_id[rows].astype(np.int64),
+        "time": contour.times[rows],
+        "freq": contour.f0[rows],
+        "amp": contour.amp[rows],
+        "voiced_prob": contour.voiced_prob[rows],
+        "refined": np.asarray(contour.refined, dtype=bool)[rows],
+    }), "tracks")
+    tracks.attrs["meta"] = {
+        "method": "pyin", "sr": contour.sr, "frame_length": contour.frame_length,
+        "hop": contour.hop, "fmin": contour.fmin, "fmax": contour.fmax,
+    }
+    return tracks

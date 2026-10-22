@@ -76,7 +76,7 @@ def test_registry_matches_public_definitions_and_footer(module):
 def test_registry_inventory():
     assert len(REGISTRY) == 11
     assert len(NAMES) == 59
-    assert sum(use is None for entries in REGISTRY.values() for use, _ in entries.values()) == 16
+    assert sum(use is None for entries in REGISTRY.values() for use, _ in entries.values()) == 15
     assert "mei_old" not in REGISTRY
     assert not {"A4_FREQUENCY", "MIDI_BASE", "CENT_FACTOR", "XML_NS"} & REGISTRY["mei"].keys()
     assert issubclass(AudiospyltDeprecationWarning, DeprecationWarning)
@@ -143,9 +143,10 @@ def test_exact_messages():
     assert message("dft_analysis", "compute_fft") == (
         "audiospylt.dft_analysis.compute_fft is deprecated (0.6 API, removed in 1.1); "
         "use audiospylt.analysis.spectrum.spectrum instead. See docs/migration.md.")
-    assert message("f0_utils", "search_f0") == (
-        "audiospylt.f0_utils.search_f0 is deprecated (0.6 API, removed in 1.1) "
-        "and has no v1 replacement. See docs/migration.md.")
+    assert message("f0_utils", "summarize_result") == (
+        "audiospylt.f0_utils.summarize_result is deprecated (0.6 API, removed in 1.1) "
+        "and has no v1 replacement; closest: the fields of audiospylt.analysis.f0.HarmonicF0. "
+        "See docs/migration.md.")
     assert message("generate_wave_file", "scale_samples") == (
         "audiospylt.generate_wave_file.scale_samples is deprecated (0.6 API, removed in 1.1) "
         "and has no v1 replacement; closest: audiospylt.io.audio.write_audio(..., subtype=...). "

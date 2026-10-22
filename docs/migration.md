@@ -168,8 +168,8 @@ Display-only summary plot sizes, titles and layouts stay in 0.6 until you replac
 
 | 0.6 | v1 | notes |
 | --- | --- | --- |
-| `f0_utils.search_f0` | None | None. The 0.6 search, scoring, trimming and refinement options have no v1 equivalent. |
-| `f0_utils.summarize_result` | None | None. Inspect stored 0.6 search results yourself when retiring the old search. |
+| `f0_utils.search_f0` | `analysis.f0.harmonic_f0` | Pass a snapshot table (`find_peaks`, filtered with `rel_db` / `prominence_db`) instead of `freqs` or `peaks_df`. `f0_min` / `f0_max` → required `fmin` / `fmax`. Weights default to amplitudes (`weight="amp"`, 0.6 `use_amp_weights=True`); 0.6 weighted equally by default (`weight="equal"`); custom `weights` arrays have no equivalent. `step`, `coarse_step` and `refine_half_width_hz` are gone: v1 finds each candidate's exact optimum. `top_k` → `candidate_f0` / `candidate_rms`. `trim_outlier_cents` and `robust_trim_frac` have no equivalent. v1 returns the highest candidate within `tol_cents=3` of the lowest error, because a subharmonic always fits at least as well; `tol_cents=0` returns the 0.6 optimum. No plot. For f0 over time, use `analysis.f0.pyin`. |
+| `f0_utils.summarize_result` | None | None. The fields of `analysis.f0.HarmonicF0` (`f0`, `rms_cents`, `harmonics`, `cents`, `candidate_f0`, `candidate_rms`) hold what it printed. |
 
 ### generate_wave_file
 

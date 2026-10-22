@@ -50,7 +50,7 @@ peaks, spectrograms, synthesis, transforms and MEI export. Optional features are
 | `[plot]` | Plotly figures (`audiospylt.viz`) |
 | `[notebook]` | display, playback and Jupyter support (`audiospylt.nb`) |
 | `[notation]` | SVG rendering of MEI with Verovio |
-| `[librosa]` | mel spectrograms (and, later, pyin f0 estimation) |
+| `[librosa]` | mel spectrograms and pyin f0 tracking (`asp.pyin`) |
 | `[all]` | all of the above, and the 0.6 API |
 
 The notebooks, on Colab as well, need all of them:

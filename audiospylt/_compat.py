@@ -63,8 +63,8 @@ REGISTRY: dict[str, dict[str, tuple[str | None, str | None]]] = {
             'audiospylt.transform.morph.pair(..., method="sigmoid", sigmoid_range=...)', None),
     },
     "f0_utils": {
-        "search_f0": (None, None),
-        "summarize_result": (None, None),
+        "search_f0": ("audiospylt.analysis.f0.harmonic_f0", None),
+        "summarize_result": (None, "the fields of audiospylt.analysis.f0.HarmonicF0"),
     },
     "generate_wave_file": {
         "ensure_finite_audio": (None, "numpy.isfinite / numpy.nan_to_num"),

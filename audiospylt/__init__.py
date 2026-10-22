@@ -1,7 +1,7 @@
 """AudioSpylt: sound analysis, resynthesis, and visual/symbolic representations.
 
 ``import audiospylt as asp`` exposes the compute API at the top level
-(``asp.load_audio``, ``asp.spectrum``, ``asp.find_peaks``, ``asp.morph``, …),
+(``asp.load_audio``, ``asp.spectrum``, ``asp.find_peaks``, ``asp.pyin``, ``asp.morph``, …),
 loaded lazily on first access. Plotly figures live in ``asp.viz`` (needs
 ``audiospylt[plot]``) and notebook display in ``asp.nb`` (needs
 ``audiospylt[notebook]``). The 0.6 names still resolve but are deprecated;
@@ -36,12 +36,17 @@ _V1 = {
     "spectrogram": "analysis.spectrogram",
     "MelSpectrogram": "analysis.spectrogram",
     "mel_spectrogram": "analysis.spectrogram",
+    "F0Contour": "analysis.f0",
+    "pyin": "analysis.f0",
+    "HarmonicF0": "analysis.f0",
+    "harmonic_f0": "analysis.f0",
     "SchemaError": "model.schema",
     "LegacyFormatWarning": "model.schema",
     "validate": "model.schema",
     "infer_kind": "model.schema",
     "upgrade": "model.schema",
     "snapshot_to_events": "model.convert",
+    "f0_to_tracks": "model.convert",
     "synthesize": "synth.additive",
     "transpose": "transform.scale",
     "stretch": "transform.scale",
@@ -75,12 +80,17 @@ __all__ = [
     "spectrogram",
     "MelSpectrogram",
     "mel_spectrogram",
+    "F0Contour",
+    "pyin",
+    "HarmonicF0",
+    "harmonic_f0",
     "SchemaError",
     "LegacyFormatWarning",
     "validate",
     "infer_kind",
     "upgrade",
     "snapshot_to_events",
+    "f0_to_tracks",
     "synthesize",
     "transpose",
     "stretch",

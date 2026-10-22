@@ -6,7 +6,7 @@ Usage (from outside the checkout, so that the import finds the installed package
 
 Both modes run the compute pipeline on a synthetic stereo file: write_audio, load_audio with
 resampling, spectrum, find_peaks, snapshot_to_events, synthesize, a table round trip,
-pitch_table and snapshot_to_mei. "core" then checks that no optional package is installed or
+pitch_table, snapshot_to_mei and harmonic_f0. "core" then checks that no optional package is installed or
 imported and that each optional feature names its extra; "all" checks that those features
 work and that the 0.6 API still resolves. Standard library and core dependencies only; no
 repository files, no network. Prints one line per check and exits 1 on the first failure.
@@ -95,6 +95,10 @@ def main(argv=None):
         mei = asp.snapshot_to_mei(peaks)
         assert "<mei" in mei
 
+    with check("harmonic_f0: 440 + 660 Hz -> 220 Hz (harmonics 2, 3)"):
+        result = asp.harmonic_f0(peaks, fmin=100, fmax=300)
+        assert abs(result.f0 - 220) < 0.01 and list(result.harmonics) == [2, 3], result
+
     if mode == "core":
         with check("no optional package installed or imported"):
             installed = [name for name in OPTIONAL if importlib.util.find_spec(name) is not None]
@@ -102,6 +106,8 @@ def main(argv=None):
             assert not installed and not loaded, f"installed {installed}, imported {loaded}"
         with check("mel_spectrogram names [librosa]"):
             raises_naming(lambda: asp.mel_spectrogram(asp.spectrogram(audio, sr)), "librosa")
+        with check("pyin names [librosa]"):
+            raises_naming(lambda: asp.pyin(audio, sr, fmin=100, fmax=1000), "librosa")
         with check("render_svg names [notation]"):
             raises_naming(lambda: asp.render_svg(mei), "notation")
         with check("import audiospylt.viz names [plot]"):
@@ -117,6 +123,10 @@ def main(argv=None):
     else:
         with check("mel_spectrogram"):
             assert isinstance(asp.mel_spectrogram(asp.spectrogram(audio, sr)), asp.MelSpectrogram)
+        with check("pyin -> f0_to_tracks: missing fundamental 220 Hz"):
+            contour = asp.pyin(audio, sr, fmin=100, fmax=1000)
+            assert contour.voiced.all() and abs(np.median(contour.f0) - 220) < 0.1, contour
+            assert len(asp.f0_to_tracks(contour)) == len(contour.f0)
         with check("viz.plot_spectrum returns a Plotly figure"):
             import plotly.graph_objects as go
 

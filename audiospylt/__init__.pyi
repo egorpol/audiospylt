@@ -24,12 +24,17 @@ from .analysis.spectrogram import Spectrogram as Spectrogram
 from .analysis.spectrogram import spectrogram as spectrogram
 from .analysis.spectrogram import MelSpectrogram as MelSpectrogram
 from .analysis.spectrogram import mel_spectrogram as mel_spectrogram
+from .analysis.f0 import F0Contour as F0Contour
+from .analysis.f0 import pyin as pyin
+from .analysis.f0 import HarmonicF0 as HarmonicF0
+from .analysis.f0 import harmonic_f0 as harmonic_f0
 from .model.schema import SchemaError as SchemaError
 from .model.schema import LegacyFormatWarning as LegacyFormatWarning
 from .model.schema import validate as validate
 from .model.schema import infer_kind as infer_kind
 from .model.schema import upgrade as upgrade
 from .model.convert import snapshot_to_events as snapshot_to_events
+from .model.convert import f0_to_tracks as f0_to_tracks
 from .synth.additive import synthesize as synthesize
 from .transform.scale import transpose as transpose
 from .transform.scale import stretch as stretch
@@ -64,12 +69,17 @@ __all__ = [
     "spectrogram",
     "MelSpectrogram",
     "mel_spectrogram",
+    "F0Contour",
+    "pyin",
+    "HarmonicF0",
+    "harmonic_f0",
     "SchemaError",
     "LegacyFormatWarning",
     "validate",
     "infer_kind",
     "upgrade",
     "snapshot_to_events",
+    "f0_to_tracks",
     "synthesize",
     "transpose",
     "stretch",
