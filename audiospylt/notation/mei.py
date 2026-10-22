@@ -23,9 +23,10 @@ def _element(parent, name, **attrs):
     return ET.SubElement(parent, name, attrs)
 
 
-def _label(measure, staff_no, note_id, place, text):
+def _label(measure, staff_no, note_id, place, text, vgrp=None):
     # A bare <dir> starts at its note's left edge; <rend halign> centres it on the head.
-    direction = _element(measure, "dir", staff=str(staff_no), startid=f"#{note_id}", place=place)
+    direction = _element(measure, "dir", staff=str(staff_no), startid=f"#{note_id}", place=place,
+                         **({"vgrp": str(vgrp)} if vgrp is not None else {}))
     _element(direction, "rend", halign="center").text = text
 
 
@@ -81,8 +82,24 @@ def _document(clef, title):
     return root, _element(score, "section"), staves
 
 
+def _height_groups(pitches, staves):
+    # Verovio lifts each label clear of its own note (a wide label over a sharp
+    # sits higher than a narrow one), so a sequence's labels wobble. Labels with
+    # one @vgrp share the outermost height; a run ends at a staff change or
+    # where its notes would span more than a third.
+    groups, number, low, high, upper = [], 0, None, None, None
+    for row in pitches.itertuples():
+        step = row.octave * 7 + "cdefgab".index(row.step)
+        on_upper = len(staves) == 2 and row.written_midi >= 60
+        if low is None or on_upper != upper or max(high, step) - min(low, step) > 2:
+            number, low, high, upper = number + 1, step, step, on_upper
+        low, high = min(low, step), max(high, step)
+        groups.append(number)
+    return groups
+
+
 def _measure(section, pitches, staves, next_id, *, chord=True, labels=False,
-             decimals=0, naturals=False, onset_text=None):
+             decimals=0, naturals=False, onset_text=None, vgrp=None):
     measure = _element(section, "measure", n=str(len(section) + 1), right="invis")
     ordered = pitches.sort_values("written_midi", kind="stable")
     top_anchor = None
@@ -117,7 +134,7 @@ def _measure(section, pitches, staves, next_id, *, chord=True, labels=False,
         # Verovio stacks dirs outward from the staff in document order, so labels
         # below the F staff go high to low to keep the column in the chord's order.
         for note_id, text in reversed(texts) if clef == "F" else texts:
-            _label(measure, staff_no, note_id, "above" if clef == "G" else "below", text)
+            _label(measure, staff_no, note_id, "above" if clef == "G" else "below", text, vgrp)
     if onset_text is not None and top_anchor is not None:
         staff_no, note_id = top_anchor
         _label(measure, staff_no, note_id, "above", onset_text)
@@ -156,9 +173,11 @@ def snapshot_to_mei(
         Cents remainder relative to each written note, centred on its notehead
         (MEI ``<dir>`` with ``<rend halign="center">``). In a chord the labels
         of a staff stack in one column, above the G staff or below the F
-        staff, read from the top in the chord's order (high to low). None
-        enables labels only for eighth resolution; False is invalid in
-        eighth mode.
+        staff, read from the top in the chord's order (high to low). In a
+        sequence, consecutive notes on one staff spanning at most a third
+        share a label height (MEI ``@vgrp``), so labels do not move up and
+        down with each note's accidental. None enables labels only for
+        eighth resolution; False is invalid in eighth mode.
     decimals : int, default 0
         Decimal places in cents labels.
     naturals : bool, default False
@@ -190,9 +209,11 @@ def snapshot_to_mei(
     root, section, staves = _document(clef, title)
     next_id = 1
     groups = [pitches] if layout == "chord" else [pitches.iloc[[i]] for i in range(len(pitches))]
-    for group in groups:
+    heights = (_height_groups(pitches, staves) if layout == "sequence" and labels
+               else [None] * len(groups))
+    for group, vgrp in zip(groups, heights):
         next_id = _measure(section, group, staves, next_id, chord=layout == "chord",
-                           labels=labels, decimals=decimals, naturals=naturals)
+                           labels=labels, decimals=decimals, naturals=naturals, vgrp=vgrp)
     return _serialize(root)
 
 

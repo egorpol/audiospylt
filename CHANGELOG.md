@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `synthesize(link_ramp=0.005)`: in `continuous` mode an amplitude step where one row continues another becomes a raised-cosine transition centred on the link (at most half of either row), so frame-by-frame tables no longer click at frame edges; `link_ramp=0` keeps hard steps. Modes and options are compared in `docs/synthesis.md`.
 - `morph(duplicates=...)`: `"full"` (default for `equal`, `power`, `sigmoid`) keeps the 0.6 gains, every copy of a shared partial at full amplitude, and emits every pairing row; `"primary"` (default for `transport`) gives one row per partial the amplitude so both ends match the snapshots' levels. `attrs["morph"]` records the choice.
 - MEI cents and onset labels are centred on their noteheads (`<dir><rend halign="center">`).
+- In `snapshot_to_mei(layout="sequence")` the cents labels of consecutive notes on one staff spanning at most a third share one height (MEI `@vgrp`), so they no longer move up and down with each note's accidental.
 
 ### Removed
 - `audiospylt.mei_old`, `requirements.txt` and the matplotlib dependency.

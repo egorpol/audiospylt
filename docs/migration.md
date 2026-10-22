@@ -96,7 +96,9 @@ used when reading old tables.
   arrows. Eighth-tone accuracy uses the nearest quarter-tone accidental plus a
   mandatory cents label. Sharps are the default; choose `spelling="flat"` for
   flats. Labels use MEI `<dir>` elements centred on the notehead
-  (`<rend halign="center">`). Documents are MEI 5.1 with a header. Dense
+  (`<rend halign="center">`); in a sequence, labels of neighbouring notes
+  within a third share one height (`@vgrp`). Documents are MEI 5.1 with a
+  header. Dense
   snapshots (many partials within a semitone or two) read better with
   `layout="sequence"`; `nlargest(n, "amp")` helps only when the strongest
   partials lie a third or more apart.

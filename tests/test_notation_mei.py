@@ -151,6 +151,22 @@ def test_label_stacks_read_in_chord_order(make_mei, clef):
         assert order == sorted(order, reverse=below) and len(order) > 1
 
 
+@pytest.mark.parametrize("clef, expected", [("GF", ["1", "2", "2", "2", "3"]),
+                                            ("G", ["1", "1", "1", "2", "2"])])
+def test_sequence_labels_share_height_within_a_third(make_mei, clef, expected):
+    # B3 C4 D4 E4 F4 (E4 quarter-sharp keeps its step): a height group ends at a
+    # staff change (B3 | C4 on the grand staff) or where it would span more than a third.
+    _, root = make_mei(snapshot([59, 60, 62, 64.5, 65]), layout="sequence", labels=True, clef=clef)
+    assert root.xpath("//m:dir/@vgrp", namespaces=NS) == expected
+
+
+def test_height_groups_only_in_labelled_sequences(make_mei):
+    for _, root in (make_mei(labels=True), make_mei(kind="events", labels=True, time_labels=True)):
+        assert root.xpath("//m:dir", namespaces=NS) and not root.xpath("//m:dir/@vgrp", namespaces=NS)
+    _, root = make_mei(layout="sequence", labels=False)
+    assert not root.xpath("//m:dir", namespaces=NS)
+
+
 @pytest.mark.parametrize("labels", [None, True, False])
 @pytest.mark.parametrize("resolution", ["semitone", "quarter", "eighth"])
 def test_label_defaults_and_eighth_requirement(make_mei, labels, resolution):
@@ -381,6 +397,18 @@ def test_multiple_pages_and_option_override(make_mei, capfd):
     captured = capfd.readouterr()
     assert "[Warning]" not in captured.out + captured.err
     assert "[Error]" not in captured.out + captured.err
+
+
+def test_sequence_labels_render_at_one_height(make_mei, capfd):
+    # G#6 with a sharp: without a shared @vgrp Verovio lifts '-19' (wide enough to
+    # reach the sharp) above '-3', so the labels wobble (y 275 vs 434 in Verovio 6.3).
+    mei, _ = make_mei(snapshot([91.81, 91.97, 91.81, 91.97]), layout="sequence", labels=True)
+    svg = ET.fromstring(render_svg(mei))
+    texts = svg.findall(".//{http://www.w3.org/2000/svg}g[@class='dir']/{http://www.w3.org/2000/svg}text")
+    assert ["".join(t.itertext()).strip() for t in texts] == ["-19", "-3", "-19", "-3"]
+    assert len({t.get("y") for t in texts}) == 1
+    captured = capfd.readouterr()
+    assert "[Warning]" not in captured.out + captured.err
 
 
 def test_default_render_has_no_title_header_and_fits_the_music(make_mei, capfd):
