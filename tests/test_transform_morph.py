@@ -1,4 +1,4 @@
-"""0.6 pairing characterization, transport plans, and D13 table/render levels."""
+"""0.6 pairing characterization, transport plans, full/primary duplicates and D13 levels."""
 
 import warnings
 
@@ -99,9 +99,9 @@ def test_d13_gains_energy_order_and_unsorted(method, kwargs, reverse):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         plan = pair(a, b, method, **kwargs)
-        events = morph(a, b, 2.3, method, time_start=1.2, **kwargs)
+        events = morph(a, b, 2.3, method, time_start=1.2, duplicates="primary", **kwargs)
         sorted_events = morph(a.sort_values("freq", kind="stable"), b.sort_values("freq", kind="stable"),
-                              2.3, method, time_start=1.2, **kwargs)
+                              2.3, method, time_start=1.2, duplicates="primary", **kwargs)
     assert_d13(plan, a, b)
     assert events.amp_start.pow(2).sum() == pytest.approx(a.amp.iloc[plan.src.unique()].pow(2).sum())
     assert events.amp_stop.pow(2).sum() == pytest.approx(b.amp.iloc[plan.dst.unique()].pow(2).sum())
@@ -113,7 +113,8 @@ def test_d13_gains_energy_order_and_unsorted(method, kwargs, reverse):
         assert ordered.groupby(identity, sort=False)[flag].first().all()
     np.testing.assert_array_equal(events[["amp_start", "amp_stop"]], ordered[["amp_start", "amp_stop"]])
     pd.testing.assert_frame_equal(events, sorted_events)
-    assert events.attrs == {"audiospylt_table": "events", "morph": plan.attrs["morph"]}
+    assert events.attrs == {"audiospylt_table": "events",
+                            "morph": {**plan.attrs["morph"], "duplicates": "primary"}}
     np.testing.assert_array_equal(events.time_start, 1.2)
     np.testing.assert_array_equal(events.time_stop, 1.2 + 2.3)
 
@@ -212,6 +213,68 @@ def test_zero_transport_mass(weight, reverse):
         pair(a, b, "transport", weight=weight)
 
 
+@pytest.mark.parametrize("method,kwargs", STRATEGIES + [("transport", {}), ("transport", {"weight": "power"})])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_full_duplicates_keep_every_row_at_full_amplitude(method, kwargs, reverse):
+    a = snapshot([800., 200., 400.], [.5, .2, .4])
+    b = snapshot([150., 100., 1600., 300., 900., 500., 700.], [.2, .3, .4, .5, .6, .7, .8])
+    if reverse:
+        a, b = b, a
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        plan = pair(a, b, method, **kwargs)
+        full = morph(a, b, 2.3, method, time_start=1.2, duplicates="full", **kwargs)
+        default = morph(a, b, 2.3, method, time_start=1.2, **kwargs)
+    # Every pairing row sounds, each copy with its partials' full amplitudes.
+    columns = ["freq_start", "freq_stop", "amp_source", "amp_target"]
+    expected = plan[columns].sort_values(columns).to_numpy()
+    emitted = full[["freq_start", "freq_stop", "amp_start", "amp_stop"]].sort_values(
+        ["freq_start", "freq_stop", "amp_start", "amp_stop"]).to_numpy()
+    np.testing.assert_array_equal(emitted, expected)
+    # Primaries still come first in each group, so continuous linking picks them.
+    ordered = plan.set_index(["freq_start", "freq_stop"]).loc[
+        pd.MultiIndex.from_frame(full[["freq_start", "freq_stop"]])]
+    for identity, flag in (("src", "primary_start"), ("dst", "primary_stop")):
+        assert ordered.groupby(identity, sort=False)[flag].first().all()
+    assert full.attrs["morph"] == {**plan.attrs["morph"], "duplicates": "full"}
+    # None resolves per method: 0.6 methods keep 0.6 copies, transport keeps primaries.
+    if method == "transport":
+        expected_default = morph(a, b, 2.3, method, time_start=1.2, duplicates="primary", **kwargs)
+    else:
+        expected_default = full
+    pd.testing.assert_frame_equal(default, expected_default)
+    assert default.attrs["morph"] == expected_default.attrs["morph"]
+
+
+@pytest.mark.parametrize("sizes", [(3, 11), (11, 3), (4, 4)])
+@pytest.mark.parametrize("method,old", [("equal", "merge_equal_split"), ("power", "merge_cdf"),
+                                        ("sigmoid", "merge_sigmoid")])
+def test_full_duplicates_match_06_transition_rows(sizes, method, old):
+    rng = np.random.default_rng(sum(sizes))
+    a, b = [snapshot(np.sort(rng.uniform(30, 3000, size)), rng.random(size)) for size in sizes]
+    expected = legacy.create_time_transition_df(getattr(legacy, old)(a, b), 2.0, scale_amp=False)
+    result = morph(a, b, 2.0, method)
+    columns = ["freq_start", "freq_stop", "amp_start", "amp_stop"]
+    np.testing.assert_array_equal(
+        result[columns].sort_values(columns).to_numpy(),
+        expected.rename(columns={"amp_min": "amp_start", "amp_max": "amp_stop"})[columns]
+        .sort_values(columns).to_numpy())
+
+
+def test_full_transport_keeps_rows_primary_at_neither_end():
+    a, b = snapshot([100., 200.], [.5, .5]), snapshot([110., 150., 210.], [.4, .2, .4])
+    assert len(pair(a, b, "transport")) == 4
+    assert len(morph(a, b, 1, "transport")) == 3
+    full = morph(a, b, 1, "transport", duplicates="full")
+    assert len(full) == 4 and (full.amp_start > 0).all() and (full.amp_stop > 0).all()
+
+
+@pytest.mark.parametrize("duplicates", ["copies", "", 1, True, ["full"]])
+def test_bad_duplicates(duplicates):
+    with pytest.raises(ValueError, match="duplicates"):
+        morph(snapshot([100.]), snapshot([200.]), 1, duplicates=duplicates)
+
+
 @pytest.mark.parametrize("kwargs", [{"duration": 0}, {"duration": -1}, {"duration": np.inf},
     {"duration": True}, {"duration": [1]}, {"duration": 1, "time_start": -1},
     {"duration": 1, "time_start": np.nan}, {"duration": 1, "time_start": True}])
@@ -267,11 +330,11 @@ def test_render_random_diverging_converging_and_chained():
             for method, kwargs in RENDER_STRATEGIES:
                 for source, target in ((a, b), (b, a)):
                     for duration, tolerance in ((15., .1), (2., .25)):
-                        events = morph(source, target, duration, method, **kwargs)
+                        events = morph(source, target, duration, method, duplicates="primary", **kwargs)
                         levels = endpoint_levels(events, source, target, 0., duration)
                         ranges[f"{duration:g}s"].extend(levels)
                         assert np.abs(levels).max() <= tolerance, (k, draw, method, duration, levels)
-                    middle = morph(source, target, 2., method, time_start=1., **kwargs)
+                    middle = morph(source, target, 2., method, time_start=1., duplicates="primary", **kwargs)
                     chain = pd.concat([hold(source, 0., 1.), middle, hold(target, 3., 4.)], ignore_index=True)
                     levels = endpoint_levels(chain, source, target, 1., 2.)
                     ranges["chain"].extend(levels)

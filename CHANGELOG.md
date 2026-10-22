@@ -26,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `audiospylt.notation`: `pitch_table()` quantises absolute pitch to semitone, quarter-tone or eighth-tone resolution and spells it with sharps (default) or flats using standard and Stein–Zimmermann quarter-tone accidentals, keeping the unrounded cents residual; `snapshot_to_mei()` (chord or sequence) and `events_to_mei()` (temporal chords) write MEI 5.1 documents that validate against the MEI schema, with optional cents labels (always on at eighth-tone resolution, where the label carries the eighth-tone accuracy); `render_svg()` / `render_svg_pages()` render them with Verovio (`audiospylt[notation]` extra) without display side effects.
 - Table format specification in `docs/table-format.md`.
 - `py.typed` and type hints on the public v1 API, with an `__init__.pyi` stub declaring the lazy top-level names.
+- `synthesize(link_ramp=0.005)`: in `continuous` mode an amplitude step where one row continues another becomes a raised-cosine transition centred on the link (at most half of either row), so frame-by-frame tables no longer click at frame edges; `link_ramp=0` keeps hard steps. Modes and options are compared in `docs/synthesis.md`.
+- `morph(duplicates=...)`: `"full"` (default for `equal`, `power`, `sigmoid`) keeps the 0.6 gains, every copy of a shared partial at full amplitude, and emits every pairing row; `"primary"` (default for `transport`) gives one row per partial the amplitude so both ends match the snapshots' levels. `attrs["morph"]` records the choice.
+- MEI cents and onset labels are centred on their noteheads (`<dir><rend halign="center">`).
 
 ### Removed
 - `audiospylt.mei_old`, `requirements.txt` and the matplotlib dependency.

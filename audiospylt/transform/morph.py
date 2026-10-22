@@ -1,4 +1,4 @@
-"""Legacy-compatible frequency pairing and D13 births/deaths morph gains."""
+"""Legacy-compatible and transport pairing; morph gains of shared partials (0.6 full or primary)."""
 
 from __future__ import annotations
 
@@ -311,8 +311,9 @@ def morph(
     power: float | None = None,
     sigmoid_range: float | None = None,
     weight: str = "amp",
+    duplicates: str | None = None,
 ) -> pd.DataFrame:
-    """Emit a D13 morph as v1 events, with primaries first for continuous linking.
+    """Emit a morph as v1 events, with primaries first for continuous linking.
 
     Parameters
     ----------
@@ -328,12 +329,27 @@ def morph(
         Method-specific warping parameter; None uses the mean covering range.
     weight : {'amp', 'power'}
         Transport mass choice; only transport accepts a nondefault weight.
+    duplicates : {'full', 'primary'} or None, default None
+        Gain of a partial that several rows share at one end. ``'full'``: every
+        row carries its partials' full amplitudes at both ends, as in 0.6, and
+        every pairing row is emitted. A partial used by k rows sounds k times
+        at that end, so that end is louder than its snapshot: copies leaving
+        one partial start in phase (k times its amplitude), copies arriving
+        at one partial have different phase histories, so they add about k
+        times its power and beat slowly against each other. Measured with
+        'equal' over 15 s: speech1 (41 peaks) → conga3 (10) ends +5.7 dB
+        above the static conga3; conga3 → speech1 starts +11.2 dB above the
+        static conga3, the same levels as 0.6. ``'primary'``: only the
+        group's primary row carries the amplitude there; the other rows start
+        or end at 0, so both ends match the snapshots' levels, and rows primary
+        at neither end are dropped. None means ``'full'`` for the 0.6 methods
+        ('equal', 'power', 'sigmoid') and ``'primary'`` for 'transport'.
 
     Returns
     -------
     pandas.DataFrame
-        Validated events with attrs['morph'] copied from pair. Rows primary at
-        neither end are dropped. Stable topological pairing order puts every
+        Validated events with attrs['morph'] copied from pair, plus the
+        resolved ``duplicates``. Stable topological pairing order puts every
         group's primary before its other rows. Amplitudes are not normalized.
 
     Raises
@@ -341,7 +357,8 @@ def morph(
     SchemaError
         Invalid input snapshots or resulting events.
     ValueError
-        Invalid duration/onset, or any invalid pairing argument (see pair).
+        Invalid duration/onset/duplicates, or any invalid pairing argument
+        (see pair).
     """
     duration = _finite_scalar(duration, "duration")
     time_start = _finite_scalar(time_start, "time_start")
@@ -349,11 +366,18 @@ def morph(
         raise ValueError("duration must be > 0")
     if time_start < 0:
         raise ValueError("time_start must be >= 0")
+    if duplicates is not None and (not isinstance(duplicates, str) or duplicates not in ("full", "primary")):
+        raise ValueError(f"duplicates must be 'full', 'primary' or None; got {duplicates!r}")
     pairing = pair(source, target, method, power=power, sigmoid_range=sigmoid_range, weight=weight)
-    sounding = pairing.loc[pairing.primary_start | pairing.primary_stop].reset_index(drop=True)
+    if duplicates is None:
+        duplicates = "primary" if method == "transport" else "full"
+    if duplicates == "full":
+        sounding = pairing.assign(amp_start=pairing.amp_source, amp_stop=pairing.amp_target)
+    else:
+        sounding = pairing.loc[pairing.primary_start | pairing.primary_stop].reset_index(drop=True)
     sounding = sounding.iloc[_emission_order(sounding)]
     result = sounding[["freq_start", "freq_stop", "amp_start", "amp_stop"]].copy()
     result["time_start"] = time_start
     result["time_stop"] = time_start + duration
-    result.attrs["morph"] = pairing.attrs["morph"].copy()
+    result.attrs["morph"] = {**pairing.attrs["morph"], "duplicates": duplicates}
     return validate(result, "events")

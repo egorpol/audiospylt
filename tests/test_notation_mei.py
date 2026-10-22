@@ -68,6 +68,10 @@ def make_mei(mei_schema):
             note = by_id[direction.get("startid")[1:]]
             assert note.xpath("ancestor::m:staff", namespaces=NS)[0].get("n") == direction.get("staff")
             assert note.xpath("ancestor::m:measure", namespaces=NS)[0] is direction.getparent()
+            # Labels are centred on the notehead: the text sits in one <rend halign="center">.
+            assert not (direction.text or "").strip() and len(direction) == 1
+            assert direction[0].tag == f"{{{NS['m']}}}rend" and direction[0].get("halign") == "center"
+            assert direction[0].text
         assert all(m.get("right") == "invis" for m in root.xpath("//m:measure", namespaces=NS))
         assert not root.xpath("//m:fing", namespaces=NS)
         return mei, root
@@ -118,7 +122,7 @@ def test_staff_split_uses_written_pitch_and_includes_middle_c(make_mei):
                                              ("sequence", ["0", "-10", "+10"])])
 def test_note_order_and_stable_written_unisons(make_mei, layout, expected):
     _, root = make_mei(snapshot([72, 60.4, 60.6]), clef="G", layout=layout, labels=True)
-    assert root.xpath("//m:dir/text()", namespaces=NS) == expected
+    assert root.xpath("//m:dir/m:rend/text()", namespaces=NS) == expected
 
 
 @pytest.mark.parametrize("spelling", ["sharp", "flat"])
@@ -128,7 +132,7 @@ def test_labels_are_remainders_of_written_notes(make_mei, spelling, decimals):
     _, root = make_mei(table, layout="sequence", spelling=spelling,
                        resolution="eighth", decimals=decimals)
     pitches = pitch_table(table.freq, spelling=spelling, resolution="eighth")
-    assert root.xpath("//m:dir/text()", namespaces=NS) == [cents_label(r, decimals) for r in pitches.residual]
+    assert root.xpath("//m:dir/m:rend/text()", namespaces=NS) == [cents_label(r, decimals) for r in pitches.residual]
     for direction in root.xpath("//m:dir", namespaces=NS):
         assert direction.get("place") == ("above" if direction.get("staff") == "1" else "below")
 
@@ -205,7 +209,7 @@ def test_temporal_span_counts_contiguous_gap_overlap_and_last(make_mei, rows, co
     expected = pitch_table(table.freq_start)
     assert sorted(root.xpath("//m:note/@pname", namespaces=NS)) == sorted(expected.step)
     assert sorted(root.xpath("//m:note/@oct", namespaces=NS)) == sorted(expected.octave.astype(str))
-    assert root.xpath("//m:dir[contains(text(), ' s')]/text()", namespaces=NS) == [
+    assert root.xpath("//m:dir/m:rend[contains(text(), ' s')]/text()", namespaces=NS) == [
         f"{onset:.3f} s" for onset in sorted(table.time_start.unique())]
 
 
@@ -214,8 +218,8 @@ def test_temporal_grouping_time_anchor_and_options(make_mei):
     _, root = make_mei(table, kind="events", measure_seconds=.25, time_labels=True,
                        time_format="onset={:.1f}", resolution="eighth", naturals=True)
     assert len(root.xpath("//m:measure", namespaces=NS)) == 8
-    time_dirs = root.xpath("//m:dir[starts-with(text(), 'onset=')]", namespaces=NS)
-    assert [d.text for d in time_dirs] == ["onset=0.0", "onset=1.0"]
+    time_dirs = root.xpath("//m:dir[starts-with(m:rend, 'onset=')]", namespaces=NS)
+    assert [d.findtext("m:rend", namespaces=NS) for d in time_dirs] == ["onset=0.0", "onset=1.0"]
     assert [d.get("staff") for d in time_dirs] == ["1", "2"]
     assert [d.get("place") for d in time_dirs] == ["above", "above"]
     by_id = {n.get(XML_ID): n for n in root.xpath("//m:note", namespaces=NS)}

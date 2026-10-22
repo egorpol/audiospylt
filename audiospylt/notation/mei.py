@@ -23,6 +23,12 @@ def _element(parent, name, **attrs):
     return ET.SubElement(parent, name, attrs)
 
 
+def _label(measure, staff_no, note_id, place, text):
+    # A bare <dir> starts at its note's left edge; <rend halign> centres it on the head.
+    direction = _element(measure, "dir", staff=str(staff_no), startid=f"#{note_id}", place=place)
+    _element(direction, "rend", halign="center").text = text
+
+
 def _prepare(table, kind, resolution, spelling, labels, decimals, clef, a4):
     table = validate(table, kind)
     if table.empty:
@@ -111,12 +117,10 @@ def _measure(section, pitches, staves, next_id, *, chord=True, labels=False,
         # Verovio stacks dirs outward from the staff in document order, so labels
         # below the F staff go high to low to keep the column in the chord's order.
         for note_id, text in reversed(texts) if clef == "F" else texts:
-            _element(measure, "dir", staff=str(staff_no), startid=f"#{note_id}",
-                     place="above" if clef == "G" else "below").text = text
+            _label(measure, staff_no, note_id, "above" if clef == "G" else "below", text)
     if onset_text is not None and top_anchor is not None:
         staff_no, note_id = top_anchor
-        _element(measure, "dir", staff=str(staff_no), startid=f"#{note_id}",
-                 place="above").text = onset_text
+        _label(measure, staff_no, note_id, "above", onset_text)
     return next_id
 
 
@@ -138,12 +142,23 @@ def snapshot_to_mei(
         Valid v1 snapshot. Amplitude is not notated; filter 0 Hz rows first.
     layout : {'chord', 'sequence'}, default 'chord'
         One chord per staff in one measure, ordered by written pitch (stable
-        ties), or one note per measure in input row order.
+        ties), or one note per measure in input row order. Chords read well
+        when their notes lie a third or more apart; in denser snapshots (many
+        partials within a semitone or two) Verovio puts noteheads on both
+        sides of the stem and spreads accidentals over many columns. Use
+        ``layout='sequence'`` for those (sort by ``freq`` first for a scale).
+        Keeping fewer partials (``snapshot.nlargest(n, 'amp')``) helps only
+        when the strongest ones are that far apart; in speech or noise
+        spectra they often cluster.
     resolution, spelling, a4
         See pitch_table. Eighth uses the quarter-tone grid with mandatory labels.
     labels : bool or None, default None
-        Cents remainder relative to each written note. None enables labels only
-        for eighth resolution; False is invalid in eighth mode.
+        Cents remainder relative to each written note, centred on its notehead
+        (MEI ``<dir>`` with ``<rend halign="center">``). In a chord the labels
+        of a staff stack in one column, above the G staff or below the F
+        staff, read from the top in the chord's order (high to low). None
+        enables labels only for eighth resolution; False is invalid in
+        eighth mode.
     decimals : int, default 0
         Decimal places in cents labels.
     naturals : bool, default False

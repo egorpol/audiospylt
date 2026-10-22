@@ -223,6 +223,58 @@ def test_fades_on_a_short_voice_overlap_and_multiply():
     assert np.abs(y).max() < 0.7
 
 
+def _carrier(rows, n_samples):
+    """The voice of `rows` at unit amplitude (continuous phase)."""
+    return _render([[(*row[:4], 1.0, 1.0) for row in rows]], n_samples)
+
+
+@pytest.mark.parametrize("rows, half, left, right", [
+    # Constant rows with a 14 dB step: the ramp runs from 0.5 to 0.1 over 0.0475..0.0525 s.
+    ([(0.0, 0.05, 1000.0, 1000.0, 0.5, 0.5), (0.05, 0.1, 1003.0, 1003.0, 0.1, 0.1)], 0.0025, 0.5, 0.1),
+    # Sloped rows join the ramp at its edges: 0.2 + 0.4 * 0.95 and 0.1 + 0.2 * 0.05.
+    ([(0.0, 0.05, 1000.0, 1000.0, 0.2, 0.6), (0.05, 0.1, 1000.0, 990.0, 0.1, 0.3)], 0.0025, 0.58, 0.11),
+    # A 4 ms row clamps the ramp to half its length on both sides of the link.
+    ([(0.0, 0.004, 1000.0, 1000.0, 0.5, 0.5), (0.004, 0.1, 1000.0, 1000.0, 0.1, 0.1)], 0.002, 0.5, 0.1),
+])
+def test_link_ramp_replaces_amplitude_steps_with_a_raised_cosine(rows, half, left, right):
+    n = 4410
+    t = np.arange(n) / SR
+    centre = rows[1][0]
+    lines = np.where(t < centre, rows[0][4] + (rows[0][5] - rows[0][4]) * t / centre,
+                     rows[1][4] + (rows[1][5] - rows[1][4]) * (t - centre) / (0.1 - centre))
+    inside = (t >= centre - half) & (t < centre + half)
+    ramp = left + (right - left) * _raised_cosine((t - centre + half) / (2 * half))
+    envelope = np.where(inside, ramp, lines)
+    y = synthesize(_events(rows), SR, link_ramp=0.005)
+    np.testing.assert_allclose(y, _carrier(rows, n) * envelope, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(synthesize(_events(rows), SR), y, rtol=0, atol=0)  # 5 ms is the default
+    # The envelope has no jump: neighbouring samples differ by far less than the 0.4 step.
+    assert np.abs(np.diff(envelope)).max() < 0.02
+    # link_ramp=0 keeps the hard step.
+    np.testing.assert_allclose(synthesize(_events(rows), SR, link_ramp=0), _carrier(rows, n) * lines,
+                               rtol=0, atol=1e-9)
+
+
+def test_link_ramp_needs_a_link_and_a_step():
+    step = [(0.0, 0.05, 1000.0, 1000.0, 0.5, 0.5), (0.05, 0.1, 1000.0, 1000.0, 0.1, 0.1)]
+    for kwargs in ({"phase": "reset"}, {"phase": "absolute"}, {"link_cents": 0.0, "track_id": [1, 2]}):
+        track = kwargs.pop("track_id", None)
+        events = _events(step) if track is None else _events(step, track_id=track)
+        np.testing.assert_array_equal(synthesize(events, SR, link_ramp=0.01, **kwargs),
+                                      synthesize(events, SR, link_ramp=0, **kwargs))
+    # Without a step the amplitude lines stay (VOICE has none at its links).
+    np.testing.assert_array_equal(synthesize(_events(VOICE), SR, link_ramp=0.01),
+                                  synthesize(_events(VOICE), SR, link_ramp=0))
+
+
+def test_link_ramp_and_voice_fades_multiply():
+    rows = [(0.0, 0.05, 1000.0, 1000.0, 0.5, 0.5), (0.05, 0.1, 1000.0, 1000.0, 0.1, 0.1)]
+    t = np.arange(4410) / SR
+    fades = _raised_cosine(t / 0.03) * _raised_cosine((0.1 - t) / 0.03)
+    np.testing.assert_allclose(synthesize(_events(rows), SR, fade=0.03),
+                               synthesize(_events(rows), SR) * fades, rtol=0, atol=1e-12)
+
+
 def test_nyquist_drop_warns_and_alias_folds():
     rows = [(0.0, 0.1, 30000.0, 30000.0, 0.5, 0.5)]
     with pytest.warns(UserWarning, match=r"1 event\(s\) reach the Nyquist frequency 22050 Hz"):
@@ -281,7 +333,8 @@ def test_invalid_arguments():
     with pytest.raises(ValueError, match="phase='reset'"):
         synthesize(events, SR, phase="chirp")
     for kwargs in ({"phase": "random"}, {"phase": ["reset"]}, {"nyquist": "fold"}, {"link_cents": -1.0},
-                   {"link_cents": np.nan}, {"fade": -0.1}, {"fade": np.inf}, {"duration": -1.0}):
+                   {"link_cents": np.nan}, {"link_ramp": -0.001}, {"link_ramp": np.nan}, {"link_ramp": "5 ms"},
+                   {"fade": -0.1}, {"fade": np.inf}, {"duration": -1.0}):
         with pytest.raises(ValueError):
             synthesize(events, SR, **kwargs)
     for sr in (0, 44100.0, True):

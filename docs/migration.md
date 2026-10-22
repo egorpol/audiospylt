@@ -70,15 +70,24 @@ used when reading old tables.
   0.6 defaults to `interval_mode="closed"` and can double a shared boundary
   sample. 0.6 `phase_mode="reset"` and `"chirp"` both map to v1 `phase="reset"`
   (the two old modes differ only by rounding error, about 1e−14). `"global"` maps to `"absolute"`. v1 defaults to the new
-  `"continuous"`, linking abutting rows into phase-continuous voices.
+  `"continuous"`, linking abutting rows into phase-continuous voices; where
+  the amplitude steps at a link, `link_ramp` (default 5 ms) turns the step
+  into a raised-cosine transition (`link_ramp=0` keeps the hard step, which
+  clicks). The 0.6 notebooks restarted and faded every row instead
+  (`phase_mode="chirp"`, `edge_fade_s=0.0025`); `phase="reset"` with
+  `fade=0.0025` comes closest to that sound. See [synthesis modes](synthesis.md).
   v1 export never resamples: render at the target `sr`; 0.6 `fs_target_name`
   resampled after synthesis and its exporter always normalised to full scale. `io.audio.write_audio` raises if integer PCM
   would clip; `normalize=` explicitly opts into a peak level in dBFS.
   FLOAT/DOUBLE export can retain samples above full scale.
 - **Morphing:** 0.6 `create_time_transition_df(scale_amp=True)` normalises
   amplitudes. v1 `transform.morph.morph` uses them as given. Where several rows
-  share one partial at an end, one row carries its full amplitude and the others
-  start or end at zero, so both ends match the source and target levels.
+  share one partial at an end, `duplicates="full"` (the default for `equal`,
+  `power` and `sigmoid`) keeps 0.6's gains: every copy carries the full
+  amplitude, so that end is louder than its snapshot and the converging copies
+  beat. `duplicates="primary"` (the default for the new `transport` method)
+  gives one row the full amplitude and starts or ends the others at zero, so
+  both ends match the source and target levels.
   v1 pairings carry primary-row flags; use `morph(source, target, duration, ...)`
   to emit events rather than feeding a pairing into the old transition helper.
 - **Notation:** `half_tone` → `semitone`, `quarter_tone` → `quarter`,
@@ -86,7 +95,11 @@ used when reading old tables.
   v1 uses standard and Stein–Zimmermann quarter-tone accidentals, with no
   arrows. Eighth-tone accuracy uses the nearest quarter-tone accidental plus a
   mandatory cents label. Sharps are the default; choose `spelling="flat"` for
-  flats. Labels use MEI `<dir>` elements. Documents are MEI 5.1 with a header.
+  flats. Labels use MEI `<dir>` elements centred on the notehead
+  (`<rend halign="center">`). Documents are MEI 5.1 with a header. Dense
+  snapshots (many partials within a semitone or two) read better with
+  `layout="sequence"`; `nlargest(n, "amp")` helps only when the strongest
+  partials lie a third or more apart.
 - **Performance:** `find_peaks(min_distance_hz=...)` takes O(n·k) time for n
   candidates and k kept peaks. Unrestricted continuous linking with
   `synthesize(link_cents=None)` takes O(m·k) for m rows and k candidate voices.
@@ -139,8 +152,8 @@ Display-only `plot`, plot sizes and titles become separate `viz.morph.plot_morph
 | `df_transforms.process_spectral_dataframe` | `transform.scale.transpose` and `transform.scale.stretch` | `pitch_factor` → `transpose(factor=...)`; `pitch_cents` → `cents`; `pitch_min_hz` / `pitch_max_hz` → `fmin` / `fmax`; `pitch_overshoot="clip"/"allow"/"threshold"` → `out_of_range="clip"/"keep"/"drop"`. `stretch_factor` → `stretch(factor=...)`. Both return copies; stretch factors must be positive. Reshape wide `freq1` / `amp1` frames explicitly before v1 use. |
 | `df_transforms.expand_to_multi` | `model.convert.snapshot_to_events` | Pass a canonical snapshot plus `time_start=0` and `time_stop=duration`. Amplitudes become `amp_start` / `amp_stop`. |
 | `df_transforms.add_time_cues` | `transform.scale.split_events` | `cues` → `times`; split canonical events before per-cue transpose/stretch. |
-| `df_transforms.merge_equal_split` | `transform.morph.pair`(..., method="equal") | Canonical snapshot inputs; returns a pairing with primary flags and endpoint gains rather than old `freq_data1` / `amp_data1` columns. |
-| `df_transforms.create_time_transition_df` | `transform.morph.morph` | Pass source and target snapshots directly, with `duration` and the selected `method`. `scale_amp=True` and `override_amp` have no v1 switches: scale explicitly. Endpoint gains keep a partial that appears in several rows from inflating the levels. |
+| `df_transforms.merge_equal_split` | `transform.morph.pair`(..., method="equal") | Canonical snapshot inputs; returns a pairing with primary flags and primary-only endpoint gains rather than old `freq_data1` / `amp_data1` columns; `amp_source` / `amp_target` keep the full amplitudes. |
+| `df_transforms.create_time_transition_df` | `transform.morph.morph` | Pass source and target snapshots directly, with `duration` and the selected `method`. `scale_amp=True` and `override_amp` have no v1 switches: scale explicitly. The default `duplicates="full"` reproduces the 0.6 rows and gains; `duplicates="primary"` keeps a partial that appears in several rows from inflating the levels. |
 | `df_transforms.merge_cdf_analysis` | `transform.morph.parameter_range`(..., method="power") with `viz.morph.plot_morph_map` | Returns a tuple of covering bounds. To plot, build a `pair` at the chosen power, then pass that pairing to the figure function. |
 | `df_transforms.merge_cdf` | `transform.morph.pair`(..., method="power", power=...) | `power_factor` → `power`; `None` still chooses the mean covering range. Pass canonical snapshots; output is a v1 pairing. Plot it separately. |
 | `df_transforms.merge_sigmoid_analysis` | `transform.morph.parameter_range`(..., method="sigmoid") with `viz.morph.plot_morph_map` | Returns a tuple of covering bounds. Build a `pair` at the chosen range before plotting the map. |
@@ -224,7 +237,7 @@ Display-only sizes, colours, titles and spectrogram presentation options move to
 
 | 0.6 | v1 | notes |
 | --- | --- | --- |
-| `plot_wave.plot_waves` | `synth.additive.synthesize` with `viz.signal.plot_waveform` | `k` → `sr=1/k` (choose an integer rate). `phase_mode="reset"/"chirp"/"global"` → `phase="reset"/"reset"/"absolute"`; v1 defaults to `continuous`. `interval_mode="closed"` is gone; only half-open rows. `edge_fade_s` → `fade` for symmetric raised-cosine voice fades. Asymmetric/per-row `fade_in_s` / `fade_out_s`, linear and sqrt-Hann `fade_shape` need explicit processing; linked voice interiors are not faded. `show_waveform` / `show_fft` become separate plotting calls. |
+| `plot_wave.plot_waves` | `synth.additive.synthesize` with `viz.signal.plot_waveform` | `k` → `sr=1/k` (choose an integer rate). `phase_mode="reset"/"chirp"/"global"` → `phase="reset"/"reset"/"absolute"`; v1 defaults to `continuous`. `interval_mode="closed"` is gone; only half-open rows. `edge_fade_s` → `fade` for symmetric raised-cosine voice fades. Asymmetric/per-row `fade_in_s` / `fade_out_s`, linear and sqrt-Hann `fade_shape` need explicit processing; linked voice interiors are not faded, but amplitude steps at links get a `link_ramp` transition. `show_waveform` / `show_fft` become separate plotting calls. |
 | `plot_wave.crossfade_adjacent_events` | None | None; closest: `synth.additive.synthesize(..., phase="continuous")` joins abutting events without phase jumps. It does not recreate overlapping crossfades. |
 | `plot_wave.estimate_sampling_frequency_and_time_vector` | None | None; closest: choose `sr` in `synth.additive.synthesize`. The renderer uses exact sample spacing; choose a rate above twice the highest frequency to retain that partial. |
 
@@ -242,7 +255,9 @@ Display-only sizes, colours, titles and layouts move to returned figures.
 
 These are the 26 strict expected failures retained in the 0.6 tests. The v1
 import-without-notebook-dependencies case now passes. The numbers come from
-those tests.
+those tests. Items 12–23 describe 0.6's morph gains, which v1 keeps on request
+and by default for the 0.6 methods (`duplicates="full"`); the v1 behaviour
+named there is `duplicates="primary"`.
 
 1. Boxcar analysis reads a unit sine as 0.5; v1 reads 1.0.
 2. Hann analysis reads a unit sine as 0.25; v1 corrects the window gain and reads 1.0.

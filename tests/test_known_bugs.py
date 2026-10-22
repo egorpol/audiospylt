@@ -119,6 +119,8 @@ def test_non_antialiased_resampling_uses_exact_sample_spacing():
 
 # D13: each partial of the smaller snapshot carries its amplitude in exactly one
 # row at its morph end; the other rows are births (0 at start) or deaths (0 at stop).
+# v1 morph(duplicates="primary") does this; "full", the default for these three
+# methods since Gate G1, keeps the 0.6 gains tested here on purpose.
 @pytest.mark.xfail(strict=True, raises=AssertionError, reason="DSP-9 D13: each partial of the smaller snapshot carries its amplitude in exactly one row at its morph end")
 @pytest.mark.parametrize("method", ["equal", "cdf", "sigmoid"])
 @pytest.mark.parametrize("source_side", [1, 2])

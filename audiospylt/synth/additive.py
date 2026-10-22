@@ -98,6 +98,7 @@ def synthesize(
     *,
     phase: str = "continuous",
     link_cents: float | None = 100.0,
+    link_ramp: float = 0.005,
     fade: float = 0.0,
     nyquist: str = "drop",
     duration: float | None = None,
@@ -112,6 +113,33 @@ def synthesize(
     time_stop``, so rows that meet at a boundary never both contribute there.
     Times within 1e-6 of a sample period from a sample instant count as on
     it, so float noise in table times does not shift a boundary.
+
+    Choosing a mode for frame-by-frame tables (one row per partial and
+    analysis frame):
+
+    ==============  =====================  ==================================
+    ``phase``       row boundaries         use it for
+    ==============  =====================  ==================================
+    'continuous'    a partial that goes    resynthesis: no phase jumps; each
+                    on into the next row   amplitude step at a link is
+                    keeps its phase; its   smoothed over ``link_ramp``
+                    amplitude step is a
+                    raised-cosine ramp
+    'reset'         every row restarts at  the 0.6 sound; needs ``fade``
+                    phase 0                (e.g. 0.0025), otherwise every
+                                           boundary clicks
+    'absolute'      phase follows global   rows that repeat one frequency
+                    time, so equal         across frames; frequency changes
+                    frequencies join       jump in phase
+    ==============  =====================  ==================================
+
+    ``fade`` shapes the start and end of each voice in every mode;
+    ``link_ramp`` only acts inside ``'continuous'`` voices. Measured on the
+    conga frame table (``data/tables/conga_multidft.tsv``, steps up to 24 dB
+    between frames, ``fade=0.0025``): energy above 6 kHz within 2 ms of the
+    frame boundaries is -31/-46/-73 dB re the render's RMS with hard links
+    (``link_ramp=0``) and -79/-110/-121 dB with the 5 ms default, the level
+    the voice fades leave (``'reset'``: -81/-101/-119 dB).
 
     Parameters
     ----------
@@ -146,11 +174,22 @@ def synthesize(
         None links regardless of frequency. Links never cross 0 Hz (a 0 Hz row
         stays silent rather than holding an inherited phase as DC), and rows
         that cover no sample are never linked.
+    link_ramp : float, default 0.005
+        Length in seconds of the amplitude transition at a ``'continuous'``
+        link where the amplitude steps (the predecessor's ``amp_stop`` differs
+        from the successor's ``amp_start``). The two rows' amplitude lines are
+        replaced, within ``link_ramp / 2`` on either side of the link, by a
+        raised cosine from the predecessor's amplitude at the ramp's left
+        edge to the successor's at its right edge; sloped rows therefore join
+        the ramp without a jump. The ramp is shortened, symmetrically, so it
+        covers at most half of either row. Links without a step keep their
+        amplitude lines. 0 keeps hard steps, which click. Ignored in
+        ``'reset'`` and ``'absolute'`` (no links).
     fade : float, default 0.0
         Raised-cosine ramp, in seconds, at the start and end of each voice
         (each row is its own voice in ``'reset'`` and ``'absolute'``).
-        Links inside a voice get no fade. When a voice is shorter than two
-        ramps, the ramps overlap and multiply.
+        Links inside a voice get no fade (see ``link_ramp``). When a voice is
+        shorter than two ramps, the ramps overlap and multiply.
     nyquist : {'drop', 'alias'}, default 'drop'
         ``'drop'`` silences every sample whose instantaneous frequency is at
         or above ``sr / 2`` and warns once; ``'alias'`` keeps them, so they
@@ -182,8 +221,8 @@ def synthesize(
     SchemaError
         The table is not a valid ``events`` table.
     ValueError
-        Invalid rate, mode, ``link_cents``, ``fade``, ``duration`` or
-        ``track_id`` values.
+        Invalid rate, mode, ``link_cents``, ``link_ramp``, ``fade``,
+        ``duration`` or ``track_id`` values.
     """
     columns = getattr(events, "columns", ())
     legacy = [name for name in ("amp_min", "amp_max") if name in columns]
@@ -201,6 +240,7 @@ def synthesize(
     if nyquist not in ("drop", "alias"):
         raise ValueError(f"nyquist must be 'drop' or 'alias'; got {nyquist!r}")
     link_cents = _optional_nonnegative(link_cents, "link_cents")
+    link_ramp = _nonnegative(link_ramp, "link_ramp")
     fade = _nonnegative(fade, "fade")
     duration = _optional_nonnegative(duration, "duration")
 
@@ -240,6 +280,18 @@ def synthesize(
     for row in order[::-1]:
         if succ[row] >= 0:
             voice_stop[row] = voice_stop[succ[row]]
+    # Amplitude steps at links: (centre, half length, left edge amp, right edge amp),
+    # keyed by the successor row; the predecessor reads it through succ.
+    steps: dict[int, tuple[float, float, float, float]] = {}
+    for row in np.flatnonzero((pred >= 0) & (link_ramp > 0)):
+        p = pred[row]
+        if a1[p] == a0[row]:
+            continue
+        half = min(link_ramp / 2, (t1[p] - t0[p]) / 2, (t1[row] - t0[row]) / 2)
+        centre = t0[row]
+        left = a0[p] + (a1[p] - a0[p]) * (centre - half - t0[p]) / (t1[p] - t0[p])
+        right = a0[row] + (a1[row] - a0[row]) * half / (t1[row] - t0[row])
+        steps[int(row)] = (centre, half, left, right)
 
     dropped = 0
     for row in order:
@@ -253,6 +305,12 @@ def synthesize(
         freq = f0[row] + (f1[row] - f0[row]) * frac
         cycles = start_cycles[row] + tau * (f0[row] + 0.5 * (f1[row] - f0[row]) * frac)
         amp = a0[row] + (a1[row] - a0[row]) * frac
+        for link in (row, succ[row]):
+            if link in steps:
+                centre, half, left, right = steps[link]
+                inside = (times >= centre - half) & (times < centre + half)
+                x = (times[inside] - (centre - half)) / (2 * half)
+                amp[inside] = left + (right - left) * (0.5 - 0.5 * np.cos(np.pi * x))
         if fade > 0:
             rise = np.clip((times - voice_start[row]) / fade, 0.0, 1.0)
             fall = np.clip((voice_stop[row] - times) / fade, 0.0, 1.0)
