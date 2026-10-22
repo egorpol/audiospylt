@@ -25,6 +25,7 @@ level: float = asp.amplitude_to_db(0.5)
 levels: np.ndarray = asp.amplitude_to_db([0.5, 0.25])
 contour: asp.F0Contour = asp.pyin(audio, sr, fmin=100.0, fmax=1000.0)
 fundamental: float = asp.harmonic_f0(peaks, fmin=100.0, fmax=300.0).f0
+voice: np.ndarray = asp.synthesize(asp.tracks_to_events(asp.f0_to_tracks(contour)), sr, fade=0.005)
 
 bad: str = asp.amplitude_to_db(0.5)  # type: ignore[assignment]
 asp.viz.plot_spectrum(audio)  # type: ignore[arg-type]

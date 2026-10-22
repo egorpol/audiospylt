@@ -35,6 +35,7 @@ from .model.schema import infer_kind as infer_kind
 from .model.schema import upgrade as upgrade
 from .model.convert import snapshot_to_events as snapshot_to_events
 from .model.convert import f0_to_tracks as f0_to_tracks
+from .model.convert import tracks_to_events as tracks_to_events
 from .synth.additive import synthesize as synthesize
 from .transform.scale import transpose as transpose
 from .transform.scale import stretch as stretch
@@ -80,6 +81,7 @@ __all__ = [
     "upgrade",
     "snapshot_to_events",
     "f0_to_tracks",
+    "tracks_to_events",
     "synthesize",
     "transpose",
     "stretch",

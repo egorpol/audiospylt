@@ -5,7 +5,7 @@ Usage (from outside the checkout, so that the import finds the installed package
     cd "$RUNNER_TEMP" && /path/to/venv/bin/python -I /path/to/scripts/smoke_install.py all
 
 Both modes run the compute pipeline on a synthetic stereo file: write_audio, load_audio with
-resampling, spectrum, find_peaks, snapshot_to_events, synthesize, a table round trip,
+resampling, spectrum, find_peaks, snapshot_to_events, tracks_to_events, synthesize, a table round trip,
 pitch_table, snapshot_to_mei and harmonic_f0. "core" then checks that no optional package is installed or
 imported and that each optional feature names its extra; "all" checks that those features
 work and that the 0.6 API still resolves. Standard library and core dependencies only; no
@@ -87,6 +87,12 @@ def main(argv=None):
             events = asp.snapshot_to_events(peaks, 0.0, 0.5)
             assert asp.synthesize(events, sr=sr).shape == (sr // 2,)
 
+        with check("tracks_to_events -> synthesize: one phase-continuous 440 Hz voice"):
+            tracks = pd.DataFrame({"track_id": 0, "time": [0.0, 0.2, 0.5], "freq": 440.0, "amp": 0.5})
+            voice = asp.synthesize(asp.tracks_to_events(tracks), sr=sr)
+            expected = 0.5 * np.sin(2 * np.pi * 440 * np.arange(sr // 2) / sr)
+            assert np.abs(voice - expected).max() < 1e-9
+
         with check("write_table / read_table round trip"):
             pd.testing.assert_frame_equal(asp.read_table(asp.write_table(events, folder / "events.tsv")), events)
 
@@ -123,10 +129,10 @@ def main(argv=None):
     else:
         with check("mel_spectrogram"):
             assert isinstance(asp.mel_spectrogram(asp.spectrogram(audio, sr)), asp.MelSpectrogram)
-        with check("pyin -> f0_to_tracks: missing fundamental 220 Hz"):
+        with check("pyin -> f0_to_tracks -> tracks_to_events: missing fundamental 220 Hz"):
             contour = asp.pyin(audio, sr, fmin=100, fmax=1000)
             assert contour.voiced.all() and abs(np.median(contour.f0) - 220) < 0.1, contour
-            assert len(asp.f0_to_tracks(contour)) == len(contour.f0)
+            assert len(asp.tracks_to_events(asp.f0_to_tracks(contour))) == len(contour.f0) - 1
         with check("viz.plot_spectrum returns a Plotly figure"):
             import plotly.graph_objects as go
 

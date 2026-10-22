@@ -32,7 +32,7 @@ API = [
     "Spectrogram", "spectrogram", "MelSpectrogram", "mel_spectrogram",
     "F0Contour", "pyin", "HarmonicF0", "harmonic_f0",
     "SchemaError", "LegacyFormatWarning", "validate", "infer_kind", "upgrade",
-    "snapshot_to_events", "f0_to_tracks",
+    "snapshot_to_events", "f0_to_tracks", "tracks_to_events",
     "synthesize",
     "transpose", "stretch", "split_events",
     "parameter_range", "pair", "morph",

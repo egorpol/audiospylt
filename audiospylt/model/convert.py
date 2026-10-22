@@ -12,7 +12,7 @@ from audiospylt.model.schema import validate
 if TYPE_CHECKING:
     from audiospylt.analysis.f0 import F0Contour
 
-__all__ = ["snapshot_to_events", "f0_to_tracks"]
+__all__ = ["snapshot_to_events", "f0_to_tracks", "tracks_to_events"]
 
 
 def snapshot_to_events(snapshot: pd.DataFrame, time_start: float, time_stop: float) -> pd.DataFrame:
@@ -96,3 +96,57 @@ def f0_to_tracks(contour: F0Contour) -> pd.DataFrame:
         "hop": contour.hop, "fmin": contour.fmin, "fmax": contour.fmax,
     }
     return tracks
+
+
+def tracks_to_events(tracks: pd.DataFrame) -> pd.DataFrame:
+    """Turn each step between two points of a track into one events row.
+
+    Every pair of consecutive rows of one track (in row order, which the
+    schema makes increasing in time) becomes a row from the first point to the
+    second, so frequency and amplitude move linearly between the points.
+    Neighbouring rows of a track share their boundary time, frequency and
+    amplitude, and each keeps its ``track_id``, so ``synthesize`` in its
+    default ``'continuous'`` mode plays a track as one phase-continuous voice
+    with no amplitude ramps inside it, and never links two tracks.
+
+    Parameters
+    ----------
+    tracks : pandas.DataFrame
+        A v1 ``tracks`` table (validated), e.g. from ``f0_to_tracks``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A validated ``events`` table plus an int64 ``track_id`` column, one
+        row per consecutive pair of points, in the input row order of each
+        pair's first point. A track with a single point gives no row. The
+        ``phase`` column and other extra columns are dropped (``'continuous'``
+        integrates the phase from the frequencies); a copy of
+        ``attrs["meta"]`` is kept.
+
+    Raises
+    ------
+    SchemaError
+        Invalid tracks table.
+
+    Notes
+    -----
+    A track starts and stops at the amplitude of its first and last point.
+    Unless those are 0, pass ``synthesize`` a ``fade`` of a few milliseconds,
+    or each track end clicks.
+    """
+    table = validate(tracks, "tracks")
+    ids = table["track_id"].to_numpy(dtype=np.int64)
+    following = pd.Series(np.arange(len(table))).groupby(ids, sort=False).shift(-1).to_numpy()
+    rows = np.flatnonzero(~np.isnan(following))
+    nxt = following[rows].astype(np.int64)
+    time, freq, amp = (table[name].to_numpy() for name in ("time", "freq", "amp"))
+    events = validate(pd.DataFrame({
+        "time_start": time[rows], "time_stop": time[nxt],
+        "freq_start": freq[rows], "freq_stop": freq[nxt],
+        "amp_start": amp[rows], "amp_stop": amp[nxt],
+        "track_id": ids[rows],
+    }), "events")
+    if "meta" in table.attrs:
+        events.attrs["meta"] = dict(table.attrs["meta"])
+    return events

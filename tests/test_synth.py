@@ -1,4 +1,4 @@
-"""Additive synthesis (D9 phase modes, half-open sample grid, Nyquist) and snapshot conversion."""
+"""Additive synthesis (D9 phase modes, half-open sample grid, Nyquist), snapshot and tracks conversion."""
 
 import warnings
 from decimal import Decimal
@@ -10,7 +10,7 @@ from scipy.signal import stft
 
 from audiospylt.analysis.peaks import find_peaks
 from audiospylt.analysis.spectrum import spectrum
-from audiospylt.model.convert import snapshot_to_events
+from audiospylt.model.convert import snapshot_to_events, tracks_to_events
 from audiospylt.model.schema import SchemaError, validate
 from audiospylt.plot_wave import plot_waves
 from audiospylt.synth.additive import synthesize
@@ -423,3 +423,55 @@ def test_snapshot_to_events_edge_cases():
             snapshot_to_events(snapshot, start, stop)
     with pytest.raises(SchemaError):
         snapshot_to_events(pd.DataFrame({"freq": [100.0]}), 0.0, 1.0)
+
+
+# ---------------------------------------------------------------- tracks_to_events
+
+
+def _tracks(rows, **extra):
+    table = pd.DataFrame(rows, columns=["track_id", "time", "freq", "amp"])
+    for name, values in extra.items():
+        table[name] = values
+    return table
+
+
+def test_tracks_to_events_pairs_consecutive_points_of_each_track():
+    # Interleaved tracks 3 and 7, single-point track 9; phase and extras are dropped.
+    tracks = validate(_tracks([(3, 0.0, 100.0, 0.1), (7, 0.0, 200.0, 0.2), (3, 0.1, 110.0, 0.3),
+                               (9, 0.05, 300.0, 0.6), (7, 0.1, 210.0, 0.4), (3, 0.2, 120.0, 0.5)],
+                              phase=[0.0, 1.0, 2.0, 3.0, 4.0, 5.0], note=list("abcdef")), "tracks")
+    tracks.attrs["meta"] = {"method": "pyin"}
+    events = tracks_to_events(tracks)
+    expected = _events([(0.0, 0.1, 100.0, 110.0, 0.1, 0.3), (0.0, 0.1, 200.0, 210.0, 0.2, 0.4),
+                        (0.1, 0.2, 110.0, 120.0, 0.3, 0.5)], track_id=np.array([3, 7, 3], dtype=np.int64))
+    pd.testing.assert_frame_equal(events, expected)
+    assert events.attrs["audiospylt_table"] == "events"
+    assert events.attrs["meta"] == {"method": "pyin"}
+    events.attrs["meta"]["method"] = "x"
+    assert tracks.attrs["meta"] == {"method": "pyin"}
+
+
+def test_tracks_to_events_edge_cases():
+    empty = tracks_to_events(_tracks([]))
+    assert list(empty.columns) == COLUMNS + ["track_id"] and len(empty) == 0
+    assert empty["track_id"].dtype == np.int64
+    assert tracks_to_events(_tracks([(0, 0.0, 100.0, 0.5), (1, 0.0, 200.0, 0.5)])).empty
+    with pytest.raises(SchemaError, match="strictly increasing"):
+        tracks_to_events(_tracks([(0, 0.1, 100.0, 0.5), (0, 0.1, 200.0, 0.5)]))
+    with pytest.raises(SchemaError, match="track_id"):
+        tracks_to_events(pd.DataFrame({"time": [0.0], "freq": [1.0], "amp": [1.0]}))
+
+
+def test_tracks_resynthesise_as_one_phase_continuous_voice_per_track():
+    # Track 0 runs through VOICE's points (off-grid times, a glide, an amplitude change); track 1
+    # starts where track 0 stops, on its frequency, and must still begin a new voice at phase 0.
+    a = [(0, t, f, amp) for t, f, amp in ((0.0, 441.3, 0.5), (0.037, 441.3, 0.5), (0.078, 612.7, 0.4),
+                                          (0.107, 589.1, 0.4))]
+    b = [(1, 0.107, 589.1, 0.3), (1, 0.15, 520.0, 0.2)]
+    events = tracks_to_events(_tracks(a + b))
+    voice_a = [(a[i][1], a[i + 1][1], a[i][2], a[i + 1][2], a[i][3], a[i + 1][3]) for i in range(3)]
+    voice_b = [(0.107, 0.15, 589.1, 520.0, 0.3, 0.2)]
+    y = synthesize(events, SR)
+    np.testing.assert_allclose(y, _render([voice_a, voice_b], y.size), rtol=0, atol=1e-9)
+    # Without track_id the abutting tracks would link into one voice.
+    assert np.abs(synthesize(events.drop(columns="track_id"), SR, link_ramp=0) - y).max() > 0.1

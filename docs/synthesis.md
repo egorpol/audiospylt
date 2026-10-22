@@ -50,6 +50,32 @@ at those links are 14 dB (median) and up to 24 dB. Energy above 6 kHz within
 From 5 ms on, what is left comes from the fades of the rows that start or end at
 the frame edges, not from the links.
 
+## Tracks
+
+`tracks_to_events(tracks)` turns a `tracks` table (points of partials over time,
+such as `f0_to_tracks` returns) into events: each pair of consecutive points of a
+track becomes one row, so frequency and amplitude move in straight lines from
+point to point. The rows keep their `track_id`, and neighbouring rows of a track
+share their boundary values, so `"continuous"` plays each track as one voice,
+with no phase jumps and no link ramps. Two tracks never join, even where one
+starts on the frequency at which another stops. A track with a single point
+gives no row, and a `phase` column is not used.
+
+A track starts and stops at the amplitude of its first and last point, so pass
+a `fade` of a few milliseconds unless those are 0. On a 223.3 Hz sine tracked by
+`pyin`, whose last point has amplitude 0.055, energy above 6 kHz within 2 ms of
+the track ends is −51 dB re the render's RMS with `fade=0` and −136 dB with
+`fade=0.005`.
+
+```python
+import audiospylt as asp
+
+x, sr = asp.load_audio("samples/cello_arco_d_sul_c_01.wav", mono=True)
+contour = asp.pyin(x, sr, fmin=65.41, fmax=2093.0)
+audio = asp.synthesize(asp.tracks_to_events(asp.f0_to_tracks(contour)), sr, fade=0.005)
+asp.write_audio("cello_f0.wav", audio, sr, normalize=-1.0)
+```
+
 ## Morphs
 
 `morph(source, target, duration, method)` returns an events table, so it renders

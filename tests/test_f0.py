@@ -8,6 +8,7 @@ import sys
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.signal import hilbert
 
 from audiospylt.analysis.f0 import F0Contour, HarmonicF0, harmonic_f0, pyin
 from audiospylt.analysis.peaks import find_peaks
@@ -15,8 +16,9 @@ from audiospylt.analysis.spectrogram import spectrogram
 from audiospylt.analysis.spectrum import spectrum
 from audiospylt.io.audio import load_audio, trim
 from audiospylt.io.tables import read_table, write_table
-from audiospylt.model.convert import f0_to_tracks
+from audiospylt.model.convert import f0_to_tracks, tracks_to_events
 from audiospylt.model.schema import SchemaError, validate
+from audiospylt.synth.additive import synthesize
 
 
 SAMPLES = Path(__file__).resolve().parents[1] / "samples"
@@ -211,6 +213,24 @@ def test_missing_fundamental_frames_keep_zero_amplitude():
     base = contour([True, True, True])
     tracks = f0_to_tracks(replace(base, amp=np.array([0.0, 0.5, 0.0])))
     assert tracks["amp"].tolist() == [0.0, 0.5, 0.0]
+
+
+def test_vibrato_resynthesised_from_its_tracks_reads_the_same_f0():
+    # 220 Hz +-30 cents at 5 Hz between silences. Measured 2026-10-22: 1.16 cents, 0.037 dB.
+    t = np.arange(SR) / SR
+    freq = 220 * 2 ** (30 / 1200 * np.sin(2 * np.pi * 5 * t))
+    x = np.concatenate([np.zeros(SR // 4), 0.5 * np.sin(2 * np.pi * np.cumsum(freq) / SR), np.zeros(SR // 4)])
+    original = pyin(x, SR, fmin=100, fmax=1000)
+    tracks = f0_to_tracks(original)
+    assert tracks["track_id"].nunique() == 1
+    y = synthesize(tracks_to_events(tracks), SR, fade=0.005, duration=x.size / SR)
+    again = pyin(y, SR, fmin=100, fmax=1000)
+    both = original.voiced & again.voiced & (original.times > 0.3) & (original.times < 1.2)
+    assert both.sum() > 70
+    assert np.abs(cents(again.f0[both], original.f0[both])).max() < 2
+    span = slice(int(0.3 * SR), int(1.2 * SR))
+    envelope = 20 * np.log10(np.abs(hilbert(y))[span] / np.abs(hilbert(x))[span])
+    assert np.abs(envelope).max() < 0.1
 
 
 # harmonic_f0 (replaces 0.6 search_f0)
