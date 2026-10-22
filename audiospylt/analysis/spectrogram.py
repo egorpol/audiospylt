@@ -9,10 +9,18 @@ import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 from scipy.signal import get_window
 
+from audiospylt._optional import import_optional
 from audiospylt.analysis.spectrum import (
     Spectrum, _finite_scalar, _mono_audio, _positive_int, _scaled_magnitude,
 )
 from audiospylt.io.audio import _sample_rate
+
+__all__ = [
+    "Spectrogram",
+    "spectrogram",
+    "MelSpectrogram",
+    "mel_spectrogram",
+]
 
 
 @dataclass(frozen=True)
@@ -164,7 +172,7 @@ def mel_spectrogram(
         with amp = sqrt(B @ spec.amp**2 / (P * ENBW)), where P is
         n_fft/frame_length and ENBW = frame_length*sum(w**2)/sum(w)**2.
         Band centres exclude the outer edges of librosa.mel_frequencies.
-        Librosa is imported lazily here; its warnings are not suppressed.
+        Needs ``audiospylt[librosa]``; librosa's warnings are not suppressed.
 
     Notes
     -----
@@ -180,6 +188,8 @@ def mel_spectrogram(
     ------
     ValueError
         Invalid band count or nonfinite/invalid frequency bounds.
+    ImportError
+        librosa is not installed (``audiospylt[librosa]``).
     """
     n_mels = _positive_int(n_mels, "n_mels")
     fmin = _finite_scalar(fmin, "fmin")
@@ -187,8 +197,7 @@ def mel_spectrogram(
     if fmin < 0 or fmax <= fmin:
         raise ValueError("frequency bounds must satisfy 0 <= fmin < fmax")
 
-    import librosa
-
+    librosa = import_optional("librosa", extra="librosa", feature="mel spectrogram support")
     bands = librosa.filters.mel(
         sr=spec.sr, n_fft=spec.n_fft, n_mels=n_mels, fmin=fmin, fmax=fmax, norm=None,
     )

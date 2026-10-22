@@ -43,8 +43,10 @@ def _frame(kind):
 
 def test_package_skeleton_and_absolute_imports():
     root = Path(__file__).resolve().parents[1]
-    packages = ("io", "io/interop", "analysis", "model", "transform", "synth",
-                "notation", "viz", "nb")
+    # viz and nb re-export their functions; test_layering pins their __init__ shape.
+    packages = ("io", "io/interop", "analysis", "model", "transform", "synth", "notation")
+    for package in ("viz", "nb"):
+        importlib.import_module("audiospylt." + package)
     for package in packages:
         path = root / "audiospylt" / package / "__init__.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))

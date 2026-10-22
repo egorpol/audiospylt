@@ -147,7 +147,7 @@ def _wrapper(module, name, func):
             _depth.reset(token)
 
     wrapped.__doc__ = ".. deprecated:: 1.0\n    " + notice + "\n\n" + (func.__doc__ or "")
-    wrapped.__audiospylt_deprecated__ = (module, name)
+    setattr(wrapped, "__audiospylt_deprecated__", (module, name))
     return wrapped
 
 

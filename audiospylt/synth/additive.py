@@ -12,13 +12,15 @@ from audiospylt.analysis.spectrum import _finite_scalar
 from audiospylt.io.audio import _sample_rate
 from audiospylt.model.schema import SchemaError, validate
 
+__all__ = ["PHASE_MODES", "synthesize"]
+
 PHASE_MODES = ("continuous", "reset", "absolute")
 _OLD_PHASE_NAMES = {"chirp": "reset", "global": "absolute"}
 # Event times this close (in samples) to a sample instant start or stop on it.
 _SNAP_SAMPLES = 1e-6
 
 
-def _sample_index(times: np.ndarray, sr: int) -> np.ndarray:
+def _sample_index(times: np.ndarray | float, sr: int) -> np.ndarray:
     """Return the first sample index n with n / sr >= t, absorbing float noise."""
     position = np.asarray(times, dtype=np.float64) * sr
     nearest = np.round(position)
@@ -26,13 +28,15 @@ def _sample_index(times: np.ndarray, sr: int) -> np.ndarray:
     return snapped.astype(np.int64)
 
 
-def _optional_nonnegative(value: float | None, name: str) -> float | None:
-    if value is None:
-        return None
+def _nonnegative(value: float, name: str) -> float:
     number = _finite_scalar(value, name)
     if number < 0:
         raise ValueError(f"{name} must be >= 0; got {value!r}")
     return number
+
+
+def _optional_nonnegative(value: float | None, name: str) -> float | None:
+    return None if value is None else _nonnegative(value, name)
 
 
 def _track_ids(table: pd.DataFrame) -> np.ndarray | None:
@@ -197,7 +201,7 @@ def synthesize(
     if nyquist not in ("drop", "alias"):
         raise ValueError(f"nyquist must be 'drop' or 'alias'; got {nyquist!r}")
     link_cents = _optional_nonnegative(link_cents, "link_cents")
-    fade = _optional_nonnegative(fade, "fade")
+    fade = _nonnegative(fade, "fade")
     duration = _optional_nonnegative(duration, "duration")
 
     t0, t1 = table["time_start"].to_numpy(), table["time_stop"].to_numpy()

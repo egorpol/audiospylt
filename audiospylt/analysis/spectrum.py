@@ -4,11 +4,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from numbers import Integral
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 from scipy.signal import get_window
 
 from audiospylt.io.audio import _sample_rate
+
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
+
+__all__ = [
+    "Spectrum",
+    "spectrum",
+    "amplitude_to_db",
+    "db_to_amplitude",
+]
 
 
 @dataclass(frozen=True)
@@ -137,7 +148,11 @@ def spectrum(
     )
 
 
-def amplitude_to_db(amp: float | np.ndarray, *, floor_db: float = -120.0) -> float | np.ndarray:
+@overload
+def amplitude_to_db(amp: float | np.floating | np.integer, *, floor_db: float = ...) -> float: ...
+@overload
+def amplitude_to_db(amp: ArrayLike, *, floor_db: float = ...) -> np.ndarray: ...
+def amplitude_to_db(amp: ArrayLike, *, floor_db: float = -120.0) -> float | np.ndarray:
     """Convert D4 peak amplitude to dB re 1.0, flooring zero and small values.
 
     Parameters
@@ -165,7 +180,11 @@ def amplitude_to_db(amp: float | np.ndarray, *, floor_db: float = -120.0) -> flo
     return float(result) if array.ndim == 0 else result
 
 
-def db_to_amplitude(db: float | np.ndarray) -> float | np.ndarray:
+@overload
+def db_to_amplitude(db: float | np.floating | np.integer) -> float: ...
+@overload
+def db_to_amplitude(db: ArrayLike) -> np.ndarray: ...
+def db_to_amplitude(db: ArrayLike) -> float | np.ndarray:
     """Convert dB re full scale to D4 peak amplitude with ``10**(db/20)``.
 
     Parameters

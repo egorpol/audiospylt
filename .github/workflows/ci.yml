@@ -10,8 +10,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -29,8 +29,8 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -48,8 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -63,11 +63,26 @@ jobs:
           PLOTLY_RENDERER: json
         run: python scripts/run_notebooks.py
 
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install package (dev)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Mypy
+        run: mypy
+
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -79,3 +94,19 @@ jobs:
         run: |
           python -m build
           twine check dist/*
+          python scripts/check_dist.py dist
+      # Fresh venvs outside the checkout, so that imports resolve to the installed wheel.
+      - name: Smoke test the wheel (core)
+        run: |
+          python -m venv "$RUNNER_TEMP/core"
+          "$RUNNER_TEMP/core/bin/python" -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/core/bin/python" -I "$GITHUB_WORKSPACE/scripts/smoke_install.py" core
+      - name: Smoke test the wheel ([all]) and its types
+        run: |
+          wheel="$(ls "$GITHUB_WORKSPACE"/dist/*.whl)"
+          python -m venv "$RUNNER_TEMP/all"
+          "$RUNNER_TEMP/all/bin/python" -m pip install "${wheel}[all]" mypy
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/all/bin/python" -I "$GITHUB_WORKSPACE/scripts/smoke_install.py" all
+          "$RUNNER_TEMP/all/bin/python" -m mypy --warn-unused-ignores "$GITHUB_WORKSPACE/scripts/smoke_typing.py"

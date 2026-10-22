@@ -25,18 +25,24 @@ from audiospylt._compat import (
 
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = [(module, name) for module, entries in REGISTRY.items() for name in entries]
-ALL = [
-    "__version__", "render_audio", "load_audio_sample_and_preview", "search_f0",
-    "summarize_result", "process_spectral_dataframe", "detect_dataframe_type",
-    "expand_to_multi", "add_time_cues", "merge_equal_split", "create_time_transition_df",
-    "merge_cdf", "merge_cdf_analysis", "merge_sigmoid", "merge_sigmoid_analysis",
-]
+# The 0.6 top-level exports: they still resolve, but stay out of __all__ and dir().
 EXPORTS = {
     "render_audio": "generate_wave_file",
     "load_audio_sample_and_preview": "audio_utils",
-    "search_f0": "f0_utils", "summarize_result": "f0_utils",
-    **{name: "df_transforms" for name in ALL[5:]},
+    "search_f0": "f0_utils",
+    "summarize_result": "f0_utils",
+    "process_spectral_dataframe": "df_transforms",
+    "detect_dataframe_type": "df_transforms",
+    "expand_to_multi": "df_transforms",
+    "add_time_cues": "df_transforms",
+    "merge_equal_split": "df_transforms",
+    "create_time_transition_df": "df_transforms",
+    "merge_cdf": "df_transforms",
+    "merge_cdf_analysis": "df_transforms",
+    "merge_sigmoid": "df_transforms",
+    "merge_sigmoid_analysis": "df_transforms",
 }
+LEGACY = set(EXPORTS) | set(REGISTRY)
 
 
 def resolve(name):
@@ -275,11 +281,11 @@ def test_bare_import_is_lazy():
     run_script(f'''
 import sys
 import audiospylt
-assert audiospylt.__all__ == {ALL!r}
+assert not {LEGACY!r} & set(audiospylt.__all__)
 assert not {set(REGISTRY)!r} & {{n.removeprefix("audiospylt.") for n in sys.modules if n.startswith("audiospylt.")}}
 assert not {{"IPython", "ipywidgets", "nbformat", "matplotlib", "plotly"}} & sys.modules.keys()
 assert "audiospylt._compat" not in sys.modules
-assert {set(EXPORTS) | set(REGISTRY)!r} <= set(dir(audiospylt))
+assert not {LEGACY!r} & set(dir(audiospylt))
 try:
     audiospylt.nope
 except AttributeError as error:
@@ -322,12 +328,11 @@ with warnings.catch_warnings(record=True) as caught:
         assert getattr(audiospylt, name) is importlib.import_module("audiospylt." + name)
     namespace = {{}}
     exec("from audiospylt import *", namespace)
-    assert {{n for n in namespace if n != "__builtins__"}} == set({ALL!r})
-    for name in {ALL!r}:
-        assert namespace[name] is getattr(audiospylt, name)
+    assert not {LEGACY!r} & namespace.keys()
+    assert {{n for n in namespace if n != "__builtins__"}} == set(audiospylt.__all__)
 assert not caught, caught
 ''')
 
 
-def test_public_all_remains_unchanged():
-    assert audiospylt.__all__ == ALL
+def test_legacy_names_stay_out_of_all():
+    assert not LEGACY & set(audiospylt.__all__)

@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 from numbers import Integral
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_number
+
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
+
+__all__ = [
+    "RESOLUTIONS",
+    "SPELLINGS",
+    "pitch_table",
+    "cents_label",
+]
 
 
 RESOLUTIONS = ("semitone", "quarter", "eighth")
@@ -63,7 +74,7 @@ def _decimals(decimals: int) -> int:
 
 
 def pitch_table(
-    freq, *, resolution: str = "quarter", spelling: str = "sharp", a4: float = 440.0,
+    freq: ArrayLike, *, resolution: str = "quarter", spelling: str = "sharp", a4: float = 440.0,
 ) -> pd.DataFrame:
     """Quantise absolute pitch, then spell it using quarter-tone accidentals.
 

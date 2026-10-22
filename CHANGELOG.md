@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 - `import audiospylt` no longer imports the 0.6 modules or IPython; old names load lazily on first access.
+- Dependencies are split into a lean core (`numpy`, `pandas`, `requests`, `scipy`, `soundfile`, `soxr`) and extras: `[plot]` (`plotly`), `[notebook]` (`ipython`, `ipykernel`, `ipywidgets`, `nbformat`, `tqdm`), `[notation]` (`verovio`), `[librosa]` (`librosa`), `[all]` (all four; the 0.6 API and the notebooks need it) and `[dev]` (`[all]` plus build, lint, type-check and test tools).
+- librosa is optional: `load_audio(sr=...)` resamples with soxr (HQ) directly, and its output length is exactly `ceil(n * sr / rate)` (librosa's rounding sometimes added one zero sample). `mel_spectrogram()` and the mel axes in `audiospylt.viz` raise an `ImportError` naming `audiospylt[librosa]` when it is missing.
+- `import audiospylt as asp` exposes the 35 v1 compute names lazily at the top level (`asp.load_audio`, `asp.spectrum`, `asp.find_peaks`, `asp.morph`, …); figures and notebook display stay namespaced as `asp.viz` and `asp.nb`. The 0.6 names leave `__all__` and `dir()` but still resolve.
+- Version 1.0.0.dev0, with PEP 639 license metadata (`License-Expression: MIT`). The sdist ships the package only; tests run from a git checkout.
 
 ### Added
 - v1 subpackage layout (`io`, `analysis`, `model`, `transform`, `synth`, `notation`, `viz`, `nb`); the 0.6 modules are unchanged.
@@ -21,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `audiospylt.synth.additive.synthesize()`: additive synthesis of events tables directly at the output rate, with half-open row intervals (abutting rows never share a sample), three distinct phase modes (`continuous` links rows into phase-continuous voices, `reset`, `absolute`), voice-level raised-cosine fades and a Nyquist gate (`drop`, or `alias` for exact folding); `audiospylt.model.convert.snapshot_to_events()`; `audiospylt.io.audio.write_audio()` writes levels unchanged and refuses to clip PCM unless asked to `normalize` to a peak level.
 - `audiospylt.notation`: `pitch_table()` quantises absolute pitch to semitone, quarter-tone or eighth-tone resolution and spells it with sharps (default) or flats using standard and Stein–Zimmermann quarter-tone accidentals, keeping the unrounded cents residual; `snapshot_to_mei()` (chord or sequence) and `events_to_mei()` (temporal chords) write MEI 5.1 documents that validate against the MEI schema, with optional cents labels (always on at eighth-tone resolution, where the label carries the eighth-tone accuracy); `render_svg()` / `render_svg_pages()` render them with Verovio (`audiospylt[notation]` extra) without display side effects.
 - Table format specification in `docs/table-format.md`.
+- `py.typed` and type hints on the public v1 API, with an `__init__.pyi` stub declaring the lazy top-level names.
+
+### Removed
+- `audiospylt.mei_old`, `requirements.txt` and the matplotlib dependency.
+- The hard dependencies on `ipython`, `ipykernel`, `ipywidgets`, `nbformat`, `tqdm`, `plotly`, `verovio` and `librosa`; they moved to the extras above.
 
 ## [0.6.3] - 2026-03-02
 

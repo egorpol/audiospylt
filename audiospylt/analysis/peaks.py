@@ -11,6 +11,8 @@ from audiospylt.analysis.spectrum import (
 )
 from audiospylt.model.schema import validate
 
+__all__ = ["find_peaks"]
+
 
 def find_peaks(
     spec: Spectrum,

@@ -9,6 +9,7 @@ import pandas as pd
 from pandas.testing import assert_frame_equal, assert_series_equal
 import pytest
 
+from audiospylt.io import tables
 from audiospylt.io.tables import read_table, write_table
 from audiospylt.model.schema import LegacyFormatWarning, SchemaError, validate
 
@@ -282,11 +283,49 @@ LEGACY = [
 def test_legacy_fixture_inventory_is_complete():
     assert {path.name for path in DATA.glob("*.tsv")} == {row[0] for row in LEGACY}
 
+@pytest.mark.parametrize("version,expected", [
+    ("2.2.3", {"float_precision": "round_trip"}),
+    ("3.0.3", {"float_precision": "round_trip"}),
+    ("3.1.0", {}),
+    ("3.1.0rc0", {}),
+    ("3.2.0.dev0+12.gabc", {}),
+    ("10.0.0", {}),
+    ("unknown", {"float_precision": "round_trip"}),
+])
+def test_float_precision_only_before_pandas_3_1(version, expected):
+    assert tables._float_precision_options(version) == expected
+
+
+@pytest.mark.parametrize("version", ["3.0.3", "3.1.0"])
+def test_reader_passes_float_options_for_both_pandas_branches(version, monkeypatch, tmp_path):
+    # Each branch runs whatever pandas is installed; the argument is checked
+    # at the call, then dropped so a newer pandas does not warn about it.
+    options = tables._float_precision_options(version)
+    monkeypatch.setattr(tables, "_FLOAT_OPTIONS", options)
+    real_read_csv = pd.read_csv
+    seen = []
+
+    def recording_read_csv(*args, **kwargs):
+        seen.append(kwargs.pop("float_precision", None))
+        return real_read_csv(*args, **kwargs)
+
+    values = np.array([0.1, 1 / 3, 5e-324, -0.0, 1.7976931348623157e308])
+    frame = pd.DataFrame({"freq": values, "amp": values[::-1]})
+    path = write_table(frame, tmp_path / "branch.tsv")
+    monkeypatch.setattr(tables.pd, "read_csv", recording_read_csv)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = read_table(path)
+    assert seen == [options.get("float_precision")]
+    for column in frame:
+        np.testing.assert_array_equal(result[column].to_numpy().view("uint64"),
+                                      frame[column].to_numpy().view("uint64"))
+
 
 @pytest.mark.parametrize("filename,kind,rows,decays,zero_length", LEGACY)
 def test_real_legacy_fixtures_and_versioned_roundtrip(filename, kind, rows, decays, zero_length, tmp_path):
     source = DATA / filename
-    raw = pd.read_csv(source, sep="\t", float_precision="round_trip")
+    raw = pd.read_csv(source, sep="\t", **tables._FLOAT_OPTIONS)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         upgraded = read_table(source)

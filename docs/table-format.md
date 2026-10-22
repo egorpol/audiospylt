@@ -246,12 +246,16 @@ decaying ramps are normal.
 
 If the first line has no version marker, the Python reader parses the TSV,
 applies the renames, infers the kind (unless explicitly supplied), and validates.
-Both headerless and v1 files use pandas' native float parser with
-`float_precision="round_trip"`. Headerless fixture values therefore match
-`pd.read_csv(path, sep="\t", float_precision="round_trip")` exactly, rather than
-the less precise default parser. Integer columns retain decimal-token parsing
-because nullable bins and decimal/exponent identifiers can otherwise round
-through binary64. Non-numeric cells cause their column to remain text in pandas;
+Both headerless and v1 files use pandas' native float parser in its exact
+round-trip mode: before pandas 3.1 the reader passes
+`float_precision="round_trip"`, because the default parser there is not exact
+(pandas 3.0.6 misreads about a fifth of random frequencies and amplitudes);
+pandas 3.1 uses one converter for every mode and deprecates the argument, so the
+reader leaves it out. Headerless fixture values therefore match
+`pd.read_csv(path, sep="\t", float_precision="round_trip")` (plain
+`pd.read_csv(path, sep="\t")` from pandas 3.1) exactly. Integer columns retain
+decimal-token parsing because nullable bins and decimal/exponent identifiers can
+otherwise round through binary64. Non-numeric cells cause their column to remain text in pandas;
 these exceptional float columns are parsed cell by cell before validation so
 valid numeric tokens and invalid tokens are distinguished in aggregated errors.
 A malformed version/type line is an error, not a request for legacy fallback.

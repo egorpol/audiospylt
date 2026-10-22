@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 import pandas as pd
 
@@ -25,6 +27,8 @@ from audiospylt.viz._common import (
     to_plot_amplitude,
 )
 
+__all__ = ["plot_snapshot", "plot_events", "plot_events_3d"]
+
 
 def _kind_error(kind: str, function: str, can: str) -> ValueError:
     if kind == "snapshot":
@@ -46,9 +50,16 @@ def _snapshot_stem_xy(freqs, amps, baseline):
 
 
 def plot_snapshot(
-    *snapshots, labels=None, db=True, floor_db=-120.0, fmin=0.0, fmax=None,
-    freq_scale="linear", theme="light", title=None,
-):
+    *snapshots: pd.DataFrame,
+    labels: Sequence[str] | None = None,
+    db: bool = True,
+    floor_db: float = -120.0,
+    fmin: float = 0.0,
+    fmax: float | None = None,
+    freq_scale: str = "linear",
+    theme: str = "light",
+    title: str | None = None,
+) -> go.Figure:
     """Return a Plotly stem figure of one or more snapshot tables.
 
     Beyond three overlaid snapshots colours stop being reliably distinguishable
@@ -326,9 +337,16 @@ def _line_traces_for_table(
 
 
 def plot_events(
-    *tables, labels=None, amp="opacity", db=True, floor_db=-120.0,
-    range_db=80.0, freq_scale="linear", theme="light", title=None,
-):
+    *tables: pd.DataFrame,
+    labels: Sequence[str] | None = None,
+    amp: str | None = "opacity",
+    db: bool = True,
+    floor_db: float = -120.0,
+    range_db: float = 80.0,
+    freq_scale: str = "linear",
+    theme: str = "light",
+    title: str | None = None,
+) -> go.Figure:
     """Return a Plotly figure of events and/or tracks tables.
 
     With ``amp='opacity'`` (SPEAR convention), segment level is the dB of the
@@ -397,11 +415,38 @@ def plot_events(
 
 
 def plot_events_3d(
-    *tables, labels=None, db=False, floor_db=-120.0, theme="light", title=None,
-):
+    *tables: pd.DataFrame,
+    labels: Sequence[str] | None = None,
+    db: bool = False,
+    floor_db: float = -120.0,
+    theme: str = "light",
+    title: str | None = None,
+) -> go.Figure:
     """Return a 3-D Plotly figure of events/tracks (time, frequency, amplitude).
 
     Never shows, prints, or writes files; inputs are unchanged.
+
+    Parameters
+    ----------
+    *tables : DataFrame
+        Events and tracks may be mixed; one 3-px line trace per table.
+    labels : sequence or None
+        Default ``table 1``, ``table 2``, …
+    db : bool, default False
+        Plot amplitude in dB (floored at ``floor_db``); linear amplitude uses
+        a z axis starting at 0.
+    floor_db : float, default -120.0
+    theme : {'light', 'dark'}, default 'light'
+    title : str or None
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+
+    Raises
+    ------
+    ValueError
+        No tables, a snapshot table, label length, or invalid arguments.
     """
     if not tables:
         raise ValueError("plot_events_3d requires at least one table")
@@ -441,7 +486,7 @@ def plot_events_3d(
             line=dict(width=3, color=colour),
         ))
     apply_layout(fig, theme=theme, title=title, n_series=len(tables))
-    scene = dict(
+    scene: dict[str, object] = dict(
         xaxis_title="time (s)",
         yaxis_title="frequency (Hz)",
         zaxis_title=amplitude_axis_label(db=db),

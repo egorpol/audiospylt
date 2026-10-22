@@ -7,6 +7,8 @@ import pandas as pd
 
 from audiospylt.model.schema import validate
 
+__all__ = ["snapshot_to_events"]
+
 
 def snapshot_to_events(snapshot: pd.DataFrame, time_start: float, time_stop: float) -> pd.DataFrame:
     """Hold every partial of a snapshot constant over one time span.

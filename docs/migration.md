@@ -12,6 +12,16 @@ wrapped 0.6 call stay silent. Warning filters still control which emissions you
 see; accessing or importing a name does not warn. The 0.6 functions are removed
 in **1.1**.
 
+Seven of the eleven 0.6 modules import IPython, plotly, librosa or verovio at
+module level, so the 0.6 API needs `pip install "audiospylt[all]"`. With a
+core-only install (`pip install audiospylt`), an old top-level name whose module
+needs a missing package raises an `ImportError` naming `audiospylt[all]`, e.g.
+`search_f0 is 0.6 API and needs plotly; install audiospylt[all]`, and a direct
+`from audiospylt.<module> import …` raises Python's plain `ModuleNotFoundError`.
+`render_audio` and the `df_transforms` names need only core packages and still
+resolve there. `from audiospylt import *` now binds only the v1 names; import a
+0.6 name explicitly (`from audiospylt import search_f0`) while you migrate.
+
 To see warnings in scripts, run `python -W default::DeprecationWarning script.py`.
 To silence only these warnings, first use
 `from audiospylt._compat import AudiospyltDeprecationWarning`, then
@@ -264,8 +274,9 @@ those tests.
 ## Examples
 
 Run these from the repository root so `samples/` and `data/` resolve. Each block
-is independent. Display uses IPython and MEI rendering uses Verovio; both are
-installed with the package. Loading the headerless 0.6 TSVs in the last example
+is independent. Figures need `audiospylt[plot]`, display `audiospylt[notebook]`
+and MEI rendering `audiospylt[notation]`; `pip install "audiospylt[all]"`
+installs all three. Loading the headerless 0.6 TSVs in the last example
 emits `LegacyFormatWarning`; values are preserved when their columns are renamed.
 
 0.6 counterparts: `audio_utils.load_audio_sample_and_preview` and

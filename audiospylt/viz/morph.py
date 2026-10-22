@@ -17,6 +17,8 @@ from audiospylt.viz._common import (
     theme_colors,
 )
 
+__all__ = ["plot_morph_map"]
+
 _REQUIRED = (
     "src", "dst", "freq_start", "freq_stop",
     "amp_source", "amp_target", "mass",
@@ -63,7 +65,13 @@ def _default_title(attrs: dict) -> str | None:
     return parts[0] + " (" + ", ".join(parts[1:]) + ")"
 
 
-def plot_morph_map(pairing, *, freq_scale="log", theme="light", title=None):
+def plot_morph_map(
+    pairing: pd.DataFrame,
+    *,
+    freq_scale: str = "log",
+    theme: str = "light",
+    title: str | None = None,
+) -> go.Figure:
     """Return a 2-D morph map of a ``pair`` result (source x=0, target x=1).
 
     Colour and dash both encode the D13 category (kept / birth / death /
@@ -117,7 +125,7 @@ def plot_morph_map(pairing, *, freq_scale="log", theme="light", title=None):
             continue
         present.append(name)
         dash, slot, legendrank = _CATEGORY_STYLE[name]
-        if name == "silent":
+        if slot is None:  # silent
             colour = theme_colors(theme)["muted"]
             legend = f"silent ({len(rows)}), dropped by morph"
         else:
@@ -154,10 +162,10 @@ def plot_morph_map(pairing, *, freq_scale="log", theme="light", title=None):
             first = False
 
     # Partials: one marker per distinct src at x=0 and dst at x=1
-    src_amp = {}
-    dst_amp = {}
-    src_freq = {}
-    dst_freq = {}
+    src_amp: dict[int, float] = {}
+    dst_amp: dict[int, float] = {}
+    src_freq: dict[int, float] = {}
+    dst_freq: dict[int, float] = {}
     for _, row in pairing.iterrows():
         src, dst = int(row.src), int(row.dst)
         src_amp[src] = max(src_amp.get(src, 0.0), float(row.amp_source))

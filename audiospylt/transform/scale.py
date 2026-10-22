@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 import warnings
 
 import numpy as np
@@ -9,6 +11,11 @@ import pandas as pd
 from pandas.api.types import is_number
 
 from audiospylt.model.schema import TABLE_CONTRACTS, infer_kind, validate
+
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
+
+__all__ = ["transpose", "stretch", "split_events"]
 
 
 def _finite_scalar(value: float, name: str) -> float:
@@ -51,8 +58,14 @@ def _factors(value, name: str, kind: str, count: int, *, positive: bool) -> np.n
 
 
 def transpose(
-    table: pd.DataFrame, factor=1.0, *, cents=0.0, fmin=None, fmax=None,
-    out_of_range="clip", kind=None,
+    table: pd.DataFrame,
+    factor: ArrayLike = 1.0,
+    *,
+    cents: ArrayLike = 0.0,
+    fmin: float | None = None,
+    fmax: float | None = None,
+    out_of_range: str = "clip",
+    kind: str | None = None,
 ) -> pd.DataFrame:
     """Scale every frequency column by ``factor * 2**(cents/1200)``.
 
@@ -133,7 +146,7 @@ def transpose(
     return validate(result, kind)
 
 
-def stretch(table: pd.DataFrame, factor, *, kind=None) -> pd.DataFrame:
+def stretch(table: pd.DataFrame, factor: ArrayLike, *, kind: str | None = None) -> pd.DataFrame:
     """Stretch time about the earliest cue without reversing events.
 
     Parameters
@@ -183,7 +196,7 @@ def stretch(table: pd.DataFrame, factor, *, kind=None) -> pd.DataFrame:
     return validate(result, kind)
 
 
-def split_events(events: pd.DataFrame, times) -> pd.DataFrame:
+def split_events(events: pd.DataFrame, times: Sequence[float] | np.ndarray) -> pd.DataFrame:
     """Split events at strictly internal cuts, interpolating frequency and gain.
 
     Parameters

@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from audiospylt.io.audio import _audio_array, _sample_rate
+
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
+
+__all__ = [
+    "show",
+    "show_svg",
+    "show_mei",
+    "play",
+]
 
 _HEX = re.compile(r"^#[0-9A-Fa-f]{3,8}$")
 _RGB = re.compile(r"^rgba?\([^)]*\)$", re.IGNORECASE)
@@ -53,7 +64,7 @@ def _validate_background(background: str) -> str:
     )
 
 
-def show(obj, *, renderer=None):
+def show(obj: object, *, renderer: str | None = None) -> None:
     """Display a Plotly figure, SVG string, or arbitrary notebook object.
 
     Parameters
@@ -79,7 +90,7 @@ def show(obj, *, renderer=None):
     try:
         from plotly.basedatatypes import BaseFigure
     except ImportError:
-        BaseFigure = ()  # type: ignore[misc, assignment]
+        BaseFigure = ()
 
     if BaseFigure and isinstance(obj, BaseFigure):
         if renderer is None:
@@ -97,7 +108,7 @@ def show(obj, *, renderer=None):
     return None
 
 
-def show_svg(svg, *, background="#ffffff"):
+def show_svg(svg: str, *, background: str | None = "#ffffff") -> None:
     """Display an SVG string, optionally on a solid background.
 
     With a background (default white), strips a leading XML declaration or
@@ -133,7 +144,13 @@ def show_svg(svg, *, background="#ffffff"):
     return None
 
 
-def show_mei(mei, *, page=None, options=None, background="#ffffff"):
+def show_mei(
+    mei: str,
+    *,
+    page: int | None = None,
+    options: dict | None = None,
+    background: str | None = "#ffffff",
+) -> None:
     """Render MEI to SVG page(s) and display each with ``show_svg``.
 
     Parameters
@@ -162,7 +179,7 @@ def show_mei(mei, *, page=None, options=None, background="#ffffff"):
     return None
 
 
-def play(audio, sr, *, normalize=False):
+def play(audio: ArrayLike, sr: int, *, normalize: bool = False) -> None:
     """Play audio in the notebook via ``IPython.display.Audio``.
 
     Channel-first 2-D arrays are passed through. With ``normalize=False`` and

@@ -1,4 +1,5 @@
-# Keep example data and notebooks out of the sdist (the wheel only ships audiospylt/).
+# The sdist ships the package only; tests, example data and notebooks live in the git repository.
+prune tests
 prune samples
 prune data
 prune case_studies

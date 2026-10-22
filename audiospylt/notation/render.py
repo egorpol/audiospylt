@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from numbers import Integral
 
+__all__ = ["render_svg", "render_svg_pages"]
+
 
 # No page header (it would print the meiHead title); crop the page to the music.
 _DEFAULT_OPTIONS = {"adjustPageHeight": True, "adjustPageWidth": True, "header": "none",

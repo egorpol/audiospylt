@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from math import ceil
+from typing import TYPE_CHECKING
 
 import numpy as np
+import pandas as pd
 
+from audiospylt._optional import import_optional
 from audiospylt.analysis.spectrogram import MelSpectrogram, Spectrogram
 from audiospylt.analysis.spectrum import Spectrum
 from audiospylt.io.audio import _audio_array, _sample_rate
@@ -33,6 +37,11 @@ from audiospylt.viz._common import (
     to_plot_amplitude,
 )
 
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
+
+__all__ = ["plot_waveform", "plot_spectrum", "plot_spectrogram"]
+
 _MEL_TICK_HZ = (20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000)
 
 
@@ -58,9 +67,16 @@ def _channel_labels(labels, n_channels: int) -> list[str]:
 
 
 def plot_waveform(
-    audio, sr, *, time_offset=0.0, channel_labels=None, max_points=50_000,
-    gl=False, theme="light", title=None,
-):
+    audio: ArrayLike,
+    sr: int,
+    *,
+    time_offset: float = 0.0,
+    channel_labels: Sequence[str] | None = None,
+    max_points: int | None = 50_000,
+    gl: bool = False,
+    theme: str = "light",
+    title: str | None = None,
+) -> go.Figure:
     """Return a Plotly figure of a mono or multichannel waveform.
 
     Dense traces are display-decimated with ``_minmax`` when longer than
@@ -130,9 +146,19 @@ def plot_waveform(
 
 
 def plot_spectrum(
-    spec, peaks=None, *, db=True, floor_db=-120.0, fmin=0.0, fmax=None,
-    freq_scale="linear", max_points=50_000, gl=False, theme="light", title=None,
-):
+    spec: Spectrum,
+    peaks: pd.DataFrame | None = None,
+    *,
+    db: bool = True,
+    floor_db: float = -120.0,
+    fmin: float = 0.0,
+    fmax: float | None = None,
+    freq_scale: str = "linear",
+    max_points: int | None = 50_000,
+    gl: bool = False,
+    theme: str = "light",
+    title: str | None = None,
+) -> go.Figure:
     """Return a Plotly figure of a ``Spectrum``, optionally with peak markers.
 
     The spectrum line is display-decimated with ``_minmax`` after cropping.
@@ -144,8 +170,8 @@ def plot_spectrum(
     peaks : DataFrame or None
         Optional snapshot of peak partials (markers in colour slot 2).
     db, floor_db : amplitude display
-    fmin, fmax : float
-        Frequency crop in Hz; ``fmax`` defaults to ``spec.sr / 2``.
+    fmin, fmax : float, float or None
+        Frequency crop in Hz; ``fmax=None`` means ``spec.sr / 2``.
     freq_scale : {'linear', 'log'}
     max_points : int or None
         Display-only min/max budget for the spectrum line.
@@ -231,7 +257,7 @@ def plot_spectrum(
             text=texts,
             showlegend=True,
         ))
-    x0 = fmin
+    x0: float | None = fmin
     if freq_scale == "log":
         positive = freqs[freqs > 0] if len(freqs) else np.array([])
         if len(positive):
@@ -239,7 +265,7 @@ def plot_spectrum(
         else:
             x0 = None
     apply_layout(fig, theme=theme, title=title, n_series=n_series)
-    xaxis_kwargs = dict(title_text="frequency (Hz)", type=freq_scale)
+    xaxis_kwargs: dict[str, object] = dict(title_text="frequency (Hz)", type=freq_scale)
     if x0 is not None:
         xaxis_kwargs["range"] = axis_range(x0, fmax, freq_scale)
     fig.update_xaxes(**xaxis_kwargs)
@@ -266,7 +292,7 @@ def _pool_frames(times, amp, max_frames):
 
 def _mel_ticks(y_min: float, y_max: float):
     """Tick values in Slaney mel, thinned so neighbours are ≥ 5% of the span."""
-    import librosa
+    librosa = import_optional("librosa", extra="librosa", feature="mel spectrogram support")
 
     candidates = []
     for hz in _MEL_TICK_HZ:
@@ -289,9 +315,9 @@ def _mel_ticks(y_min: float, y_max: float):
 
 def _hz_to_mel_coords(y):
     """Convert Hz coordinates to Slaney mel, preserving None separators."""
-    import librosa
+    librosa = import_optional("librosa", extra="librosa", feature="mel spectrogram support")
 
-    out = []
+    out: list[float | None] = []
     for value in y:
         if value is None or (isinstance(value, float) and not np.isfinite(value)):
             out.append(None)
@@ -301,14 +327,27 @@ def _hz_to_mel_coords(y):
 
 
 def plot_spectrogram(
-    spec, *, db=True, floor_db=-120.0, range_db=80.0, fmin=0.0, fmax=None,
-    freq_scale="linear", max_frames=2000, overlay=None, overlay_labels=None,
-    audio=None, colorscale=None, theme="light", title=None,
-):
+    spec: Spectrogram | MelSpectrogram,
+    *,
+    db: bool = True,
+    floor_db: float = -120.0,
+    range_db: float = 80.0,
+    fmin: float = 0.0,
+    fmax: float | None = None,
+    freq_scale: str = "linear",
+    max_frames: int | None = 2000,
+    overlay: pd.DataFrame | Sequence[pd.DataFrame] | None = None,
+    overlay_labels: Sequence[str] | None = None,
+    audio: ArrayLike | None = None,
+    colorscale: str | list[list] | None = None,
+    theme: str = "light",
+    title: str | None = None,
+) -> go.Figure:
     """Return a Plotly heatmap of a spectrogram or mel spectrogram.
 
     Frame pooling with ``max_frames`` is display-only. Never shows, prints, or
-    writes files; inputs are unchanged.
+    writes files; inputs are unchanged. Plotting a ``MelSpectrogram`` needs
+    ``audiospylt[plot]`` and ``audiospylt[librosa]``.
 
     Parameters
     ----------
@@ -332,6 +371,11 @@ def plot_spectrogram(
     Returns
     -------
     plotly.graph_objects.Figure
+
+    Raises
+    ------
+    ImportError
+        ``spec`` is a ``MelSpectrogram`` and librosa is not installed.
     """
     if not isinstance(spec, (Spectrogram, MelSpectrogram)):
         raise TypeError(
@@ -362,7 +406,7 @@ def plot_spectrogram(
     times, amp = _pool_frames(times, amp, max_frames)
 
     if is_mel:
-        import librosa
+        librosa = import_optional("librosa", extra="librosa", feature="mel spectrogram support")
         y_vals = np.asarray(librosa.hz_to_mel(freqs, htk=False), dtype=np.float64)
     else:
         y_vals = freqs
@@ -421,7 +465,7 @@ def plot_spectrogram(
     scale = sequential_colorscale(theme) if colorscale is None else colorscale
     amp_fmt = ":.1f" if db else ":.4g"
     amp_unit = " dB" if db else ""
-    colorbar = dict(title=colorbar_title)
+    colorbar: dict[str, object] = dict(title=colorbar_title)
     if with_audio:
         colorbar.update(y=1, yanchor="top", len=0.75, lenmode="fraction")
     if is_mel:

@@ -2,7 +2,9 @@
 
 import ast
 import importlib
+import os
 from pathlib import Path
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
@@ -412,8 +414,7 @@ def test_verovio_missing(make_mei, monkeypatch, render):
 
 
 def test_core_has_no_display_imports_and_verovio_is_lazy():
-    # A runtime sys.modules check cannot work until 1.8 removes the 0.6 exports:
-    # import audiospylt still loads IPython through those legacy exports.
+    # Static rule here; test_notation_modules_load_no_display_or_verovio checks sys.modules.
     directory = Path(__file__).parent.parent / "audiospylt" / "notation"
     forbidden = {"IPython", "ipywidgets", "matplotlib", "plotly"}
     for path in directory.glob("*.py"):
@@ -435,3 +436,18 @@ def test_core_has_no_display_imports_and_verovio_is_lazy():
     init = ast.parse((directory / "__init__.py").read_text())
     assert len(init.body) == 1 and isinstance(init.body[0], ast.Expr)
     assert isinstance(init.body[0].value, ast.Constant) and isinstance(init.body[0].value.value, str)
+
+
+def test_notation_modules_load_no_display_or_verovio():
+    root = Path(__file__).parent.parent
+    script = (
+        "import sys\n"
+        "import audiospylt.notation.mei, audiospylt.notation.pitch, audiospylt.notation.render\n"
+        "tops = {name.partition('.')[0] for name in sys.modules}\n"
+        "assert not {'IPython', 'ipywidgets', 'matplotlib', 'plotly', 'verovio'} & tops, tops\n"
+    )
+    modules = {path.stem for path in (root / "audiospylt" / "notation").glob("*.py")} - {"__init__"}
+    assert modules == {"mei", "pitch", "render"}
+    result = subprocess.run([sys.executable, "-c", script], cwd=root, capture_output=True, text=True,
+                            env={**os.environ, "PYTHONPATH": str(root)})
+    assert result.returncode == 0, result.stderr

@@ -19,6 +19,17 @@ from pandas.api.types import (
     is_unsigned_integer_dtype,
 )
 
+__all__ = [
+    "SchemaError",
+    "LegacyFormatWarning",
+    "ColumnContract",
+    "TableContract",
+    "TABLE_CONTRACTS",
+    "validate",
+    "infer_kind",
+    "upgrade",
+]
+
 
 class SchemaError(ValueError):
     """A table violates one or more schema or file-format rules."""
@@ -235,7 +246,8 @@ def validate(df: pd.DataFrame, kind: str) -> pd.DataFrame:
         floats, data, valid = _numeric_column(df[name], column, name in required, problems)
         checked[name] = floats
         if name == "track_id":
-            track_ids = data.to_numpy(dtype=np.int64, na_value=0)
+            # Integer columns always come back as an IntegerArray, never an ndarray.
+            track_ids = data.to_numpy(dtype=np.int64, na_value=0)  # type: ignore[union-attr]
             valid_ids = valid
         if len(problems) == before:
             normalized[name] = pd.Series(data, dtype=column.dtype)

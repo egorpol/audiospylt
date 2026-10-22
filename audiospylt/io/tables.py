@@ -26,10 +26,24 @@ from audiospylt.model.schema import (
     validate,
 )
 
+__all__ = ["read_table", "write_table"]
+
 _TYPE_LINE = re.compile(r"# audiospylt-table: ([^\s]+) (v[^\s]+)")
 _META_KEY = re.compile(r"[a-z][a-z0-9_]*")
 _META_LINE = re.compile(r"# ([a-z][a-z0-9_]*): ([^\r\n\t]*)")
 _META_START = re.compile(r"# [a-z][a-z0-9_]*: ")
+
+
+def _float_precision_options(version: str) -> dict[str, str]:
+    """Before pandas 3.1 only the round-trip float converter is exact."""
+    # pandas 3.1 uses one converter for every mode and deprecates the argument.
+    match = re.match(r"(\d+)\.(\d+)", version)
+    if match is not None and (int(match[1]), int(match[2])) >= (3, 1):
+        return {}
+    return {"float_precision": "round_trip"}
+
+
+_FLOAT_OPTIONS = _float_precision_options(pd.__version__)
 
 
 def _metadata(meta: Mapping[str, object] | None) -> dict[str, str]:
@@ -220,7 +234,7 @@ def read_table(
     # CR/LF in the last cell; interior empty records remain visible to _columns.
     payload = payload.rstrip("\r\n")
     columns = _columns(payload)
-    options: dict[str, object] = {"float_precision": "round_trip"}
+    options: dict[str, object] = dict(_FLOAT_OPTIONS)
     if versioned:
         options.update({"keep_default_na": False, "na_values": [""]})
     # Native parsing is exact for ordinary integer columns, but nullable bins
@@ -248,7 +262,7 @@ def read_table(
             # Only these exceptional columns need scalar parsing for validation.
             frame[name] = series.map(lambda cell: _number(cell) if isinstance(cell, str) else cell)
     if versioned:
-        result = validate(frame, kind)
+        result = validate(frame, selected)
     else:
         result, mapping = _upgrade_legacy(frame, kind)
         if mapping:

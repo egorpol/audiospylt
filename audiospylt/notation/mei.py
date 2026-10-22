@@ -12,6 +12,8 @@ from audiospylt.notation.pitch import (
     _decimals, _positive_scalar, cents_label, pitch_table,
 )
 
+__all__ = ["snapshot_to_mei", "events_to_mei"]
+
 
 _NS = "http://www.music-encoding.org/ns/mei"
 _XML_ID = "{http://www.w3.org/XML/1998/namespace}id"

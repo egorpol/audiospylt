@@ -12,7 +12,7 @@ _CORE = ("io", "analysis", "model", "synth", "notation", "transform")
 _FORBIDDEN_TOP = {"IPython", "ipywidgets", "nbformat", "matplotlib", "plotly"}
 _LEGACY = {
     "audio_utils", "dft_analysis", "multiplotter", "plotting", "plot_wave",
-    "waveform_utils", "mei", "mei_old", "df_transforms", "f0_utils",
+    "waveform_utils", "mei", "df_transforms", "f0_utils",
     "generate_wave_file", "io_utils",
 }
 
@@ -83,12 +83,46 @@ def test_nb_imports_ipython_only_inside_functions():
                 assert _inside_function(node, parents), f"{path}: IPython must be lazy"
 
 
-def test_viz_and_nb_init_are_single_docstring():
+def _is_docstring(node) -> bool:
+    return (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str))
+
+
+def test_viz_and_nb_init_only_reexport_their_own_modules():
     for package in ("viz", "nb"):
         init = ast.parse((ROOT / package / "__init__.py").read_text())
-        assert len(init.body) == 1 and isinstance(init.body[0], ast.Expr)
-        assert isinstance(init.body[0].value, ast.Constant)
-        assert isinstance(init.body[0].value.value, str)
+        modules = {path.stem for path in (ROOT / package).glob("*.py")} - {"__init__"}
+        assert _is_docstring(init.body[0])
+        imported, exported = set(), None
+        for node in init.body[1:]:
+            if isinstance(node, ast.ImportFrom):
+                assert node.level == 1 and node.module in modules, ast.unparse(node)
+                imported |= {alias.name for alias in node.names if alias.asname is None}
+            else:
+                assert isinstance(node, ast.Assign), ast.unparse(node)
+                assert [ast.unparse(target) for target in node.targets] == ["__all__"]
+                exported = ast.literal_eval(node.value)
+        assert exported is not None and set(exported) == imported, package
+
+
+def test_compute_subpackage_inits_are_single_docstring():
+    for package in _CORE:
+        for path in sorted((ROOT / package).rglob("__init__.py")):
+            init = ast.parse(path.read_text())
+            assert len(init.body) == 1 and _is_docstring(init.body[0]), path
+
+
+def test_optional_imports_only_importlib_and_types():
+    imports = {name for _, _, name in _iter_imports(ROOT / "_optional.py")}
+    assert imports <= {"__future__", "importlib", "types"}
+
+
+def test_no_v1_module_imports_librosa_at_module_level():
+    for package in (*_CORE, "viz", "nb"):
+        for path in sorted((ROOT / package).rglob("*.py")):
+            for node, parents, name in _iter_imports(path):
+                if _top(name) == "librosa":
+                    assert _inside_function(node, parents), f"{path}: librosa must be lazy"
 
 
 def test_compat_imports_only_its_four_stdlib_dependencies():

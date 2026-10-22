@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import requests
 import soundfile as sf
+import soxr
 
 from audiospylt.io.audio import fade, load_audio, to_mono, trim, write_audio
 
@@ -173,13 +174,13 @@ def test_non_url_ignores_download_options(tmp_path):
     assert set(tmp_path.iterdir()) == {source}
 
 
-def test_module_and_local_loading_do_not_import_requests_or_librosa(monkeypatch, tmp_path):
-    # Load the file directly to isolate v1 imports from the unchanged 0.6 package
-    # initializer, which eagerly imports its legacy modules and dependencies.
+def test_module_and_local_loading_do_not_import_requests_librosa_or_soxr(monkeypatch, tmp_path):
+    # Load the file directly to isolate v1 imports from the package initializer.
+    # sr equal to the file rate: soxr is imported only when resampling happens.
     original_import = builtins.__import__
 
     def guarded_import(name, *args, **kwargs):
-        if name.split(".")[0] in {"requests", "librosa"}:
+        if name.split(".")[0] in {"requests", "librosa", "soxr"}:
             raise AssertionError(f"unexpected eager import: {name}")
         return original_import(name, *args, **kwargs)
 
@@ -193,45 +194,95 @@ def test_module_and_local_loading_do_not_import_requests_or_librosa(monkeypatch,
     assert result.shape == (4,) and rate == 8000
 
 
-def test_stereo_resampling_preserves_channels_and_frequency(monkeypatch, tmp_path):
-    import librosa
+@pytest.fixture
+def soxr_calls(monkeypatch):
+    calls = []
+    resample = soxr.resample
 
+    def recording_resample(audio, *args, **kwargs):
+        calls.append((audio.shape, args, kwargs))
+        return resample(audio, *args, **kwargs)
+
+    monkeypatch.setattr(soxr, "resample", recording_resample)
+    return calls
+
+
+def test_stereo_resampling_preserves_channels_and_frequency(soxr_calls, tmp_path):
     times = np.arange(44100) / 44100
     written = np.column_stack([np.sin(2 * np.pi * 440 * times),
                                0.5 * np.sin(2 * np.pi * 880 * times)])
     path = tmp_path / "sines.wav"
     sf.write(path, written, 44100, subtype="FLOAT")
-    calls = []
-    resample = librosa.resample
-
-    def recording_resample(audio, **kwargs):
-        calls.append((audio.shape, kwargs))
-        return resample(audio, **kwargs)
-
-    monkeypatch.setattr(librosa, "resample", recording_resample)
     result, rate = load_audio(path, mono=False, sr=22050)
     assert result.shape == (2, 22050)
     assert result.dtype == np.float64 and result.flags.c_contiguous
     assert type(rate) is int and rate == 22050
-    assert calls == [((2, 44100), {"orig_sr": 44100, "target_sr": 22050,
-                                 "res_type": "soxr_hq", "axis": -1})]
+    assert soxr_calls == [((44100, 2), (44100, 22050), {"quality": "HQ"})]
     for channel, frequency in zip(result, [440, 880]):
         peak = np.argmax(np.abs(np.fft.rfft(channel)))
         assert np.fft.rfftfreq(channel.size, 1 / rate)[peak] == frequency
 
 
-def test_equal_rate_does_not_resample(monkeypatch, tmp_path):
-    import librosa
+def test_mono_resampling_passes_samples_as_one_axis(soxr_calls):
+    result, rate = load_audio(BytesIO(_wav_bytes()), sr=16000)
+    assert result.shape == (8,) and rate == 16000
+    assert soxr_calls == [((4,), (8000, 16000), {"quality": "HQ"})]
 
-    def forbidden(*args, **kwargs):
-        pytest.fail("equal rates must not call librosa.resample")
 
-    monkeypatch.setattr(librosa, "resample", forbidden)
+def test_equal_rate_does_not_resample(soxr_calls, tmp_path):
     path = tmp_path / "same-rate.wav"
     path.write_bytes(_wav_bytes())
     result, rate = load_audio(path, sr=np.int64(8000))
     assert result.shape == (4,)
     assert type(rate) is int and rate == 8000
+    assert soxr_calls == []
+
+
+def test_short_soxr_output_is_zero_padded_to_the_exact_ceil(monkeypatch):
+    # 4 samples at 8000 Hz -> 20000 Hz: ceil(4·20000/8000) = 10 samples.
+    monkeypatch.setattr(soxr, "resample", lambda audio, *args, **kwargs: np.ones(9))
+    result, _ = load_audio(BytesIO(_wav_bytes()), sr=20000)
+    np.testing.assert_array_equal(result, [1] * 9 + [0])
+
+
+def test_long_soxr_output_raises_instead_of_trimming(monkeypatch):
+    monkeypatch.setattr(soxr, "resample", lambda audio, *args, **kwargs: np.ones(11))
+    with pytest.raises(RuntimeError, match=r"soxr returned 11 samples, more than ceil\(n·sr/rate\) = 10"):
+        load_audio(BytesIO(_wav_bytes()), sr=20000)
+
+
+@pytest.mark.parametrize("rates", [(44100, 48000), (48000, 44100), (44100, 22050), (22050, 44100),
+                                   (8000, 44100), (44100, 8000), (22050, 48000), (44100, 44099)])
+def test_resampling_matches_librosa_soxr_hq_except_its_float_ceil(rates):
+    librosa = pytest.importorskip("librosa")
+    rate, target = rates
+    noise = np.random.default_rng(rate + target).uniform(-0.5, 0.5, (44101, 2))
+    for n in (1, 2, 3, 7, 101, 1001, 44101):
+        for data in (noise[:n, 0], noise[:n]):
+            stream = BytesIO()
+            sf.write(stream, data, rate, format="WAV", subtype="DOUBLE")
+            original, _ = load_audio(BytesIO(stream.getvalue()), mono=False)
+            ours, _ = load_audio(BytesIO(stream.getvalue()), mono=False, sr=target)
+            theirs = librosa.resample(original, orig_sr=rate, target_sr=target,
+                                      res_type="soxr_hq", axis=-1)
+            assert ours.shape[:-1] == theirs.shape[:-1] == original.shape[:-1]
+            assert ours.shape[-1] == -(-n * target // rate), (n, data.ndim)
+            common = min(ours.shape[-1], theirs.shape[-1])
+            np.testing.assert_array_equal(ours[..., :common], theirs[..., :common])
+            assert not ours[..., common:].any() and not theirs[..., common:].any()
+
+
+def test_exact_ceil_is_one_sample_shorter_than_librosa_in_rare_cases():
+    librosa = pytest.importorskip("librosa")
+    stream = BytesIO()
+    sf.write(stream, np.random.default_rng(0).uniform(-0.5, 0.5, 44100), 22050,
+             format="WAV", subtype="DOUBLE")
+    original, _ = load_audio(BytesIO(stream.getvalue()))
+    ours, _ = load_audio(BytesIO(stream.getvalue()), sr=48000)
+    theirs = librosa.resample(original, orig_sr=22050, target_sr=48000, res_type="soxr_hq", axis=-1)
+    assert ours.shape == (96000,) and theirs.shape == (96001,)
+    np.testing.assert_array_equal(ours, theirs[:96000])
+    assert theirs[-1] == 0
 
 
 @pytest.mark.parametrize("rate", [0, -1, 44100.0, True, False, np.bool_(True),

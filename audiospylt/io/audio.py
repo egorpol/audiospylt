@@ -16,7 +16,16 @@ import numpy as np
 import soundfile as sf
 
 if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
     import requests
+
+__all__ = [
+    "load_audio",
+    "to_mono",
+    "trim",
+    "fade",
+    "write_audio",
+]
 
 
 def _sample_rate(sr: int) -> int:
@@ -25,7 +34,7 @@ def _sample_rate(sr: int) -> int:
     return int(sr)
 
 
-def _audio_array(audio: np.ndarray) -> np.ndarray:
+def _audio_array(audio: ArrayLike) -> np.ndarray:
     array = np.asarray(audio, dtype=np.float64)
     if array.ndim not in (1, 2):
         raise ValueError(
@@ -127,7 +136,8 @@ def load_audio(
         position. Caller-owned streams are not closed.
     sr : int, optional
         Positive target sample rate. None retains the file's rate. Resampling
-        uses librosa's ``soxr_hq`` on the last axis, only when rates differ.
+        uses soxr (quality "HQ") along the sample axis, only when the rates
+        differ; the result has ceil(n·sr/rate) samples.
     mono : bool, default True
         Average channels. With False, a one-channel file is still 1-D.
     download_dir : str or os.PathLike, optional
@@ -182,13 +192,27 @@ def load_audio(
     elif audio.shape[0] == 1:
         audio = audio[0]
     if target_rate is not None and target_rate != rate:
-        import librosa
-
-        audio = librosa.resample(
-            audio, orig_sr=rate, target_sr=target_rate, res_type="soxr_hq", axis=-1,
-        )
+        audio = _resample(audio, rate, target_rate)
         rate = target_rate
     return np.ascontiguousarray(audio, dtype=np.float64), int(rate)
+
+
+def _resample(audio: np.ndarray, rate: int, target_rate: int) -> np.ndarray:
+    """Resample along the last axis to exactly ceil(n·target_rate/rate) samples."""
+    import soxr
+
+    n = audio.shape[-1]
+    length = -(-n * target_rate // rate)
+    # soxr wants frames × channels; its own length rule rounds, so pad to the ceil.
+    out = soxr.resample(audio.T, rate, target_rate, quality="HQ").T
+    if out.shape[-1] > length:
+        raise RuntimeError(
+            f"soxr returned {out.shape[-1]} samples, more than ceil(n·sr/rate) = {length}"
+        )
+    if out.shape[-1] < length:
+        pad = [(0, 0)] * (out.ndim - 1) + [(0, length - out.shape[-1])]
+        out = np.pad(out, pad)
+    return out
 
 
 def to_mono(audio: np.ndarray) -> np.ndarray:

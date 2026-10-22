@@ -11,7 +11,7 @@
 [![GitHub Release](https://github.com/egorpol/audiospylt/actions/workflows/release-from-changelog.yml/badge.svg)](https://github.com/egorpol/audiospylt/actions/workflows/release-from-changelog.yml)
 ![Jupyter](https://img.shields.io/badge/notebooks-Jupyter-F37626?logo=jupyter&logoColor=white)
 
-> **Note**: This package is currently under development. The provided version (`0.6.3`) should be treated as a pre-stable release. Although the package has been in development for some time, bugs and undocumented features are still common.
+> **Note**: This package is currently under development. This branch is version `1.0.0.dev0`, the v1 redesign; the latest release on PyPI is `0.6.3`. Both should be treated as pre-stable releases: although the package has been in development for some time, bugs and undocumented features are still common.
 
 **AudioSpylt** is a Python-based toolbox designed for sound analysis, resynthesis, and a variety of visual and symbolic sound representations. While it is primarily intended for instructional purposes, this toolbox seamlessly integrates with the Jupyter Notebook environment. Originally created for composition students, it places a special emphasis on diverse resynthesis techniques.
 
@@ -42,12 +42,21 @@ Demo notebooks are available in this [Google Drive folder](https://drive.google.
 pip install audiospylt
 ```
 
-AudioSpylt targets Python 3.11+. When installed from PyPI, `pip` will install the runtime dependencies automatically.
+AudioSpylt targets Python 3.11+. `pip install audiospylt` installs the core: audio and table I/O, spectra,
+peaks, spectrograms, synthesis, transforms and MEI export. Optional features are extras:
 
-If you are working from a local clone for notebooks or development, you can also install the mirrored dependency list with:
+| Extra | Adds |
+| --- | --- |
+| `[plot]` | Plotly figures (`audiospylt.viz`) |
+| `[notebook]` | display, playback and Jupyter support (`audiospylt.nb`) |
+| `[notation]` | SVG rendering of MEI with Verovio |
+| `[librosa]` | mel spectrograms (and, later, pyin f0 estimation) |
+| `[all]` | all of the above, and the 0.6 API |
+
+The notebooks, on Colab as well, need all of them:
 
 ```bash
-pip install -r requirements.txt
+pip install "audiospylt[all]"
 ```
 
 ### Running the notebooks
@@ -57,7 +66,7 @@ Clone the repository and install the package into the environment that runs your
 ```bash
 git clone https://github.com/egorpol/audiospylt.git
 cd audiospylt
-pip install -e .
+pip install -e ".[all]"
 ```
 
 The notebooks use paths relative to their own folder (Jupyter's default working directory). They read example
@@ -73,16 +82,21 @@ pip install -e ".[dev]"
 python scripts/run_notebooks.py --offline
 ```
 
+The tests run from a git checkout only, with `pip install -e ".[dev]"` and `pytest`: the source distribution on
+PyPI ships the package only, without tests or example data.
+
 ## Dependencies
 
-Current runtime dependencies:
+Core: `numpy`, `pandas`, `scipy`, `soundfile`, `soxr` (resampling) and `requests` (loading audio from URLs).
 
-- `ipython`, `ipykernel`, `ipywidgets`, `nbformat>=4.2.0` (notebook support)
-- `librosa`, `soundfile` (audio processing)
-- `numpy`, `pandas`, `scipy` (data science)
-- `matplotlib`, `plotly` (visualization)
-- `verovio` (symbolic rendering)
-- `requests`, `tqdm` (utilities)
+Extras:
+
+- `[plot]`: `plotly`
+- `[notebook]`: `ipython`, `ipykernel`, `ipywidgets`, `nbformat>=4.2.0`, `tqdm`
+- `[notation]`: `verovio`
+- `[librosa]`: `librosa`
+- `[all]`: the four extras above
+- `[dev]`: `[all]` plus the build, lint, type-check and test tools
 
 ## Contributions
 

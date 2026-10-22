@@ -12,6 +12,13 @@ from scipy.special import expit
 from audiospylt.model.schema import validate
 from audiospylt.transform.scale import _finite_scalar
 
+__all__ = [
+    "METHODS",
+    "parameter_range",
+    "pair",
+    "morph",
+]
+
 METHODS = ("equal", "power", "sigmoid", "transport")
 _MASS_TOL = 1e-12
 
@@ -161,8 +168,13 @@ def _primaries(table, own, other, identity):
 
 
 def pair(
-    source: pd.DataFrame, target: pd.DataFrame, method="equal", *,
-    power=None, sigmoid_range=None, weight="amp",
+    source: pd.DataFrame,
+    target: pd.DataFrame,
+    method: str = "equal",
+    *,
+    power: float | None = None,
+    sigmoid_range: float | None = None,
+    weight: str = "amp",
 ) -> pd.DataFrame:
     """Pair partials by a 0.6 frequency map or monotone 1-D optimal transport.
 
@@ -265,7 +277,7 @@ def _emission_order(table):
     # using different groups would give an undirected cycle in that forest;
     # within one group all arrows leave its single primary. Kahn's heap selects
     # the earliest available pairing row, giving a stable topological order.
-    successors = [set() for _ in range(len(table))]
+    successors: list[set[int]] = [set() for _ in range(len(table))]
     degree = np.zeros(len(table), dtype=np.int64)
     for identity, flag in (("src", "primary_start"), ("dst", "primary_stop")):
         for rows in table.groupby(identity, sort=False).indices.values():
@@ -290,8 +302,15 @@ def _emission_order(table):
 
 
 def morph(
-    source: pd.DataFrame, target: pd.DataFrame, duration, method="equal", *,
-    time_start=0.0, power=None, sigmoid_range=None, weight="amp",
+    source: pd.DataFrame,
+    target: pd.DataFrame,
+    duration: float,
+    method: str = "equal",
+    *,
+    time_start: float = 0.0,
+    power: float | None = None,
+    sigmoid_range: float | None = None,
+    weight: str = "amp",
 ) -> pd.DataFrame:
     """Emit a D13 morph as v1 events, with primaries first for continuous linking.
 
