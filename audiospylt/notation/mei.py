@@ -23,10 +23,11 @@ def _element(parent, name, **attrs):
     return ET.SubElement(parent, name, attrs)
 
 
-def _label(measure, staff_no, note_id, place, text, vgrp=None):
+def _label(measure, staff_no, note_id, place, text, kind, vgrp=None):
     # A bare <dir> starts at its note's left edge; <rend halign> centres it on the head.
-    direction = _element(measure, "dir", staff=str(staff_no), startid=f"#{note_id}", place=place,
-                         **({"vgrp": str(vgrp)} if vgrp is not None else {}))
+    # Verovio copies @type into the SVG class ("dir cents"), which nb.show_mei uses for hover.
+    direction = _element(measure, "dir", type=kind, staff=str(staff_no), startid=f"#{note_id}",
+                         place=place, **({"vgrp": str(vgrp)} if vgrp is not None else {}))
     _element(direction, "rend", halign="center").text = text
 
 
@@ -102,42 +103,55 @@ def _measure(section, pitches, staves, next_id, *, chord=True, labels=False,
              decimals=0, naturals=False, onset_text=None, vgrp=None):
     measure = _element(section, "measure", n=str(len(section) + 1), right="invis")
     ordered = pitches.sort_values("written_midi", kind="stable")
-    top_anchor = None
+    parts = []
     for staff_no, clef in staves:
-        layer = _element(_element(measure, "staff", n=str(staff_no)), "layer", n="1")
         rows = ordered
         if len(staves) == 2:
             rows = ordered[ordered.written_midi.ge(60) if clef == "G"
                            else ordered.written_midi.lt(60)]
-        if rows.empty:
-            _element(layer, "space", dur="4")
-            continue
-        parent = (_element(layer, "chord", dur="4", **{"stem.visible": "false"})
-                  if chord else layer)
+        # Verovio draws at most two heads per step in a chord (either side of the
+        # stem) and puts a third exactly on top of one, so a step's third and
+        # fourth notes continue the chord in a second column, and so on.
+        columns = rows.groupby(["step", "octave"]).cumcount().to_numpy() // 2
+        parts.append((staff_no, clef, rows, columns))
+    width = max((int(columns.max()) + 1 for *_, columns in parts if columns.size), default=1)
+    top_anchor = None
+    for staff_no, clef, rows, columns in parts:
+        layer = _element(_element(measure, "staff", n=str(staff_no)), "layer", n="1")
+        # Ids follow document order: column by column, each low to high.
+        ids = np.empty(len(rows), dtype=object)
+        ids[np.argsort(columns, kind="stable")] = [f"n{next_id + i}" for i in range(len(rows))]
+        next_id += len(rows)
         altered = {(r.step, r.octave) for r in rows.itertuples() if r.accid}
-        texts = []
-        for row in rows.itertuples():
-            note_id = f"n{next_id}"
-            next_id += 1
-            attrs = {_XML_ID: note_id, "pname": row.step, "oct": str(row.octave)}
-            if not chord:
-                attrs.update({"dur": "4", "stem.visible": "false"})
-            accid = row.accid or ("n" if naturals or (row.step, row.octave) in altered else "")
-            if accid:
-                attrs["accid"] = accid
-            _element(parent, "note", **attrs)
-            if labels:
-                texts.append((note_id, cents_label(row.residual, decimals)))
-            # The first nonempty staff is uppermost; its last note is highest.
-            if top_anchor is None or top_anchor[0] == staff_no:
-                top_anchor = (staff_no, note_id)
-        # Verovio stacks dirs outward from the staff in document order, so labels
-        # below the F staff go high to low to keep the column in the chord's order.
-        for note_id, text in reversed(texts) if clef == "F" else texts:
-            _label(measure, staff_no, note_id, "above" if clef == "G" else "below", text, vgrp)
+        for column in range(width):
+            at = np.flatnonzero(columns == column)
+            if not at.size:
+                _element(layer, "space", dur="4")
+                continue
+            parent = (_element(layer, "chord", dur="4", **{"stem.visible": "false"})
+                      if chord else layer)
+            texts = []
+            for note_id, row in zip(ids[at], rows.iloc[at].itertuples()):
+                attrs = {_XML_ID: note_id, "pname": row.step, "oct": str(row.octave)}
+                if not chord:
+                    attrs.update({"dur": "4", "stem.visible": "false"})
+                accid = row.accid or ("n" if naturals or (row.step, row.octave) in altered else "")
+                if accid:
+                    attrs["accid"] = accid
+                _element(parent, "note", **attrs)
+                if labels:
+                    texts.append((note_id, cents_label(row.residual, decimals)))
+            # Verovio stacks dirs outward from the staff in document order, so labels
+            # below the F staff go high to low to keep each column in the chord's order.
+            for note_id, text in reversed(texts) if clef == "F" else texts:
+                _label(measure, staff_no, note_id, "above" if clef == "G" else "below", text,
+                       "cents", vgrp)
+        # The first nonempty staff is uppermost; its last row is highest.
+        if top_anchor is None and len(rows):
+            top_anchor = (staff_no, ids[-1])
     if onset_text is not None and top_anchor is not None:
         staff_no, note_id = top_anchor
-        _label(measure, staff_no, note_id, "above", onset_text)
+        _label(measure, staff_no, note_id, "above", onset_text, "onset")
     return next_id
 
 
@@ -159,7 +173,11 @@ def snapshot_to_mei(
         Valid v1 snapshot. Amplitude is not notated; filter 0 Hz rows first.
     layout : {'chord', 'sequence'}, default 'chord'
         One chord per staff in one measure, ordered by written pitch (stable
-        ties), or one note per measure in input row order. Chords read well
+        ties), or one note per measure in input row order. Verovio draws at
+        most two noteheads per staff step (line or space) in a chord, so a
+        staff with three or more notes on one step continues the chord in
+        further columns of the same measure, two notes per step each (low to
+        high); the other staff is padded with spaces. Chords read well
         when their notes lie a third or more apart; in denser snapshots (many
         partials within a semitone or two) Verovio puts noteheads on both
         sides of the stem and spreads accidentals over many columns. Use
@@ -171,9 +189,9 @@ def snapshot_to_mei(
         See pitch_table. Eighth uses the quarter-tone grid with mandatory labels.
     labels : bool or None, default None
         Cents remainder relative to each written note, centred on its notehead
-        (MEI ``<dir>`` with ``<rend halign="center">``). In a chord the labels
-        of a staff stack in one column, above the G staff or below the F
-        staff, read from the top in the chord's order (high to low). In a
+        (MEI ``<dir type="cents">`` with ``<rend halign="center">``). In a chord the labels
+        of each staff column stack, above the G staff or below the F staff,
+        read from the top in the chord's order (high to low). In a
         sequence, consecutive notes on one staff spanning at most a third
         share a label height (MEI ``@vgrp``), so labels do not move up and
         down with each note's accidental. None enables labels only for
@@ -237,7 +255,8 @@ def events_to_mei(
         group, its latest time_stop minus its onset. Overlaps do not extend
         earlier groups. round uses Python's nearest-even tie rule.
     time_labels : bool, default False
-        Label each onset above the highest note of its uppermost occupied staff.
+        Label each onset above the highest note of its uppermost occupied staff
+        (MEI ``<dir type="onset">``).
     time_format : str, default '{:.3f} s'
         Format string applied to the onset in seconds.
     resolution, spelling, labels, decimals, naturals, clef, a4, title
@@ -246,8 +265,9 @@ def events_to_mei(
     Returns
     -------
     str
-        Deterministic MEI 5.1 XML; equal time_start rows share a chord, onsets
-        are sorted, and every measure contains every configured staff.
+        Deterministic MEI 5.1 XML; equal time_start rows share a chord (in
+        columns as in snapshot_to_mei), onsets are sorted, and every measure
+        contains every configured staff.
 
     Raises
     ------

@@ -30,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `morph(duplicates=...)`: `"full"` (default for `equal`, `power`, `sigmoid`) keeps the 0.6 gains, every copy of a shared partial at full amplitude, and emits every pairing row; `"primary"` (default for `transport`) gives one row per partial the amplitude so both ends match the snapshots' levels. `attrs["morph"]` records the choice.
 - MEI cents and onset labels are centred on their noteheads (`<dir><rend halign="center">`).
 - In `snapshot_to_mei(layout="sequence")` the cents labels of consecutive notes on one staff spanning at most a third share one height (MEI `@vgrp`), so they no longer move up and down with each note's accidental.
+- `nb.show_mei(highlight="#eb6834")`: hovering a notehead colours it and its cents label, and hovering a label colours its note, also inside dense chords. CSS only (`:has()`, no script), scoped to each output; `highlight=None` turns it off. Cents and onset labels carry MEI `@type` (`cents`, `onset`); onset labels are not paired.
+- MEI chords (`snapshot_to_mei`, `events_to_mei`) show every note: Verovio draws at most two noteheads per staff step, so a staff with three or more notes on one step (D4 quarter-sharp, D♯4, D♯4, D4 three-quarter-sharp) continues the chord in further columns of the same measure, two notes per step each. Before, the third and fourth heads were drawn exactly on top of others (0.6 did the same). Chords without such a step are unchanged.
 
 ### Removed
 - `audiospylt.mei_old`, `requirements.txt` and the matplotlib dependency.

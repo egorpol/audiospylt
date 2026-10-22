@@ -91,6 +91,81 @@ def test_show_mei_pages(monkeypatch):
     assert seen == ["<svg>2</svg>"]
 
 
+def _hover_outputs(monkeypatch, mei, **kwargs):
+    shown = FakeDisplay()
+    import IPython.display as ipd
+    monkeypatch.setattr(ipd, "display", shown)
+    nb.show_mei(mei, **kwargs)
+    return [call.data for call in shown.calls]
+
+
+def test_show_mei_hover_pairs_cents_labels_not_onsets(monkeypatch):
+    pytest.importorskip("verovio")
+    import re
+
+    from audiospylt.notation.mei import events_to_mei
+
+    # Two onsets, three notes; each onset label points at the top note, which
+    # also has a cents label.
+    table = pd.DataFrame({"time_start": [0.0, 0.0, 1.0], "time_stop": [0.5, 0.5, 2.0],
+                          "freq_start": [130.0, 445.0, 262.0], "freq_stop": [130.0, 445.0, 262.0],
+                          "amp_start": [0.5] * 3, "amp_stop": [0.25] * 3})
+    mei = events_to_mei(table, labels=True, time_labels=True)
+    (html,) = _hover_outputs(monkeypatch, mei)
+    scope = re.match(r'<div id="(asp-mei-[0-9a-f]{12})" style="background:#ffffff;'
+                     r'display:inline-block;padding:8px"><style>', html).group(1)
+    css = html[html.index("<style>"):html.index("</style>")]
+    pairs = re.findall(rf'#{scope}:has\(:is\(g\.note\[id="(n\d+)"\], '
+                       rf'g\.dir:not\(\.onset\)\[data-startid="#\1"\]\):hover\)', css)
+    assert pairs == ["n1", "n2", "n3"]
+    assert css.endswith("{ fill: #eb6834; }")
+    # The SVG keeps the pairing attributes the CSS selects on.
+    assert html.count('class="dir cents" data-startid="#n') == 3
+    assert html.count('class="dir onset" data-startid="#n') == 2
+    # A second call gets its own scope: notebooks repeat ids n1… across scores.
+    (again,) = _hover_outputs(monkeypatch, mei, highlight="rgb(0, 90, 200)", background=None)
+    assert f'id="{scope}"' not in again
+    assert re.match(r'<div id="asp-mei-[0-9a-f]{12}" style="display:inline-block"><style>', again)
+    assert again[:again.index("</style>")].endswith("{ fill: rgb(0, 90, 200); }")
+
+
+def test_show_mei_without_pairs_or_highlight_is_plain(monkeypatch):
+    pytest.importorskip("verovio")
+    from audiospylt.notation import render
+    from audiospylt.notation.mei import snapshot_to_mei
+
+    seen = []
+    real = render.render_svg_pages
+    monkeypatch.setattr(render, "render_svg_pages",
+                        lambda mei, options=None: seen.append(options) or real(mei, options=options))
+    labelled = snapshot_to_mei(pd.DataFrame({"freq": [261.6, 330.0], "amp": [1.0, 0.5]}), labels=True)
+    unlabelled = snapshot_to_mei(pd.DataFrame({"freq": [261.6, 330.0], "amp": [1.0, 0.5]}))
+    options = {"scale": 40, "svgAdditionalAttribute": ["note@pname"]}
+    before = {"scale": 40, "svgAdditionalAttribute": ["note@pname"]}
+    for html in (_hover_outputs(monkeypatch, labelled, highlight=None)
+                 + _hover_outputs(monkeypatch, unlabelled, options=options)):
+        assert html.startswith('<div style="background:#ffffff;display:inline-block;padding:8px"><svg')
+        assert "<style>" not in html
+    assert options == before
+    assert seen == [None, {"scale": 40, "svgAdditionalAttribute": ["note@pname", "dir@startid"]}]
+    with pytest.raises(ValueError, match="highlight"):
+        nb.show_mei(labelled, highlight="red; } body { x")
+    with pytest.raises(ValueError, match="background"):
+        nb.show_mei(labelled, background="url(x)")
+    assert len(seen) == 2  # colours are checked before rendering
+
+
+def test_hover_notes_skip_onsets_external_and_missing_targets():
+    svg = """<svg><g id="n1" class="note"><g class="notehead"/></g>
+    <g id="n2" class="note"/><g id="x" class="dir cents" data-startid="#n2">
+    <g id="y" class="dir onset" data-startid="#n1"/><g id="z" class="dir" data-startid="#n9"/>
+    <g id="w" class="dir" data-startid="other.mei#n1"/><g id="v" class="dir" data-startid="#n2"/>
+    <g id="n3" class="note"/><g id="u" class="dir" data-startid="#n3"/></svg>"""
+    # n1 has only an onset label and an external reference, so it is not a pair.
+    assert nb._hover_notes(svg) == ["n2", "n3"]
+    assert nb._hover_css("<svg/>", "s", "red") == ""
+
+
 def test_play_mono_stereo_and_peak(monkeypatch):
     shown = FakeDisplay()
     import IPython.display as ipd

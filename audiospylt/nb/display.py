@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -24,6 +25,8 @@ _RGB = re.compile(r"^rgba?\([^)]*\)$", re.IGNORECASE)
 _CSS_NAME = re.compile(r"^[A-Za-z]+$")
 _XML_DECL = re.compile(r"^\s*<\?xml\b[^>]*\?>", re.IGNORECASE)
 _DOCTYPE = re.compile(r"^\s*<!DOCTYPE\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_SVG_GROUP = re.compile(r"<g\b[^>]*>")
+_SVG_ATTR = re.compile(r'([\w:.-]+)="([^"]*)"')
 
 
 def _ipython_display():
@@ -49,19 +52,54 @@ def _contains_mei(text: str) -> bool:
     return "<mei" in text.lower()
 
 
-def _validate_background(background: str) -> str:
-    if not isinstance(background, str):
-        raise ValueError(
-            f"background must be a #hex, CSS colour name, or rgb()/rgba(); "
-            f"got {background!r}"
-        )
-    value = background.strip()
-    if _HEX.fullmatch(value) or _RGB.fullmatch(value) or _CSS_NAME.fullmatch(value):
-        return value
+def _validate_colour(colour: str, name: str = "background") -> str:
+    if isinstance(colour, str):
+        value = colour.strip()
+        if _HEX.fullmatch(value) or _RGB.fullmatch(value) or _CSS_NAME.fullmatch(value):
+            return value
     raise ValueError(
-        f"background must be a #hex, CSS colour name, or rgb()/rgba(); "
-        f"got {background!r}"
+        f"{name} must be a #hex, CSS colour name, or rgb()/rgba(); got {colour!r}"
     )
+
+
+def _svg_div(svg: str, background: str | None, *, scope: str | None = None,
+             css: str = "") -> str:
+    body = svg.lstrip()
+    body = _XML_DECL.sub("", body, count=1).lstrip()
+    body = _DOCTYPE.sub("", body, count=1).lstrip()
+    box = ("display:inline-block" if background is None
+           else f"background:{background};display:inline-block;padding:8px")
+    ident = f' id="{scope}"' if scope is not None else ""
+    return f'<div{ident} style="{box}">{css}{body}</div>'
+
+
+def _hover_notes(svg: str) -> list[str]:
+    # Verovio SVG: <g id="n5" class="note">, and with svgAdditionalAttribute
+    # dir@startid, <g class="dir cents" data-startid="#n5">. Onset labels
+    # (class "dir onset") belong to the whole event, not to one note.
+    notes, targets = set(), []
+    for tag in _SVG_GROUP.findall(svg):
+        attrs = dict(_SVG_ATTR.findall(tag))
+        classes = attrs.get("class", "").split()
+        if "note" in classes and "id" in attrs:
+            notes.add(attrs["id"])
+        elif "dir" in classes and "onset" not in classes:
+            start = attrs.get("data-startid", "")
+            if start.startswith("#") and start[1:] not in targets:
+                targets.append(start[1:])
+    return [note for note in targets if note in notes]
+
+
+def _hover_css(svg: str, scope: str, colour: str) -> str:
+    # One selector per pair: hovering either member colours both. Scoped to
+    # the output's div because notebooks repeat ids n1, n2, … across scores.
+    rules = []
+    for note in _hover_notes(svg):
+        pair = f'g.note[id="{note}"], g.dir:not(.onset)[data-startid="#{note}"]'
+        rules.append(f"#{scope}:has(:is({pair}):hover) :is({pair})")
+    if not rules:
+        return ""
+    return "<style>" + ",\n".join(rules) + f" {{ fill: {colour}; }}</style>"
 
 
 def show(obj: object, *, renderer: str | None = None) -> None:
@@ -132,15 +170,9 @@ def show_svg(svg: str, *, background: str | None = "#ffffff") -> None:
         from IPython.display import SVG
         display(SVG(svg))
         return None
-    background = _validate_background(background)
-    body = svg.lstrip()
-    body = _XML_DECL.sub("", body, count=1).lstrip()
-    body = _DOCTYPE.sub("", body, count=1).lstrip()
+    background = _validate_colour(background)
     from IPython.display import HTML
-    display(HTML(
-        f'<div style="background:{background};display:inline-block;'
-        f'padding:8px">{body}</div>'
-    ))
+    display(HTML(_svg_div(svg, background)))
     return None
 
 
@@ -150,8 +182,16 @@ def show_mei(
     page: int | None = None,
     options: dict | None = None,
     background: str | None = "#ffffff",
+    highlight: str | None = "#eb6834",
 ) -> None:
-    """Render MEI to SVG page(s) and display each with ``show_svg``.
+    """Render MEI to SVG page(s) and display each page.
+
+    With ``highlight``, hovering a notehead colours it and its cents label,
+    and hovering a label colours it and its note: every MEI ``<dir>`` with a
+    ``@startid`` pairs with that note, except onset labels
+    (``<dir type="onset">``). This is CSS only (``:has()``, no script),
+    scoped to each output; viewers that strip ``<style>`` from outputs show
+    the plain score. Pages without such pairs are shown with ``show_svg``.
 
     Parameters
     ----------
@@ -160,9 +200,15 @@ def show_mei(
     page : int or None
         One-based page; ``None`` renders every page.
     options : dict or None
-        Verovio options for ``notation.render``.
+        Verovio options for ``notation.render``. With ``highlight``,
+        ``"dir@startid"`` is added to ``svgAdditionalAttribute`` (the
+        caller's dictionary is not modified).
     background : str or None
-        Passed to ``show_svg``.
+        As in ``show_svg``. ``None`` with hover pairs keeps the HTML wrapper,
+        without a background or padding.
+    highlight : str or None, default '#eb6834'
+        Hover colour: a ``#hex`` (3–8 digits), CSS colour name, or
+        ``rgb(...)`` / ``rgba(...)``. ``None`` turns hover off.
 
     Returns
     -------
@@ -170,12 +216,29 @@ def show_mei(
     """
     from audiospylt.notation.render import render_svg, render_svg_pages
 
+    if background is not None:
+        background = _validate_colour(background)
+    if highlight is not None:
+        highlight = _validate_colour(highlight, "highlight")
+        options = dict(options) if options is not None else {}
+        extra = options.get("svgAdditionalAttribute", [])
+        extra = [extra] if isinstance(extra, str) else list(extra)
+        if "dir@startid" not in extra:
+            extra.append("dir@startid")
+        options["svgAdditionalAttribute"] = extra
     if page is None:
         pages = render_svg_pages(mei, options=options)
     else:
         pages = [render_svg(mei, page=page, options=options)]
     for svg in pages:
-        show_svg(svg, background=background)
+        scope = f"asp-mei-{uuid.uuid4().hex[:12]}"
+        css = "" if highlight is None else _hover_css(svg, scope, highlight)
+        if not css:
+            show_svg(svg, background=background)
+            continue
+        display = _ipython_display()
+        from IPython.display import HTML
+        display(HTML(_svg_div(svg, background, scope=scope, css=css)))
     return None
 
 

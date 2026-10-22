@@ -68,6 +68,7 @@ def make_mei(mei_schema):
             note = by_id[direction.get("startid")[1:]]
             assert note.xpath("ancestor::m:staff", namespaces=NS)[0].get("n") == direction.get("staff")
             assert note.xpath("ancestor::m:measure", namespaces=NS)[0] is direction.getparent()
+            assert direction.get("type") in {"cents", "onset"}
             # Labels are centred on the notehead: the text sits in one <rend halign="center">.
             assert not (direction.text or "").strip() and len(direction) == 1
             assert direction[0].tag == f"{{{NS['m']}}}rend" and direction[0].get("halign") == "center"
@@ -179,8 +180,10 @@ def test_label_defaults_and_eighth_requirement(make_mei, labels, resolution):
         assert len(root.xpath("//m:dir", namespaces=NS)) == (5 if enabled else 0)
 
 
+# Three notes on C4 (sharp) or D4 (flat): the third opens a second column, after D4
+# (sharp) in document order, and still takes its sign from the whole staff's chord.
 @pytest.mark.parametrize("spelling, midis, expected", [
-    ("sharp", [60, 60.5, 60.5, 62, 48, 48.5], ["n", "1qs", "1qs", None, "n", "1qs"]),
+    ("sharp", [60, 60.5, 60.5, 62, 48, 48.5], ["n", "1qs", None, "1qs", "n", "1qs"]),
     ("flat", [62, 61.5, 61.5, 60, 50, 49.5], [None, "1qf", "1qf", "n", "1qf", "n"]),
 ])
 def test_same_step_naturals_and_exact_unisons(make_mei, spelling, midis, expected):
@@ -202,6 +205,59 @@ def test_same_step_rule_does_not_cross_staff_or_octave(make_mei):
     assert root.xpath("//m:staff[@n='1']//m:note/@accid", namespaces=NS) == ["3qf"]
     _, root = make_mei(snapshot([48, 60.5]))
     assert root.xpath("//m:staff[@n='2']//m:note/@accid", namespaces=NS) == []
+
+
+# Shaped like the 2c chord (speech1's 12 strongest rows): four notes on D4, three on G3;
+# every row has its own cents remainder.
+CROWDED = [62.42, 63.12, 62.86, 63.46, 64.03, 64.21, 55.43, 56.05, 56.56, 57.39, 57.61, 44.02]
+
+
+def test_crowded_step_continues_chord_in_columns(make_mei):
+    _, root = make_mei(snapshot(CROWDED), labels=True)
+    layers = root.xpath("//m:layer", namespaces=NS)
+    shapes = [[[(n.get("pname"), n.get("accid")) for n in chord] for chord in layer] for layer in layers]
+    assert shapes == [
+        [[("d", "1qs"), ("d", "s"), ("e", None), ("e", None)], [("d", "s"), ("d", "3qs")]],
+        [[("g", "s"), ("g", "1qs"), ("g", "s"), ("a", "1qs"), ("a", "1qs")], [("g", "3qs")]],
+    ]
+    dirs = root.xpath("//m:dir", namespaces=NS)
+    labels = {d.get("startid")[1:]: d.findtext("m:rend", namespaces=NS) for d in dirs}
+    assert labels == dict(zip([f"n{i}" for i in range(1, 13)], [
+        "-8", "+12", "+3", "+21", "-14", "-4", "+2", "-7", "+5", "-11", "+11", "+6"]))
+    # Stacks go column by column, each in the chord's order (high to low below the F staff).
+    assert [d.get("startid") for d in dirs] == [
+        f"#n{i}" for i in (1, 2, 3, 4, 5, 6, 11, 10, 9, 8, 7, 12)]
+    # Pairs on a step fit one chord; the other staff pads the extra column.
+    _, pairs = make_mei(snapshot([62.4, 63.1, 64, 64.2]), clef="GF")
+    assert len(pairs.xpath("//m:chord", namespaces=NS)) == 1
+    _, padded = make_mei(snapshot([62.4, 63.1, 62.9]))
+    assert [[c.tag.split("}")[1] for c in layer] for layer in padded.xpath("//m:layer", namespaces=NS)] == [
+        ["chord", "chord"], ["space", "space"]]
+
+
+def test_crowded_chord_renders_every_notehead_apart(make_mei, capfd):
+    mei, _ = make_mei(snapshot(CROWDED), labels=True)
+    svg = ET.fromstring(render_svg(mei))
+    svg_ns = "{http://www.w3.org/2000/svg}"
+    heads = [g.find(f"{svg_ns}g[@class='notehead']/{svg_ns}use").get("transform")
+             for g in svg.iter(f"{svg_ns}g") if g.get("class") == "note"]
+    assert len(heads) == len(CROWDED) == len(set(heads))
+    captured = capfd.readouterr()
+    assert "[Warning]" not in captured.out + captured.err
+
+
+@pytest.mark.parametrize("top, expected", [(63.5, ("d", "3qs", 1)), (64, ("e", None, 0))])
+def test_crowded_onset_anchors_the_highest_note(make_mei, top, expected):
+    # D4 quarter-sharp and D#4 twice put the second D#4 in a second column; the
+    # highest note sits in that column (D4 three-quarter-sharp) or in the first (E4).
+    table = events([(0, 1, 62.4), (0, 1, 63.1), (0, 1, 62.9), (0, 1, top), (1, 2, 55)])
+    _, root = make_mei(table, kind="events", time_labels=True)
+    first = root.xpath("//m:measure", namespaces=NS)[0]
+    onset = first.xpath("m:dir[@type='onset']", namespaces=NS)[0]
+    note = first.xpath(f"//m:note[@xml:id='{onset.get('startid')[1:]}']", namespaces=NS)[0]
+    chord = note.getparent()
+    assert (note.get("pname"), note.get("accid"), chord.getparent().index(chord)) == expected
+    assert len(first.xpath("m:staff[@n='2']/m:layer/m:space", namespaces=NS)) == 2
 
 
 @pytest.mark.parametrize("rows, count, occupied", [
@@ -238,6 +294,8 @@ def test_temporal_grouping_time_anchor_and_options(make_mei):
     assert [d.findtext("m:rend", namespaces=NS) for d in time_dirs] == ["onset=0.0", "onset=1.0"]
     assert [d.get("staff") for d in time_dirs] == ["1", "2"]
     assert [d.get("place") for d in time_dirs] == ["above", "above"]
+    assert [d.get("type") for d in time_dirs] == ["onset", "onset"]
+    assert len(root.xpath("//m:dir[@type='cents']", namespaces=NS)) == len(table)
     by_id = {n.get(XML_ID): n for n in root.xpath("//m:note", namespaces=NS)}
     assert [(by_id[d.get("startid")[1:]].get("pname"), by_id[d.get("startid")[1:]].get("oct"))
             for d in time_dirs] == [("c", "5"), ("c", "3")]
@@ -404,7 +462,7 @@ def test_sequence_labels_render_at_one_height(make_mei, capfd):
     # reach the sharp) above '-3', so the labels wobble (y 275 vs 434 in Verovio 6.3).
     mei, _ = make_mei(snapshot([91.81, 91.97, 91.81, 91.97]), layout="sequence", labels=True)
     svg = ET.fromstring(render_svg(mei))
-    texts = svg.findall(".//{http://www.w3.org/2000/svg}g[@class='dir']/{http://www.w3.org/2000/svg}text")
+    texts = svg.findall(".//{http://www.w3.org/2000/svg}g[@class='dir cents']/{http://www.w3.org/2000/svg}text")
     assert ["".join(t.itertext()).strip() for t in texts] == ["-19", "-3", "-19", "-3"]
     assert len({t.get("y") for t in texts}) == 1
     captured = capfd.readouterr()

@@ -97,8 +97,9 @@ used when reading old tables.
   mandatory cents label. Sharps are the default; choose `spelling="flat"` for
   flats. Labels use MEI `<dir>` elements centred on the notehead
   (`<rend halign="center">`); in a sequence, labels of neighbouring notes
-  within a third share one height (`@vgrp`). Documents are MEI 5.1 with a
-  header. Dense
+  within a third share one height (`@vgrp`). `show_mei` colours a note and
+  its cents label while either is under the mouse (`highlight=None` turns
+  this off). Documents are MEI 5.1 with a header. Dense
   snapshots (many partials within a semitone or two) read better with
   `layout="sequence"`; `nlargest(n, "amp")` helps only when the strongest
   partials lie a third or more apart.
@@ -206,7 +207,7 @@ Display-only `display_df` becomes an explicit display; `notebook_white_backgroun
 | `mei.map_alteration_to_mei_accid` | `notation.pitch.pitch_table` (accid column) | Use `accid` from the pitch table rather than an alteration string. Natural-sign display is chosen when writing MEI. |
 | `mei.create_mei_string` | `notation.mei.snapshot_to_mei` | Pass a canonical snapshot rather than precomputed note tuples. `clef_config` → `clef`; `resolution_type` uses the new resolution names; `display_mode` → `layout`; `display_cent_deviation` → `labels`; `include_natural_accidentals` → `naturals`. |
 | `mei.create_temporal_mei_string` | `notation.mei.events_to_mei` | Pass canonical events rather than grouped note tuples. `measure_represents_sec` → `measure_seconds`; `display_time_start` → `time_labels`; `time_label_format` → `time_format`. `time_label_mode` / `time_label_place` have no switches: v1 uses `<dir>` above the uppermost occupied staff. `clef_config` → `clef`; `resolution_type` → `resolution`; `include_natural_accidentals` → `naturals`. |
-| `mei.process_and_visualize` | `notation.mei.snapshot_to_mei` with `nb.display.show_mei` | `resolution="half_tone_deviation"` (old default) → `resolution="semitone", labels=True`. `display_mode="sequence"` → `layout="sequence"` (v1 defaults to chord); `note_order` needs explicit input sorting. `clef_config` → `clef`; `display_cent_deviation` → `labels`; `include_natural_accidentals=True` (old default) → `naturals=True` (v1 default False). Save strings/rendered SVG explicitly; display the table separately. |
+| `mei.process_and_visualize` | `notation.mei.snapshot_to_mei` with `nb.display.show_mei` | `resolution="half_tone_deviation"` (old default) → `resolution="semitone", labels=True`. `display_mode="sequence"` → `layout="sequence"` (v1 defaults to chord); `note_order` needs explicit input sorting. `clef_config` → `clef`; `display_cent_deviation` → `labels`; `include_natural_accidentals=True` (old default) → `naturals=True` (v1 default False). A staff with three or more notes on one step continues the chord in a further column (0.6 drew the extra heads on top of others). Save strings/rendered SVG explicitly; display the table separately. |
 | `mei.process_temporal_chords` | `notation.mei.events_to_mei` with `nb.display.show_mei` | `measure_represents_sec` → `measure_seconds`; `display_time_start` → `time_labels`; `time_label_format` → `time_format`. `time_label_mode` / `time_label_place` → fixed `<dir>` above staff. `include_natural_accidentals=True` (old default) → `naturals=True` (v1 default False); `clef_config` → `clef`. Rename custom frequency/time columns before validating; v1 notates `freq_start`. Use new resolution names; labels are mandatory for eighth mode. |
 | `mei.A4_FREQUENCY` | `notation.pitch.pitch_table`(..., a4=...) | Pass the reference frequency explicitly; this constant stays unwrapped. |
 | `mei.MIDI_BASE` | None | Internal numeric/XML convention; no v1 public constant. Stays unwrapped. |
