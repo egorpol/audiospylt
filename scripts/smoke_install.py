@@ -5,10 +5,11 @@ Usage (from outside the checkout, so that the import finds the installed package
     cd "$RUNNER_TEMP" && /path/to/venv/bin/python -I /path/to/scripts/smoke_install.py all
 
 Both modes run the compute pipeline on a synthetic stereo file: write_audio, load_audio with
-resampling, spectrum, find_peaks, snapshot_to_events, tracks_to_events, synthesize, a table round trip, read_partiels,
-pitch_table, snapshot_to_mei, events_to_mei and harmonic_f0. "core" then checks that no optional package is installed or
-imported and that each optional feature names its extra; "all" checks that those features
-work and that the 0.6 API still resolves. Standard library and core dependencies only; no
+resampling, spectrum, find_peaks, snapshot_to_events, tracks_to_events, synthesize, a table round
+trip, read_partiels, tracks_to_chords, tracks_at, pitch_table, snapshot_to_mei, events_to_mei and
+harmonic_f0. "core" then checks that no optional package is installed or imported and that each
+optional feature names its extra; "all" checks that those features work and that the 0.6 API
+still resolves. Standard library and core dependencies only; no
 repository files, no network. Prints one line per check and exits 1 on the first failure.
 """
 
@@ -101,6 +102,14 @@ def main(argv=None):
             (folder / "Group_1_Partial_1.csv").write_text(block + "\n" + block.replace("0.5", "0.4"))
             tracks = asp.read_partiels(folder / "Group_1_Partial_1.csv", channel=1)
             assert list(tracks["track_id"]) == [0, 0, 1] and list(tracks["amp"]) == [0.4, 0.4, 0.25], tracks
+
+        with check("tracks_to_chords: one chord per window, the louder of two tracks 20 cents apart"):
+            tracks = pd.DataFrame({"track_id": [0, 0, 1, 1, 2, 2], "time": [0.0, 0.1] * 3,
+                                   "freq": [440.0, 440.0, 445.0, 445.0, 660.0, 660.0],
+                                   "amp": [0.5, 0.5, 0.2, 0.2, 0.25, 0.25]})
+            chords = asp.tracks_to_chords(tracks, 0.5)
+            assert list(chords["freq_start"]) == [440.0, 660.0] and list(chords["track_id"]) == [0, 2], chords
+            assert list(asp.tracks_at(tracks, 0.05)["freq"]) == [440.0, 445.0, 660.0]
 
     with check("pitch_table -> snapshot_to_mei"):
         assert list(asp.pitch_table(peaks["freq"])["written_midi"]) == [69, 76]

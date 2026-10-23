@@ -3,8 +3,9 @@
 AudioSpylt reads partial tracks made by other analysis tools into a `tracks`
 table (`track_id`, `time`, `freq`, `amp`, optional `phase`; see
 [table-format.md](table-format.md)). From there, `tracks_to_events()` and `synthesize()`
-resynthesise them, and `viz.plot_spectrogram(overlay=...)` and `viz.plot_events()`
-draw them.
+resynthesise them, `viz.plot_spectrogram(overlay=...)` and `viz.plot_events()`
+draw them, and `tracks_to_chords()` reduces them to chords for notation
+([below](#notation-a-chord-per-time-window)).
 
 ## Partiels (Ircam PM2)
 
@@ -84,3 +85,53 @@ templates' settings (23.2 ms Hann window, threshold -90 dB, 20 partials):
   can recover what the export does not contain.
 - **Low notes.** With the 23 ms window, stationary sines read sharp: 220 Hz
   +46 cents, 440 Hz +13 cents, 880 Hz +1.4 cents. A longer window helps.
+
+## Notation: a chord per time window
+
+A `tracks` table holds a point per analysis frame (every 7.8 ms for PM2 on the
+flute), so `events_to_mei(tracks_to_events(tracks))` would write a chord per
+frame. `tracks_to_chords(tracks, windows)` reduces the tracks to one chord per
+time window, and `tracks_at(tracks, time)` reads every track at one time as a
+snapshot:
+
+```python
+tracks = asp.read_partiels("exports/flute")
+chords = asp.tracks_to_chords(tracks, 0.5, max_notes=8)  # 0.5 s windows, the 8 loudest notes
+asp.nb.show_mei(asp.events_to_mei(chords, measure_seconds=0.5, labels=True))
+asp.nb.show_mei(asp.snapshot_to_mei(asp.tracks_at(tracks, 2.9)))  # 19 partials at 2.9 s
+```
+
+- **Notes.** Each track that sounds in a window gives one note held over the
+  window. Its frequency is the amplitude-weighted median of the track's
+  frequencies there, so a few frames of an octave error do not move it (a mean
+  would write a pitch in between). Its amplitude is the track's average over
+  the window: a track heard in a fifth of the window comes out 14 dB quieter.
+- **Duplicates.** Analyses split one partial over several tracks: harmonic PM2
+  at every octave jump of the f0, inharmonic PM2 in copies across slots. In
+  each window the loudest note is kept first, then each next loudest unless it
+  lies within `merge_cents` (50) of a note already kept. `merge_cents=None`
+  keeps one note per track.
+- **Thinning** is off by default. `min_db=-40` drops notes more than 40 dB
+  below the window's loudest note, `max_notes=8` keeps the 8 loudest.
+- **Windows** are a step in seconds (from 0 up to the last point) or your own
+  boundary times, such as onsets. A window where nothing sounds gives no chord;
+  the score shows empty measures there.
+
+On the flute excerpt (398 tracks, 7.37 s), 0.5 s windows give 15 chords:
+
+| Options | Notes per chord, median (range) | Highest note |
+| --- | --- | --- |
+| `merge_cents=None` | 40 (23–88) | 12.3 kHz |
+| defaults | 21 (19–28) | 12.3 kHz |
+| `min_db=-40` | 16 (5–21) | 6.5 kHz |
+| `max_notes=8` | 8 | 4.5 kHz |
+
+The inharmonic cello export (3,755 tracks, 17 chords) gives medians of 220,
+57, 31 and 8 notes. With the defaults, the notes of a chord lie more than
+50 cents apart, so no two share a written quarter-tone pitch.
+
+The chords keep the `track_id` of the track each note comes from, so
+`synthesize(chords, sr, fade=0.005)` plays the reduction. A track kept in
+consecutive windows continues as one voice where its note moves by at most
+`link_cents` (100 cents). In the flute reduction with `max_notes=8`, 85 of the
+120 notes continue into the next window this way.

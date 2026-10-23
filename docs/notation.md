@@ -19,6 +19,11 @@ asp.nb.show_mei(mei)          # in a notebook: the score with its ruler and hove
 svg = asp.render_svg(mei)     # the same as an SVG string, e.g. for a figure
 ```
 
+Partial tracks (from `read_partiels` or `f0_to_tracks`) hold a point per
+analysis frame. Reduce them to a chord per time window with
+`tracks_to_chords` before notating them; see
+[interop.md](interop.md#notation-a-chord-per-time-window).
+
 ## The ruler
 
 Under each system, a horizontal line covers the system's time span at true

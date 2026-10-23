@@ -37,6 +37,8 @@ from .model.schema import upgrade as upgrade
 from .model.convert import snapshot_to_events as snapshot_to_events
 from .model.convert import f0_to_tracks as f0_to_tracks
 from .model.convert import tracks_to_events as tracks_to_events
+from .model.convert import tracks_to_chords as tracks_to_chords
+from .model.convert import tracks_at as tracks_at
 from .synth.additive import synthesize as synthesize
 from .transform.scale import transpose as transpose
 from .transform.scale import stretch as stretch
@@ -84,6 +86,8 @@ __all__ = [
     "snapshot_to_events",
     "f0_to_tracks",
     "tracks_to_events",
+    "tracks_to_chords",
+    "tracks_at",
     "synthesize",
     "transpose",
     "stretch",
