@@ -181,6 +181,22 @@ def test_plot_spectrogram_pooling_mel_overlay(capsys, monkeypatch):
     assert fig_p.data[0].z.shape[1] <= max(1, n_frames // 3 + 1)
 
 
+def test_plot_spectrogram_overlay_mode():
+    audio, sr = _sine(8192)
+    spec = spectrogram(audio, sr, frame_length=512, hop=128)
+    events = snapshot_to_events(find_peaks(spectrum(audio[:2048], sr), prominence_db=5), 0.0, 0.1)
+    fig = plot_spectrogram(spec, overlay=[events, events], overlay_mode=["markers", "lines"])
+    assert [t.mode for t in fig.data[1:]] == ["markers", "lines"]
+    # Dots go through the same Hz -> mel mapping as lines.
+    mel = mel_spectrogram(spec, n_mels=64)
+    fig_mel = plot_spectrogram(mel, overlay=[events, events], overlay_mode=["markers", "lines"])
+    assert set(fig_mel.data[1].y) == {y for y in fig_mel.data[2].y if y is not None}
+    with pytest.raises(ValueError, match=r"overlay_mode length \(2\) must match number of tables \(1\)"):
+        plot_spectrogram(spec, overlay=events, overlay_mode=["markers", "lines"])
+    with pytest.raises(ValueError, match="overlay_mode must be"):
+        plot_spectrogram(spec, overlay_mode="dots")
+
+
 def test_log_axis_range_is_log10_of_hz():
     audio, sr = _sine(4096)
     spec = spectrum(audio, sr)

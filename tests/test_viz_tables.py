@@ -221,3 +221,62 @@ def test_plot_events_and_3d_no_side_effects(capsys, monkeypatch):
     assert capsys.readouterr() == ("", "")
     pio.to_json(fig3)
     pd.testing.assert_frame_equal(table, before)
+
+
+def _dots(fig, group):
+    return [t for t in fig.data if t.mode == "markers" and t.legendgroup == group]
+
+
+def test_lines_mode_draws_one_point_tracks_as_dots():
+    tracks = tracks_table({
+        "track_id": [1, 1, 2], "time": [0.0, 0.5, 0.2],
+        "freq": [200.0, 210.0, 300.0], "amp": [0.01, 0.01, 1.0],
+    })
+    for amp in (None, "opacity"):
+        fig = plot_events(tracks, amp=amp, range_db=80.0)
+        lines = [t for t in fig.data if t.mode == "lines"]
+        dots = _dots(fig, "table 1")
+        assert [(x, y) for t in dots for x, y in zip(t.x, t.y)] == [(0.2, 300.0)]
+        assert dots[0].text[0].startswith("time: 0.2 s")
+        assert [t.showlegend for t in fig.data] == [True, False]
+    # The lone dot is the loudest level drawn: the -40 dB segment falls to bin 4 of 80 dB.
+    assert lines[0].opacity == pytest.approx(0.15 + 0.85 * 4 / 7)
+    assert dots[0].opacity == 1.0
+
+
+def test_markers_mode_draws_each_point_once():
+    events = events_table({
+        "time_start": [0.0, 0.5], "time_stop": [0.5, 1.0],
+        "freq_start": [100.0, 110.0], "freq_stop": [110.0, 120.0],
+        "amp_start": [1.0, 0.5], "amp_stop": [0.5, 1e-10],
+    })
+    tracks = tracks_table({
+        "track_id": [1, 1, 1, 2], "time": [0.0, 0.5, 1.0, 0.2],
+        "freq": [100.0, 110.0, 120.0, 300.0], "amp": [1.0, 0.5, 1e-10, 0.1],
+    })
+    fig = plot_events(events, tracks, mode="markers", range_db=40.0)
+    assert {t.mode for t in fig.data} == {"markers"}
+    for group, count in (("table 1", 3), ("table 2", 4)):
+        dots = _dots(fig, group)
+        assert sum(len(t.x) for t in dots) == count  # the shared row end is one dot
+        assert [t.showlegend for t in dots].count(True) == 1
+    # Opacity from each point's own level: full scale, -6 dB (bin 6 of 40 dB), below the window.
+    opacity = {(x, y): t.opacity for t in _dots(fig, "table 1") for x, y in zip(t.x, t.y)}
+    assert opacity == {
+        (0.0, 100.0): 1.0,
+        (0.5, 110.0): pytest.approx(0.15 + 0.85 * 6 / 7),
+        (1.0, 120.0): 0.15,
+    }
+
+    mixed = plot_events(tracks, events, mode=["markers", "lines"], amp=None)
+    assert [(t.legendgroup, t.mode) for t in mixed.data] == [("table 1", "markers"), ("table 2", "lines")]
+    both = plot_events(tracks, mode="lines+markers", amp=None)
+    assert [(t.mode, t.showlegend) for t in both.data] == [("lines", True), ("markers", False)]
+    assert len(both.data[1].x) == 4  # the one-point track is not drawn twice
+    empty = plot_events(tracks.iloc[:0], mode="markers")
+    assert [(t.mode, t.showlegend, t.x) for t in empty.data] == [("markers", True, (None,))]
+
+    with pytest.raises(ValueError, match="mode must be 'lines', 'markers', or 'lines\\+markers'"):
+        plot_events(tracks, mode="dots")
+    with pytest.raises(ValueError, match=r"mode length \(1\) must match number of tables \(2\)"):
+        plot_events(tracks, events, mode=["markers"])

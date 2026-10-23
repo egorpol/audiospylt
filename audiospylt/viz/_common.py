@@ -190,6 +190,28 @@ def _labels(labels, count: int, *, prefix: str = "table") -> list[str]:
     return [str(label) for label in labels]
 
 
+_TRACE_MODES = ("lines", "markers", "lines+markers")
+
+
+def _modes(mode, count: int, *, name: str = "mode") -> list[str]:
+    """One trace mode per table from a single mode or a per-table sequence."""
+    per_table = isinstance(mode, (list, tuple))
+    values = list(mode) if per_table else [mode]
+    for value in values:
+        if not isinstance(value, str) or value not in _TRACE_MODES:
+            raise ValueError(
+                f"{name} must be 'lines', 'markers', or 'lines+markers', "
+                f"or one of them per table; got {value!r}"
+            )
+    if not per_table:
+        return values * count
+    if len(values) != count:
+        raise ValueError(
+            f"{name} length ({len(values)}) must match number of tables ({count})"
+        )
+    return values
+
+
 def amplitude_axis_label(*, db: bool) -> str:
     if db:
         return "amplitude (dB re full scale)"

@@ -17,6 +17,7 @@ from audiospylt.viz._common import (
     _finite_scalar,
     _freq_scale,
     _labels,
+    _modes,
     _minmax,
     _optional_max_points,
     _positive_int,
@@ -338,6 +339,7 @@ def plot_spectrogram(
     max_frames: int | None = 2000,
     overlay: pd.DataFrame | Sequence[pd.DataFrame] | None = None,
     overlay_labels: Sequence[str] | None = None,
+    overlay_mode: str | Sequence[str] = "lines",
     audio: ArrayLike | None = None,
     colorscale: str | list[list] | None = None,
     theme: str = "light",
@@ -362,6 +364,9 @@ def plot_spectrogram(
     overlay : table, list of tables, or None
         Events or tracks (snapshot raises, naming ``snapshot_to_events``).
     overlay_labels : sequence or None
+    overlay_mode : {'lines', 'markers', 'lines+markers'} or sequence, default 'lines'
+        One mode for all overlays, or one per overlay, as ``mode`` in
+        ``plot_events``; one-point tracks are dots in 'lines' mode too.
     audio : array-like or None
         Optional waveform under the heatmap (shared x, heights 0.75 / 0.25).
     colorscale : Plotly colorscale or None
@@ -437,6 +442,7 @@ def plot_spectrogram(
                 )
             overlays.append((table, kind))
     labels = _labels(overlay_labels, len(overlays)) if overlays else []
+    modes = _modes(overlay_mode, len(overlays), name="overlay_mode")
 
     with_audio = audio is not None
     wave = None
@@ -502,13 +508,13 @@ def plot_spectrogram(
     if overlays:
         from audiospylt.viz import tables as tables_mod
 
-        for index, ((table, kind), label) in enumerate(zip(overlays, labels)):
+        for index, ((table, kind), label, table_mode) in enumerate(zip(overlays, labels, modes)):
             colour = colorway_colour(theme, index + 1)
             for trace in tables_mod._line_traces_for_table(
                 table, kind, colour=colour, label=label, theme=theme,
                 amp=None, db=db, floor_db=floor_db, range_db=range_db,
                 freq_scale="linear" if is_mel else freq_scale,
-                legendgroup=label, l_max=None,
+                legendgroup=label, l_max=None, mode=table_mode,
             ):
                 if is_mel:
                     trace.y = _hz_to_mel_coords(trace.y)
