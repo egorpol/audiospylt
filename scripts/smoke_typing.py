@@ -11,6 +11,8 @@ besides audiospylt, because pandas and plotly ship no py.typed.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 import audiospylt as asp
@@ -29,6 +31,9 @@ voice: np.ndarray = asp.synthesize(asp.tracks_to_events(asp.f0_to_tracks(contour
 partials = asp.tracks_to_events(asp.read_partiels(["Partial_1.json", "Partial_2.json"], channel=1))
 chords = asp.tracks_to_chords(asp.read_partiels("json"), [0.0, 0.5, 1.0], merge_cents=None, max_notes=8)
 chord: str = asp.snapshot_to_mei(asp.tracks_at(asp.read_partiels("json"), 0.5))
+written: Path = asp.write_sdif(asp.read_sdif("hrm.sdif", matrix="1HRM", stream=1, max_step_cents=50.0), "out.sdif",
+                               nvt={"Date": "today"})
+segments: str = asp.events_to_mei(asp.read_chord_seq("cs.sdif", stream=0))
 score: str = asp.render_svg(asp.events_to_mei(asp.snapshot_to_events(peaks, 0.0, 1.0), colors=True),
                             timeline=True)
 
@@ -36,5 +41,6 @@ bad: str = asp.amplitude_to_db(0.5)  # type: ignore[assignment]
 asp.viz.plot_spectrum(audio)  # type: ignore[arg-type]
 asp.pyin(audio, sr, fmin=100.0)  # type: ignore[call-arg]
 asp.read_partiels("csv", dedupe="yes")  # type: ignore[arg-type]
+asp.read_sdif("a.sdif", max_step_cents="50")  # type: ignore[arg-type]
 asp.tracks_to_chords(chords, 0.5, max_notes="8")  # type: ignore[arg-type]
 asp.render_svg("<mei/>", timeline="yes")  # type: ignore[arg-type]

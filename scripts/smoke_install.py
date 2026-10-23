@@ -6,7 +6,7 @@ Usage (from outside the checkout, so that the import finds the installed package
 
 Both modes run the compute pipeline on a synthetic stereo file: write_audio, load_audio with
 resampling, spectrum, find_peaks, snapshot_to_events, tracks_to_events, synthesize, a table round
-trip, read_partiels, tracks_to_chords, tracks_at, pitch_table, snapshot_to_mei, events_to_mei and
+trip, read_partiels, write_sdif / read_sdif, tracks_to_chords, tracks_at, pitch_table, snapshot_to_mei, events_to_mei and
 harmonic_f0. "core" then checks that no optional package is installed or imported and that each
 optional feature names its extra; "all" checks that those features work and that the 0.6 API
 still resolves. Standard library and core dependencies only; no
@@ -102,6 +102,13 @@ def main(argv=None):
             (folder / "Group_1_Partial_1.csv").write_text(block + "\n" + block.replace("0.5", "0.4"))
             tracks = asp.read_partiels(folder / "Group_1_Partial_1.csv", channel=1)
             assert list(tracks["track_id"]) == [0, 0, 1] and list(tracks["amp"]) == [0.4, 0.4, 0.25], tracks
+
+        with check("write_sdif / read_sdif: two tracks on different grids, the shorter one filled"):
+            tracks = pd.DataFrame({"track_id": [0, 0, 1, 1, 1], "time": [0.0, 0.2, 0.05, 0.1, 0.15],
+                                   "freq": [100.0, 300.0, 440.0, 440.0, 440.0], "amp": 0.5})
+            back = asp.read_sdif(asp.write_sdif(tracks, folder / "tracks.sdif"))
+            assert list(back.groupby("partial_id").size()) == [5, 3], back
+            assert list(back.loc[back["partial_id"] == 1, "freq"]) == [100.0, 150.0, 200.0, 250.0, 300.0], back
 
         with check("tracks_to_chords: one chord per window, the louder of two tracks 20 cents apart"):
             tracks = pd.DataFrame({"track_id": [0, 0, 1, 1, 2, 2], "time": [0.0, 0.1] * 3,

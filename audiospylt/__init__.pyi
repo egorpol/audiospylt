@@ -16,6 +16,9 @@ from .io.audio import write_audio as write_audio
 from .io.tables import read_table as read_table
 from .io.tables import write_table as write_table
 from .io.interop.partiels import read_partiels as read_partiels
+from .io.interop.sdif import read_sdif as read_sdif
+from .io.interop.sdif import write_sdif as write_sdif
+from .io.interop.sdif import read_chord_seq as read_chord_seq
 from .analysis.spectrum import Spectrum as Spectrum
 from .analysis.spectrum import spectrum as spectrum
 from .analysis.spectrum import amplitude_to_db as amplitude_to_db
@@ -65,6 +68,9 @@ __all__ = [
     "read_table",
     "write_table",
     "read_partiels",
+    "read_sdif",
+    "write_sdif",
+    "read_chord_seq",
     "Spectrum",
     "spectrum",
     "amplitude_to_db",

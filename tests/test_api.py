@@ -26,7 +26,7 @@ PACKAGE = ROOT / "audiospylt"
 API = [
     "__version__",
     "load_audio", "to_mono", "trim", "fade", "write_audio",
-    "read_table", "write_table", "read_partiels",
+    "read_table", "write_table", "read_partiels", "read_sdif", "write_sdif", "read_chord_seq",
     "Spectrum", "spectrum", "amplitude_to_db", "db_to_amplitude",
     "find_peaks",
     "Spectrogram", "spectrogram", "MelSpectrogram", "mel_spectrogram",

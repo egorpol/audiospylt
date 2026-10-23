@@ -115,8 +115,9 @@ into one voice; the column stays an extra and is not validated by the format.
 
 ### `tracks`
 
-Partial tracks, from `f0_to_tracks()`, `read_partiels()` (Partiels PM2 exports, see
-[interop.md](interop.md); extra column `partial_id`) and later SPEAR/SDIF interchange:
+Partial tracks, from `f0_to_tracks()`, `read_partiels()` (Partiels PM2 exports) and
+`read_sdif()` (SDIF 1TRC, 1HRM and RBEP files; see [interop.md](interop.md) for both, which add an
+extra column `partial_id`, and `bandwidth` for RBEP); `write_sdif()` writes them as SDIF 1TRC:
 
 - Required: `track_id`, `time`, `freq`, `amp`.
 - Optional: `phase`.

@@ -5,7 +5,8 @@ table (`track_id`, `time`, `freq`, `amp`, optional `phase`; see
 [table-format.md](table-format.md)). From there, `tracks_to_events()` and `synthesize()`
 resynthesise them, `viz.plot_spectrogram(overlay=...)` and `viz.plot_events()`
 draw them, and `tracks_to_chords()` reduces them to chords for notation
-([below](#notation-a-chord-per-time-window)).
+([below](#notation-a-chord-per-time-window)). `write_sdif()` writes them back out as SDIF
+([SDIF](#sdif-audiosculpt-pm2-loris-spear)).
 
 ## Partiels (Ircam PM2)
 
@@ -85,6 +86,95 @@ templates' settings (23.2 ms Hann window, threshold -90 dB, 20 partials):
   can recover what the export does not contain.
 - **Low notes.** With the 23 ms window, stationary sines read sharp: 220 Hz
   +46 cents, 440 Hz +13 cents, 880 Hz +1.4 cents. A longer window helps.
+
+## SDIF (AudioSculpt, PM2, Loris, SPEAR)
+
+SDIF files hold analyses as frames of matrices. Three matrix types carry
+partial tracks: `1TRC` (sinusoidal tracks: AudioSculpt and PM2, the CNMAT
+tools, loristrck), `1HRM` (PM2 harmonic tracks) and `RBEP` (Loris and SPEAR
+breakpoints). Each row holds an index, a frequency, an amplitude and a phase.
+AudioSculpt's chord-sequence analysis writes `1MRK` marker frames instead.
+
+```python
+import audiospylt as asp
+
+tracks = asp.read_sdif("snare-trc.sdif")        # 1TRC, 1HRM or RBEP: the one the file holds
+right = asp.read_sdif("drum-trc.sdif", stream=1)  # PM2 writes a stereo analysis as streams 0 and 1
+chords = asp.read_chord_seq("snare-cs.sdif")      # AudioSculpt chord sequence -> events table
+asp.write_sdif(tracks, "out.sdif")               # 1TRC, laid out as AudioSculpt writes it
+```
+
+### What `read_sdif` does
+
+The SDIF index becomes the Int64 `partial_id` column. What it means, and how
+it makes tracks, depends on the matrix type:
+
+| Matrix | Index | A track is |
+| --- | --- | --- |
+| `1TRC` | partial number (PM2: from 1, never reused; CNMAT pm 1.2.2: a slot that later partials reuse) | a run of consecutive frames that hold the index |
+| `1HRM` | harmonic number | the same: a harmonic that drops out and returns is a new track |
+| `RBEP` | partial number (Loris: from 0) | all breakpoints of the index, at frame time + offset |
+
+- **Gaps.** A `1TRC` or `1HRM` frame without an index ends that index's
+  track. PM2's `1TRC` files have none (12 files checked). Harmonic files do:
+  in an IRCAM example analysis (PM2 1.3.2, 20 harmonics), 14 harmonics drop
+  out and return 178 times in all, so it reads as 198 tracks. `RBEP`
+  breakpoints are spread over frames of irregular times, so a missing frame
+  says nothing and an index is never split.
+- **Values.** `amp` is the writer's amplitude. For PM2 and Loris this is a
+  sine's peak amplitude, like `spectrum()`: a resynthesis of a Loris analysis
+  of the flute excerpt comes within 0.4 dB of the recording's RMS level.
+  `phase` is in radians. `RBEP` adds `bandwidth`, the Loris noise share
+  (0 to 1). Times just below 0 (PM2 places its first frame half a sample
+  early) are read as 0.
+- **Options.** `max_step_cents=` also ends a track where the frequency jumps,
+  as in `read_partiels`. `matrix=` picks a type when a file holds several.
+  `stream=` picks a stream (default: the lowest that holds the matrix);
+  `attrs["meta"]["streams"]` lists them all.
+- **Metadata.** `attrs["meta"]` keeps the file's name-value tables (`nvt`),
+  with `table_name` (`SinusoidalTracks`, `HarmonicTracks`) and `written_by`
+  (`Pm2_Version_...`) when present. Other frame types in the file (f0,
+  markers, FFT) are ignored.
+
+The reader needs only numpy. It matched pysdif3 0.9.1 frame for frame on 36
+test files (AudioSculpt and PM2, the CNMAT tools, CHANT, OpenMusic, Loris and
+the IRCAM SDIF test set). pysdif3 itself is not a dependency: its current
+release (1.0.1) cannot open files without a `1TYP` declaration, and none of
+the AudioSculpt and PM2 `1TRC` and `1HRM` files tested has one; 0.9.1 opens
+them but has no wheels beyond Python 3.11.
+
+### What `write_sdif` writes
+
+One `1NVT` frame (`TableName SinusoidalTracks`, `WrittenBy audiospylt
+<version>`, then any `nvt=` entries) and one `1TRC` frame per distinct time
+of the table, on stream 0. Each row is index `track_id + 1`, frequency,
+amplitude and phase as float32; frame times stay float64. A track without
+phases gets them integrated from its frequency. pysdif3 0.9.1 reads the
+written flute PM2 import (398 tracks, 950 frames) bit for bit, and so does
+the IRCAM library inside Partiels (`Partiels --sdif2json -f 1TRC -m 1TRC -c 1`
+returns all 17,310 frequencies). `read_sdif` reads it back with
+`partial_id = track_id + 1`.
+
+SDIF readers end a track at a frame that lacks its index. When tracks do not
+share one time grid, a track therefore gets a point at every frame time
+inside its span: frequency and amplitude interpolated linearly, phase
+integrated from the previous point. Tables on one grid (Partiels, `pyin`,
+`1TRC` files) are written point for point. `RBEP` breakpoints all have
+different times, so the fill multiplies them: the Loris flute analysis
+(12,431 partials, 62,368 breakpoints) becomes 3.7 million rows and 62 MB,
+against 3.1 MB as `RBEP`. Its resynthesis keeps the level and the spectrum
+(within 0.14 dB); 1,849 of the 9,224 partials start at another phase,
+because `synthesize` starts a voice at its first row that covers a sample.
+
+### Chord sequences
+
+`read_chord_seq` reads AudioSculpt's chord-sequence analysis: at each marker,
+a `1TRC` matrix lists the partials that start there and a `1END` matrix the
+ones that end, each holding one frequency and amplitude in between. The
+result is an `events` table with one row per partial and a `partial_id`;
+`attrs["meta"]["markers"]` keeps the marker times. `events_to_mei(chords)`
+writes one measure per segment and `synthesize(chords, sr)` plays it. The
+snare-drum example in the tests holds 235 partials in 18 segments.
 
 ## Notation: a chord per time window
 
