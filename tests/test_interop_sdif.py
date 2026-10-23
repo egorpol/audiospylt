@@ -81,6 +81,10 @@ def points(table):
             for k, g in table.groupby("track_id", sort=True)}
 
 
+def wrap(x):
+    return (x + np.pi) % (2 * np.pi) - np.pi
+
+
 # Real files
 
 def test_audiosculpt_1trc_reads_pm2_partials():
@@ -334,10 +338,6 @@ def test_write_fills_frames_a_track_skips(tmp_path):
     assert one["time"].tolist() == grid and two["time"].tolist() == [0.05, 0.1, 0.15]
     np.testing.assert_allclose(one["freq"], [100, 150, 200, 250, 300], rtol=1e-7)
     np.testing.assert_allclose(one["amp"], [0.1, 0.15, 0.2, 0.25, 0.3], rtol=1e-7)
-
-    def wrap(x):
-        return (x + np.pi) % (2 * np.pi) - np.pi
-
     f = np.array([100, 150, 200, 250, 300.0])
     expected = 0.5 + np.r_[0, np.cumsum(np.pi * 0.05 * (f[1:] + f[:-1]))]
     expected[1:] = wrap(expected[1:])  # known phases are kept as given, integrated ones wrapped
@@ -364,6 +364,81 @@ def test_write_loris_rbep_keeps_every_track_whole(tmp_path):
     assert np.array_equal(merged["freq_w"], merged["freq"].to_numpy(np.float32).astype(np.float64))
 
 
+def test_write_hop_resamples_onto_one_grid(tmp_path):
+    tracks = pd.DataFrame({
+        "track_id": [0, 0, 0, 1, 2, 2],
+        "time": [0.012, 0.031, 0.052, 0.026, 0.0441, 0.0449],
+        "freq": [100.0, 290.0, 500.0, 700.0, 900.0, 950.0],
+        "amp": [0.1, 0.29, 0.5, 0.7, 0.9, 0.95],
+        "phase": [0.3, np.nan, np.nan, 0.7, np.nan, np.nan],
+    })
+    path = write_sdif(tracks, tmp_path / "hop.sdif", hop=0.01)
+    assert [f[1] for f in parse(path)[1:]] == [k * 0.01 for k in range(1, 6)]
+    back = read_sdif(path)
+    one, two, three = (back[back["partial_id"] == i] for i in (1, 2, 3))
+    # Track 0 spans 0.012-0.052: rows from 0.01 (nearest its start, held at the first point) to 0.05.
+    assert one["time"].tolist() == [k * 0.01 for k in range(1, 6)]
+    expected = np.interp([0.012, 0.02, 0.03, 0.04, 0.05], [0.012, 0.031, 0.052], [100, 290, 500])
+    np.testing.assert_allclose(one["freq"], expected, rtol=1e-7)
+    np.testing.assert_allclose(one["amp"], expected / 1000, rtol=1e-6)
+    np.testing.assert_allclose(one["phase"].iloc[0], wrap(0.3 - 2 * np.pi * 100 * 0.002), atol=1e-6)
+    # Shorter than half a hop: one row, at the grid time nearest each end, with the values there.
+    assert two["time"].tolist() == [3 * 0.01] and two["freq"].tolist() == [700.0]
+    np.testing.assert_allclose(two["phase"], wrap(0.7 + 2 * np.pi * 700 * 0.004), atol=1e-5)
+    assert three["time"].tolist() == [4 * 0.01] and three["freq"].tolist() == [900.0]
+    assert back["track_id"].nunique() == 3
+
+
+def test_write_hop_rounds_halves_up_and_holds_values_past_the_end(tmp_path):
+    tracks = pd.DataFrame({"track_id": [4, 4], "time": [0.125, 0.375], "freq": [100.0, 300.0], "amp": [0.2, 0.4]})
+    back = read_sdif(write_sdif(tracks, tmp_path / "half.sdif", hop=0.25))
+    assert back["time"].tolist() == [0.25, 0.5]
+    np.testing.assert_allclose(back["freq"], [200.0, 300.0])
+    np.testing.assert_allclose(back["amp"], [0.3, 0.4], rtol=1e-6)
+    # From 0 at the first point: 0.125 s up to 200 Hz, then 0.125 s up to 300 Hz, then 0.125 s at 300 Hz.
+    np.testing.assert_allclose(back["phase"], wrap(np.pi * 0.125 * np.array([300, 300 + 500 + 600])), atol=1e-5)
+
+
+def test_write_hop_integrates_a_chirp_and_keeps_phases_on_the_grid(tmp_path):
+    hop = 0.025
+    tracks = pd.DataFrame({"track_id": 0, "time": np.array([0, 4, 8]) * hop, "freq": [100.0, 200.0, 300.0],
+                           "amp": 0.5, "phase": [0.5, 1.0, np.nan]})
+    back = read_sdif(write_sdif(tracks, tmp_path / "chirp.sdif", hop=hop))
+    t = np.arange(9) * hop
+    assert back["time"].tolist() == t.tolist()
+    np.testing.assert_allclose(back["freq"], 100 + 1000 * t, rtol=1e-7)
+    after = t - 0.1
+    expected = np.where(t <= 0.1, 0.5 + 2 * np.pi * (100 * t + 500 * t**2),
+                        1.0 + 2 * np.pi * (200 * after + 500 * after**2))
+    expected[1:] = wrap(expected[1:])
+    expected[4] = 1.0  # a given phase on the grid is kept as it is
+    np.testing.assert_allclose(back["phase"], expected, atol=1e-5)
+    assert back["phase"].iloc[[0, 4]].tolist() == [0.5, 1.0]
+
+
+def test_write_hop_leaves_a_table_on_its_grid_unchanged(tmp_path):
+    hop = 0.01
+    tracks = pd.DataFrame({"track_id": [0] * 4 + [3] * 3, "time": np.r_[np.arange(4), np.arange(2, 5)] * hop,
+                           "freq": [100.0, 110.0, 120.0, 130.0, 400.0, 410.0, 405.0], "amp": 0.25,
+                           "phase": [0.1, np.nan, 2.0, np.nan, np.nan, -3.0, 3.1]})
+    plain = write_sdif(tracks, tmp_path / "plain.sdif").read_bytes()
+    assert write_sdif(tracks, tmp_path / "hop.sdif", hop=hop).read_bytes() == plain
+    assert write_sdif(tracks.drop(columns="phase"), tmp_path / "hop2.sdif", hop=hop).read_bytes() == (
+        write_sdif(tracks.drop(columns="phase"), tmp_path / "plain2.sdif").read_bytes())
+
+
+def test_write_hop_shrinks_loris_rbep_and_keeps_every_track(tmp_path):
+    loris = read_sdif(LORIS)
+    filled = write_sdif(loris, tmp_path / "filled.sdif")
+    path = write_sdif(loris, tmp_path / "hop.sdif", hop=0.005)
+    assert path.stat().st_size < filled.stat().st_size / 10
+    back = read_sdif(path)
+    assert back["track_id"].nunique() == loris["track_id"].nunique()
+    k = back["time"] / 0.005
+    np.testing.assert_allclose(k, np.round(k), atol=1e-9)
+    assert (back.groupby("track_id")["time"].diff().dropna().round(9) == 0.005).all()
+
+
 def test_write_errors(tmp_path):
     base = pd.DataFrame({"track_id": [0, 0], "time": [0.0, 0.1], "freq": 100.0, "amp": 0.1})
     with pytest.raises(ValueError, match="no points"):
@@ -376,6 +451,9 @@ def test_write_errors(tmp_path):
             write_sdif(base, tmp_path / "x.sdif", nvt=nvt)
     with pytest.raises(SchemaError, match="strictly increasing"):
         write_sdif(base.assign(time=[0.1, 0.1]), tmp_path / "x.sdif")
+    for hop in (0, -0.01, np.nan, np.inf):
+        with pytest.raises(ValueError, match="hop must be a positive number"):
+            write_sdif(base, tmp_path / "x.sdif", hop=hop)
     assert not (tmp_path / "x.sdif").exists()
 
 

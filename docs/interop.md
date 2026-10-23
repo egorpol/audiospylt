@@ -102,6 +102,7 @@ tracks = asp.read_sdif("snare-trc.sdif")        # 1TRC, 1HRM or RBEP: the one th
 right = asp.read_sdif("drum-trc.sdif", stream=1)  # PM2 writes a stereo analysis as streams 0 and 1
 chords = asp.read_chord_seq("snare-cs.sdif")      # AudioSculpt chord sequence -> events table
 asp.write_sdif(tracks, "out.sdif")               # 1TRC, laid out as AudioSculpt writes it
+asp.write_sdif(tracks, "out.sdif", hop=0.005)    # resampled onto frames every 5 ms (for RBEP input)
 ```
 
 ### What `read_sdif` does
@@ -165,6 +166,19 @@ different times, so the fill multiplies them: the Loris flute analysis
 against 3.1 MB as `RBEP`. Its resynthesis keeps the level and the spectrum
 (within 0.14 dB); 1,849 of the 9,224 partials start at another phase,
 because `synthesize` starts a voice at its first row that covers a sample.
+
+`hop=` trades that size for resampling: every track gets a row at each
+time `k * hop` from the one nearest its first point to the one nearest its
+last, so its ends move by at most half a hop, and a track shorter than that
+keeps one row (no track is dropped). Frequency and amplitude are
+interpolated linearly, and phases integrated from the last point before
+each frame; a table already on that grid is written unchanged. The Loris
+flute takes 1.5 MB at `hop=0.005` and 0.85 MB at `hop=0.01`. Measured on
+its resynthesis, the spectrum moves by 3.6 and 3.8 dB RMS, but 3.0 dB of
+that is there even at `hop=0.0005`: it comes from re-timing these dense,
+overlapping short partials, not from the hop itself. loristrck's `1TRC`
+export resamples too, at irregular frame times taken from the breakpoints,
+and drops partials shorter than one frame.
 
 ### Chord sequences
 

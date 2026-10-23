@@ -333,83 +333,38 @@ def _text_frame(sig: bytes, stream: int, text: str) -> bytes:
     return sig + struct.pack(">I", len(body)) + body
 
 
-def write_sdif(
-    tracks: pd.DataFrame,
-    path: str | os.PathLike[str],
-    *,
-    nvt: Mapping[str, object] | None = None,
-) -> Path:
-    """Write a tracks table as SDIF 1TRC partial tracks, laid out as PM2 and AudioSculpt write them.
+_Rows = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]  # track_id, time, freq, amp, phase
 
-    Parameters
-    ----------
-    tracks : pandas.DataFrame
-        A ``tracks`` table; ``phase`` is optional.
-    path : path
-        The file to write (overwritten if it exists).
-    nvt : mapping, optional
-        Further name-value entries for the file's 1NVT table, after
-        ``TableName SinusoidalTracks`` and ``WrittenBy audiospylt <version>``
-        (an entry of the same name replaces those). Values are written with
-        ``str()``; names and values may not contain tabs or line breaks.
 
-    Returns
-    -------
-    pathlib.Path
-        The path written.
-
-    Raises
-    ------
-    SchemaError
-        ``tracks`` is not a valid tracks table (this includes two points of a
-        track at one time).
-    ValueError
-        No points, a ``track_id`` outside 0 to 2**24 - 2 (the index must be
-        exact in float32), or an NVT name or value with a tab or line break.
-
-    Notes
-    -----
-    The file has one 1NVT frame and one 1TRC frame per distinct time of the
-    table (stream 0, time in float64), holding a row per track present then:
-    index ``track_id + 1`` (PM2 numbers partials from 1), frequency,
-    amplitude and phase, as float32. ``read_sdif`` reads it back with
-    ``partial_id`` = ``track_id + 1``.
-
-    SDIF readers end a track at a frame that lacks its index. When tracks do
-    not share one time grid (``RBEP`` breakpoints, merged tables), a track
-    gets a point at every frame time inside its span: frequency and amplitude
-    linear between its neighbours, phase integrated from the previous point,
-    ``phase + pi * dt * (f_prev + f)``, wrapped to [-pi, pi). Missing phases
-    (no ``phase`` column, or NaN) are integrated the same way, from 0 at a
-    track's first point.
-    """
-    table = validate(tracks, "tracks")
-    if not len(table):
-        raise ValueError("tracks has no points to write")
-    from audiospylt import __version__
-
-    entries = {"TableName": "SinusoidalTracks", "WrittenBy": f"audiospylt {__version__}"}
-    for key, value in (nvt or {}).items():
-        text = str(value)
-        if not isinstance(key, str) or not key.strip() or any(c in s for s in (key, text) for c in "\t\r\n"):
-            raise ValueError(f"nvt names must be non-empty strings and names and values may not contain tabs "
-                             f"or line breaks, got {key!r}: {text!r}")
-        entries[key] = text
-    track_ids = table["track_id"].to_numpy(np.int64)
-    if track_ids.min() < 0 or track_ids.max() > _FLOAT32_INDEX_MAX - 2:
-        raise ValueError(f"track_id must be in 0..{_FLOAT32_INDEX_MAX - 2} to be written as a float32 index, "
-                         f"got {track_ids.min()}..{track_ids.max()}")
-    order = np.lexsort((table["time"].to_numpy(np.float64), track_ids))
-    ids = track_ids[order]
-    time, freq, amp = (table[column].to_numpy(np.float64)[order] for column in ("time", "freq", "amp"))
-    phase = table["phase"].to_numpy(np.float64)[order] if "phase" in table else np.full(len(ids), np.nan)
-
-    # Every track gets a row at each grid time in its span: known points where it has them,
-    # interpolated ones elsewhere.
-    grid = np.unique(time)
+def _spans(ids: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Track number of each point and the first and last point of each track (points grouped by track)."""
     point_track = np.cumsum(np.diff(ids, prepend=ids[0] - 1) != 0) - 1
     heads = np.flatnonzero(np.diff(point_track, prepend=-1))
     tails = np.r_[heads[1:], len(ids)] - 1
+    return point_track, heads, tails
+
+
+def _phases(time: np.ndarray, freq: np.ndarray, phase: np.ndarray, begin: np.ndarray) -> np.ndarray:
+    """Given phases as they are; NaN ones integrated from the row before (from 0 at a track's first row), wrapped."""
+    total = len(time)
+    row = np.arange(total)
+    step = np.zeros(total)
+    step[1:] = np.pi * np.diff(time) * (freq[1:] + freq[:-1])
+    step[begin] = 0.0
+    integral = np.cumsum(step)
+    has_phase = np.isfinite(phase)
+    first = np.zeros(total, dtype=bool)
+    first[begin] = True
+    anchor = np.maximum.accumulate(np.where(has_phase | first, row, 0))
+    integrated = np.where(has_phase, phase, 0.0)[anchor] + integral - integral[anchor]
+    return np.where(has_phase, phase, (integrated + np.pi) % (2 * np.pi) - np.pi)
+
+
+def _fill(ids: np.ndarray, time: np.ndarray, freq: np.ndarray, amp: np.ndarray, phase: np.ndarray) -> _Rows:
+    """Every track gets a row at each distinct time of the table in its span: known points where it has them,
+    interpolated ones elsewhere."""
+    grid = np.unique(time)
+    point_track, heads, tails = _spans(ids)
     lo, hi = np.searchsorted(grid, time[heads]), np.searchsorted(grid, time[tails])
     counts = hi - lo + 1
     begin = np.cumsum(counts) - counts
@@ -433,22 +388,135 @@ def write_sdif(
     row_freq, row_amp = spread(freq), spread(amp)
     known_phase = np.full(total, np.nan)
     known_phase[at] = phase
-    step = np.zeros(total)
-    step[1:] = np.pi * np.diff(row_time) * (row_freq[1:] + row_freq[:-1])
-    step[begin] = 0.0
-    integral = np.cumsum(step)
-    has_phase = np.isfinite(known_phase)
-    first = np.zeros(total, dtype=bool)
-    first[begin] = True
-    anchor = np.maximum.accumulate(np.where(has_phase | first, row, 0))
-    integrated = np.where(has_phase, known_phase, 0.0)[anchor] + integral - integral[anchor]
-    row_phase = np.where(has_phase, known_phase, (integrated + np.pi) % (2 * np.pi) - np.pi)
+    return ids[heads][row_track], row_time, row_freq, row_amp, _phases(row_time, row_freq, known_phase, begin)
 
-    row_index = ids[heads][row_track] + 1
+
+def _on_grid(ids: np.ndarray, time: np.ndarray, freq: np.ndarray, amp: np.ndarray, phase: np.ndarray,
+             hop: float) -> _Rows:
+    """Every track sampled at the times k * hop from the one nearest its first point to the one nearest its last."""
+    point_track, heads, tails = _spans(ids)
+    phase = _phases(time, freq, phase, heads)
+    first = np.floor(time[heads] / hop + 0.5).astype(np.int64)
+    counts = np.floor(time[tails] / hop + 0.5).astype(np.int64) - first + 1
+    begin = np.cumsum(counts) - counts
+    total = int(counts.sum())
+    row_track = np.repeat(np.arange(heads.size), counts)
+    row_time = (first[row_track] + np.arange(total) - begin[row_track]) * hop
+    at = np.clip(row_time, time[heads][row_track], time[tails][row_track])
+    # The last point at or before each row's (clamped) time: merge the rows into the points, a point first on ties.
+    order = np.lexsort((np.r_[np.zeros(len(time)), np.ones(total)], np.r_[time, at], np.r_[point_track, row_track]))
+    is_point = order < len(time)
+    left = np.maximum.accumulate(np.where(is_point, order, 0))[~is_point]
+    right = np.minimum(left + 1, tails[row_track])
+    span = time[right] - time[left]
+    weight = np.divide(at - time[left], span, out=np.zeros(total), where=span > 0)
+    row_freq = freq[left] + weight * (freq[right] - freq[left])
+    row_amp = amp[left] + weight * (amp[right] - amp[left])
+    # Frequency is linear inside the span and constant beyond an end.
+    integrated = (phase[left] + np.pi * (at - time[left]) * (freq[left] + row_freq)
+                  + 2 * np.pi * row_freq * (row_time - at))
+    row_phase = np.where(row_time == time[left], phase[left], (integrated + np.pi) % (2 * np.pi) - np.pi)
+    return ids[heads][row_track], row_time, row_freq, row_amp, row_phase
+
+
+def write_sdif(
+    tracks: pd.DataFrame,
+    path: str | os.PathLike[str],
+    *,
+    hop: float | None = None,
+    nvt: Mapping[str, object] | None = None,
+) -> Path:
+    """Write a tracks table as SDIF 1TRC partial tracks, laid out as PM2 and AudioSculpt write them.
+
+    Parameters
+    ----------
+    tracks : pandas.DataFrame
+        A ``tracks`` table; ``phase`` is optional.
+    path : path
+        The file to write (overwritten if it exists).
+    hop : float, optional
+        Resample every track onto one grid of frame times ``k * hop``
+        seconds (integer k) instead of filling in the table's own times;
+        see Notes.
+    nvt : mapping, optional
+        Further name-value entries for the file's 1NVT table, after
+        ``TableName SinusoidalTracks`` and ``WrittenBy audiospylt <version>``
+        (an entry of the same name replaces those). Values are written with
+        ``str()``; names and values may not contain tabs or line breaks.
+
+    Returns
+    -------
+    pathlib.Path
+        The path written.
+
+    Raises
+    ------
+    SchemaError
+        ``tracks`` is not a valid tracks table (this includes two points of a
+        track at one time).
+    ValueError
+        No points, a ``track_id`` outside 0 to 2**24 - 2 (the index must be
+        exact in float32), ``hop`` not positive, or an NVT name or value with
+        a tab or line break.
+
+    Notes
+    -----
+    The file has one 1NVT frame and one 1TRC frame per distinct time of the
+    table (stream 0, time in float64), holding a row per track present then:
+    index ``track_id + 1`` (PM2 numbers partials from 1), frequency,
+    amplitude and phase, as float32. ``read_sdif`` reads it back with
+    ``partial_id`` = ``track_id + 1``.
+
+    SDIF readers end a track at a frame that lacks its index. When tracks do
+    not share one time grid (``RBEP`` breakpoints, merged tables), a track
+    gets a point at every frame time inside its span: frequency and amplitude
+    linear between its neighbours, phase integrated from the previous point,
+    ``phase + pi * dt * (f_prev + f)``, wrapped to [-pi, pi). Missing phases
+    (no ``phase`` column, or NaN) are integrated the same way, from 0 at a
+    track's first point. On ``RBEP`` breakpoints, which all have different
+    times, this multiplies the rows: the Loris flute analysis (12,431
+    partials, 62,368 breakpoints) becomes 3.7 million rows, 62 MB.
+
+    ``hop`` avoids that at the cost of resampling. A track then gets a row
+    at each time ``k * hop`` from the one nearest its first point to the one
+    nearest its last (halves up), so each end moves by at most half a hop
+    and a track shorter than that keeps one row. Frequency and amplitude are
+    interpolated linearly and held at the end point's values just outside
+    the track; phases are integrated as above from the last point at or
+    before the grid time, and a point on the grid keeps its phase. A table
+    already on that grid is written unchanged. The Loris flute takes 1.5 MB
+    with ``hop=0.005`` and 0.85 MB with ``hop=0.01``.
+    """
+    if hop is not None and not (np.isfinite(hop) and hop > 0):
+        raise ValueError(f"hop must be a positive number of seconds or None, got {hop!r}")
+    table = validate(tracks, "tracks")
+    if not len(table):
+        raise ValueError("tracks has no points to write")
+    from audiospylt import __version__
+
+    entries = {"TableName": "SinusoidalTracks", "WrittenBy": f"audiospylt {__version__}"}
+    for key, value in (nvt or {}).items():
+        text = str(value)
+        if not isinstance(key, str) or not key.strip() or any(c in s for s in (key, text) for c in "\t\r\n"):
+            raise ValueError(f"nvt names must be non-empty strings and names and values may not contain tabs "
+                             f"or line breaks, got {key!r}: {text!r}")
+        entries[key] = text
+    track_ids = table["track_id"].to_numpy(np.int64)
+    if track_ids.min() < 0 or track_ids.max() > _FLOAT32_INDEX_MAX - 2:
+        raise ValueError(f"track_id must be in 0..{_FLOAT32_INDEX_MAX - 2} to be written as a float32 index, "
+                         f"got {track_ids.min()}..{track_ids.max()}")
+    order = np.lexsort((table["time"].to_numpy(np.float64), track_ids))
+    ids = track_ids[order]
+    time, freq, amp = (table[column].to_numpy(np.float64)[order] for column in ("time", "freq", "amp"))
+    phase = table["phase"].to_numpy(np.float64)[order] if "phase" in table else np.full(len(ids), np.nan)
+
+    row_ids, row_time, row_freq, row_amp, row_phase = (
+        _fill(ids, time, freq, amp, phase) if hop is None else _on_grid(ids, time, freq, amp, phase, float(hop)))
+    row_index = row_ids + 1
     frames = np.lexsort((row_index, row_time))
     values = np.column_stack([row_index, row_freq, row_amp, row_phase])[frames].astype(">f4")
     row_time = row_time[frames]
-    bounds = np.r_[0, np.flatnonzero(np.diff(row_time)) + 1, total]
+    bounds = np.r_[0, np.flatnonzero(np.diff(row_time)) + 1, len(row_time)]
     chunks = [b"SDIF", struct.pack(">III", 8, 3, 1),
               _text_frame(b"1NVT", -3, "".join(f"{key}\t{value}\n" for key, value in entries.items()))]
     for start, stop in zip(bounds[:-1], bounds[1:]):
