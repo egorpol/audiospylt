@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -17,6 +19,11 @@ __all__ = ["snapshot_to_mei", "events_to_mei"]
 
 _NS = "http://www.music-encoding.org/ns/mei"
 _XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
+# The viz light colorway without its orange and red, which nb.show_mei uses
+# for hover. Copied, not imported: viz needs plotly.
+_COLORS = ("#2a78d6", "#1baf7a", "#6250d6", "#eda100", "#e87ba4", "#008300")
+_HEX_COLOR = re.compile(r"#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})")
+_DAY_US = 86_400_000_000
 
 
 def _element(parent, name, **attrs):
@@ -100,8 +107,10 @@ def _height_groups(pitches, staves):
 
 
 def _measure(section, pitches, staves, next_id, *, chord=True, labels=False,
-             decimals=0, naturals=False, onset_text=None, vgrp=None):
-    measure = _element(section, "measure", n=str(len(section) + 1), right="invis")
+             decimals=0, naturals=False, onset_text=None, vgrp=None, when=None, color=None):
+    number = len(section) + 1
+    measure = _element(section, "measure", n=str(number), right="invis",
+                       **{_XML_ID: f"m{number}"}, **({"when": when} if when else {}))
     ordered = pitches.sort_values("written_midi", kind="stable")
     parts = []
     for staff_no, clef in staves:
@@ -128,7 +137,8 @@ def _measure(section, pitches, staves, next_id, *, chord=True, labels=False,
             if not at.size:
                 _element(layer, "space", dur="4")
                 continue
-            parent = (_element(layer, "chord", dur="4", **{"stem.visible": "false"})
+            parent = (_element(layer, "chord", dur="4", **{"stem.visible": "false"},
+                               **({"color": color} if color else {}))
                       if chord else layer)
             texts = []
             for note_id, row in zip(ids[at], rows.iloc[at].itertuples()):
@@ -153,6 +163,35 @@ def _measure(section, pitches, staves, next_id, *, chord=True, labels=False,
         staff_no, note_id = top_anchor
         _label(measure, staff_no, note_id, "above", onset_text, "onset")
     return next_id
+
+
+def _iso_time(seconds):
+    # MEI's ISO time (xsd:time) in whole microseconds, trailing zeros dropped.
+    micro = round(seconds * 1e6)
+    if micro >= _DAY_US:
+        raise ValueError(f"MEI time values stop below 24 h; got {float(seconds)!r} s")
+    clock, fraction = divmod(micro, 1_000_000)
+    text = f"{clock // 3600:02d}:{clock // 60 % 60:02d}:{clock % 60:02d}"
+    return text + f".{fraction:06d}".rstrip("0") if fraction else text
+
+
+def _recording(root, end):
+    # <performance> precedes <body>; @betype makes every <when absolute> ISO time.
+    music = root.find("music")
+    performance = ET.Element("performance")
+    music.insert(0, performance)
+    return _element(performance, "recording", begin="00:00:00", end=_iso_time(end),
+                    betype="time")
+
+
+def _palette(colors):
+    if isinstance(colors, (bool, np.bool_)):
+        return _COLORS if colors else None
+    if (isinstance(colors, str) or not isinstance(colors, Sequence) or not colors
+            or not all(isinstance(c, str) and _HEX_COLOR.fullmatch(c) for c in colors)):
+        raise ValueError("colors must be True, False, or a nonempty sequence of "
+                         f"'#rrggbb' / '#rrggbbaa' strings; got {colors!r}")
+    return tuple(colors)
 
 
 def _serialize(root):
@@ -240,6 +279,7 @@ def events_to_mei(
     time_format: str = "{:.3f} s", resolution: str = "quarter", spelling: str = "sharp",
     labels: bool | None = None, decimals: int = 0, naturals: bool = False,
     clef: str = "GF", a4: float = 440.0, title: str = "AudioSpylt notation",
+    colors: bool | Sequence[str] = False,
 ) -> str:
     """Notate event onsets as temporal chords; glides are not drawn.
 
@@ -261,33 +301,50 @@ def events_to_mei(
         Format string applied to the onset in seconds.
     resolution, spelling, labels, decimals, naturals, clef, a4, title
         See snapshot_to_mei.
+    colors : bool or sequence of str, default False
+        Colour each onset's chords (MEI ``chord@color``), cycling through a
+        palette: True uses six colours of the ``viz`` light theme (not the
+        orange of the ``nb.show_mei`` hover), or pass ``'#rrggbb'`` /
+        ``'#rrggbbaa'`` strings. The timeline drawn by render_svg uses the
+        same colour for the onset's connector and dot.
 
     Returns
     -------
     str
         Deterministic MEI 5.1 XML; equal time_start rows share a chord (in
         columns as in snapshot_to_mei), onsets are sorted, and every measure
-        contains every configured staff.
+        contains every configured staff. Measures have ids m1, m2, ... The
+        real times are encoded too: ``<performance><recording>`` (begin 0,
+        end = the latest time_stop, ``betype="time"``) holds one
+        ``<when xml:id="w1" absolute="HH:MM:SS.ffffff">`` per onset (whole
+        microseconds), and the measure starting at that onset points at it
+        with ``@when``. render_svg draws these as a time ruler.
 
     Raises
     ------
     audiospylt.model.schema.SchemaError
         The table violates the v1 events schema.
     ValueError
-        Empty/unnotatable input, written octave outside 0–9, or invalid options.
+        Empty/unnotatable input, written octave outside 0–9, times of 24 h
+        or more (MEI's time format), or invalid options.
     """
     events, pitches, labels, decimals = _prepare(
         events, "events", resolution, spelling, labels, decimals, clef, a4)
     measure_seconds = _positive_scalar(measure_seconds, "measure_seconds")
+    palette = _palette(colors)
     root, section, staves = _document(clef, title)
+    recording = _recording(root, events.time_stop.max())
     groups = list(events.groupby("time_start", sort=True))
     next_id = 1
     for i, (onset, group) in enumerate(groups):
         end = groups[i + 1][0] if i + 1 < len(groups) else group.time_stop.max()
         measures = max(1, round((end - onset) / measure_seconds))
+        _element(recording, "when", **{_XML_ID: f"w{i + 1}"}, absolute=_iso_time(onset))
         next_id = _measure(section, pitches.loc[group.index], staves, next_id,
                            labels=labels, decimals=decimals, naturals=naturals,
-                           onset_text=time_format.format(onset) if time_labels else None)
+                           onset_text=time_format.format(onset) if time_labels else None,
+                           when=f"#w{i + 1}",
+                           color=palette[i % len(palette)] if palette else None)
         for _ in range(measures - 1):
             _measure(section, pitches.iloc[:0], staves, next_id)
     return _serialize(root)

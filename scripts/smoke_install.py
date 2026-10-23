@@ -6,7 +6,7 @@ Usage (from outside the checkout, so that the import finds the installed package
 
 Both modes run the compute pipeline on a synthetic stereo file: write_audio, load_audio with
 resampling, spectrum, find_peaks, snapshot_to_events, tracks_to_events, synthesize, a table round trip,
-pitch_table, snapshot_to_mei and harmonic_f0. "core" then checks that no optional package is installed or
+pitch_table, snapshot_to_mei, events_to_mei and harmonic_f0. "core" then checks that no optional package is installed or
 imported and that each optional feature names its extra; "all" checks that those features
 work and that the 0.6 API still resolves. Standard library and core dependencies only; no
 repository files, no network. Prints one line per check and exits 1 on the first failure.
@@ -101,6 +101,11 @@ def main(argv=None):
         mei = asp.snapshot_to_mei(peaks)
         assert "<mei" in mei
 
+    with check("events_to_mei writes the onset times (<when>, measure@when)"):
+        events_mei = asp.events_to_mei(events)
+        assert '<when xml:id="w1" absolute="00:00:00" />' in events_mei, events_mei
+        assert 'when="#w1"' in events_mei
+
     with check("harmonic_f0: 440 + 660 Hz -> 220 Hz (harmonics 2, 3)"):
         result = asp.harmonic_f0(peaks, fmin=100, fmax=300)
         assert abs(result.f0 - 220) < 0.01 and list(result.harmonics) == [2, 3], result
@@ -137,8 +142,9 @@ def main(argv=None):
             import plotly.graph_objects as go
 
             assert isinstance(asp.viz.plot_spectrum(spec, peaks), go.Figure)
-        with check("render_svg returns SVG"):
-            assert asp.render_svg(mei).startswith("<svg")
+        with check("render_svg returns SVG; events get a time ruler"):
+            assert asp.render_svg(mei).startswith("<svg") and "asp-ruler" not in asp.render_svg(mei)
+            assert 'class="asp-ruler"' in asp.render_svg(events_mei)
         with check("0.6 detect_dataframe_type on v1 events: multi_frame, one DeprecationWarning"):
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")

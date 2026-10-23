@@ -90,16 +90,44 @@ def _hover_notes(svg: str) -> list[str]:
     return [note for note in targets if note in notes]
 
 
+def _hover_measures(svg: str) -> list[str]:
+    # notation.render's timeline: <g class="asp-when" data-measure="m3"> per
+    # onset, next to Verovio's <g id="m3" class="measure">.
+    measures: set[str] = set()
+    targets: list[str] = []
+    for tag in _SVG_GROUP.findall(svg):
+        attrs = dict(_SVG_ATTR.findall(tag))
+        classes = attrs.get("class", "").split()
+        if "measure" in classes and "id" in attrs:
+            measures.add(attrs["id"])
+        elif "asp-when" in classes and attrs.get("data-measure") not in (None, *targets):
+            targets.append(attrs["data-measure"])
+    return [measure for measure in targets if measure in measures]
+
+
 def _hover_css(svg: str, scope: str, colour: str) -> str:
     # One selector per pair: hovering either member colours both. Scoped to
     # the output's div because notebooks repeat ids n1, n2, … across scores.
-    rules = []
+    fills, strokes = [], []
     for note in _hover_notes(svg):
         pair = f'g.note[id="{note}"], g.dir:not(.onset)[data-startid="#{note}"]'
-        rules.append(f"#{scope}:has(:is({pair}):hover) :is({pair})")
-    if not rules:
-        return ""
-    return "<style>" + ",\n".join(rules) + f" {{ fill: {colour}; }}</style>"
+        fills.append(f"#{scope}:has(:is({pair}):hover) :is({pair})")
+    # Any note of an onset, its onset label, or its connector/dot colours the
+    # connector, dot and label; the connector/dot or label also colours every
+    # note of the onset and their cents labels.
+    for measure in _hover_measures(svg):
+        notes, when = f'g.measure[id="{measure}"]', f'g.asp-when[data-measure="{measure}"]'
+        time = f":is({when}, {notes} g.dir.onset)"
+        anything = f":is({notes} g.note, {when}, {notes} g.dir.onset)"
+        strokes.append(f"#{scope}:has({anything}:hover) {when} .asp-connector")
+        fills.append(f"#{scope}:has({anything}:hover) :is({when} .asp-dot, {notes} g.dir.onset)")
+        fills.append(f"#{scope}:has({time}:hover) :is({notes} g.note, {notes} g.dir.cents)")
+    blocks = []
+    if strokes:
+        blocks.append(",\n".join(strokes) + f" {{ stroke: {colour}; }}")
+    if fills:
+        blocks.append(",\n".join(fills) + f" {{ fill: {colour}; }}")
+    return "<style>" + "\n".join(blocks) + "</style>" if blocks else ""
 
 
 def show(obj: object, *, renderer: str | None = None) -> None:
@@ -183,15 +211,20 @@ def show_mei(
     options: dict | None = None,
     background: str | None = "#ffffff",
     highlight: str | None = "#eb6834",
+    timeline: bool | None = None,
 ) -> None:
     """Render MEI to SVG page(s) and display each page.
 
     With ``highlight``, hovering a notehead colours it and its cents label,
     and hovering a label colours it and its note: every MEI ``<dir>`` with a
     ``@startid`` pairs with that note, except onset labels
-    (``<dir type="onset">``). This is CSS only (``:has()``, no script),
-    scoped to each output; viewers that strip ``<style>`` from outputs show
-    the plain score. Pages without such pairs are shown with ``show_svg``.
+    (``<dir type="onset">``). With a time ruler (events_to_mei output, see
+    ``notation.render.render_svg``), hovering a note or the onset label
+    also colours the onset's connector and dot, and hovering the connector,
+    dot or onset label colours all the onset's notes and labels. This is CSS
+    only (``:has()``, no script), scoped to each output; viewers that strip
+    ``<style>`` from outputs show the plain score. Pages without anything to
+    pair are shown with ``show_svg``.
 
     Parameters
     ----------
@@ -209,6 +242,10 @@ def show_mei(
     highlight : str or None, default '#eb6834'
         Hover colour: a ``#hex`` (3–8 digits), CSS colour name, or
         ``rgb(...)`` / ``rgba(...)``. ``None`` turns hover off.
+    timeline : bool or None, default None
+        Time ruler under each system, as in ``notation.render.render_svg``:
+        None draws it when the MEI has onset times, True requires them,
+        False never draws it.
 
     Returns
     -------
@@ -227,9 +264,9 @@ def show_mei(
             extra.append("dir@startid")
         options["svgAdditionalAttribute"] = extra
     if page is None:
-        pages = render_svg_pages(mei, options=options)
+        pages = render_svg_pages(mei, options=options, timeline=timeline)
     else:
-        pages = [render_svg(mei, page=page, options=options)]
+        pages = [render_svg(mei, page=page, options=options, timeline=timeline)]
     for svg in pages:
         scope = f"asp-mei-{uuid.uuid4().hex[:12]}"
         css = "" if highlight is None else _hover_css(svg, scope, highlight)

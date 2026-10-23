@@ -75,20 +75,23 @@ def test_show_svg_background(monkeypatch):
 def test_show_mei_pages(monkeypatch):
     pytest.importorskip("verovio")
     pages = ["<svg>1</svg>", "<svg>2</svg>"]
+    timelines = []
     monkeypatch.setattr(
-        "audiospylt.notation.render.render_svg_pages", lambda mei, options=None: pages,
+        "audiospylt.notation.render.render_svg_pages",
+        lambda mei, options=None, timeline=None: timelines.append(timeline) or pages,
     )
     monkeypatch.setattr(
         "audiospylt.notation.render.render_svg",
-        lambda mei, page=1, options=None: pages[page - 1],
+        lambda mei, page=1, options=None, timeline=None: timelines.append(timeline) or pages[page - 1],
     )
     seen = []
     monkeypatch.setattr(nb, "show_svg", lambda svg, **k: seen.append(svg) or None)
     nb.show_mei("<mei/>")
     assert seen == pages
     seen.clear()
-    nb.show_mei("<mei/>", page=2)
+    nb.show_mei("<mei/>", page=2, timeline=False)
     assert seen == ["<svg>2</svg>"]
+    assert timelines == [None, False]
 
 
 def _hover_outputs(monkeypatch, mei, **kwargs):
@@ -137,7 +140,8 @@ def test_show_mei_without_pairs_or_highlight_is_plain(monkeypatch):
     seen = []
     real = render.render_svg_pages
     monkeypatch.setattr(render, "render_svg_pages",
-                        lambda mei, options=None: seen.append(options) or real(mei, options=options))
+                        lambda mei, options=None, timeline=None:
+                        seen.append(options) or real(mei, options=options, timeline=timeline))
     labelled = snapshot_to_mei(pd.DataFrame({"freq": [261.6, 330.0], "amp": [1.0, 0.5]}), labels=True)
     unlabelled = snapshot_to_mei(pd.DataFrame({"freq": [261.6, 330.0], "amp": [1.0, 0.5]}))
     options = {"scale": 40, "svgAdditionalAttribute": ["note@pname"]}
@@ -164,6 +168,47 @@ def test_hover_notes_skip_onsets_external_and_missing_targets():
     # n1 has only an onset label and an external reference, so it is not a pair.
     assert nb._hover_notes(svg) == ["n2", "n3"]
     assert nb._hover_css("<svg/>", "s", "red") == ""
+
+
+def test_show_mei_timeline_hover_links_onsets(monkeypatch):
+    pytest.importorskip("verovio")
+    import re
+
+    from audiospylt.notation.mei import events_to_mei
+
+    table = pd.DataFrame({"time_start": [0.0, 0.0, 1.0], "time_stop": [0.5, 0.5, 2.0],
+                          "freq_start": [130.0, 445.0, 262.0], "freq_stop": [130.0, 445.0, 262.0],
+                          "amp_start": [0.5] * 3, "amp_stop": [0.25] * 3})
+    mei = events_to_mei(table, labels=True, time_labels=True)
+    (html,) = _hover_outputs(monkeypatch, mei)
+    scope = re.match(r'<div id="(asp-mei-[0-9a-f]{12})"', html).group(1)
+    css = html[html.index("<style>"):html.index("</style>")]
+    assert nb._hover_measures(html) == ["m1", "m3"]
+    for m in ("m1", "m3"):
+        notes, when = f'g.measure[id="{m}"]', f'g.asp-when[data-measure="{m}"]'
+        anything = f":is({notes} g.note, {when}, {notes} g.dir.onset)"
+        assert f"#{scope}:has({anything}:hover) {when} .asp-connector" in css
+        assert f"#{scope}:has({anything}:hover) :is({when} .asp-dot, {notes} g.dir.onset)" in css
+        assert (f"#{scope}:has(:is({when}, {notes} g.dir.onset):hover) "
+                f":is({notes} g.note, {notes} g.dir.cents)") in css
+    # Connectors are strokes, everything else fills; the cents pairs stay as before.
+    strokes, fills = css.removeprefix("<style>").split("; }\n")
+    assert strokes.endswith("{ stroke: #eb6834") and fills.endswith("{ fill: #eb6834; }")
+    assert ".asp-connector" in strokes and ".asp-connector" not in fills
+    assert strokes.count(":hover)") == 2 and fills.count(":hover)") == 2 * 2 + 3
+    # The timeline alone (no cents labels) still gets hover; timeline=False drops it.
+    (unlabelled,) = _hover_outputs(monkeypatch, events_to_mei(table))
+    assert "<style>" in unlabelled and "g.dir:not(.onset)" not in unlabelled
+    (plain,) = _hover_outputs(monkeypatch, events_to_mei(table), timeline=False)
+    assert "asp-when" not in plain and "<style>" not in plain
+
+
+def test_hover_measures_skip_duplicates_and_missing_measures():
+    svg = """<svg><g id="m1" class="measure"/><g id="m3" class="measure"/>
+    <g class="asp-when" data-when="#w1" data-measure="m1"/><g class="asp-when" data-measure="m1"/>
+    <g class="asp-when" data-measure="m9"/><g class="asp-when"/><g class="asp-ruler" data-measure="m3"/>
+    <g class="asp-when" data-measure="m3"/></svg>"""
+    assert nb._hover_measures(svg) == ["m1", "m3"]
 
 
 def test_play_mono_stereo_and_peak(monkeypatch):

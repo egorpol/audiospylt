@@ -99,7 +99,10 @@ used when reading old tables.
   (`<rend halign="center">`); in a sequence, labels of neighbouring notes
   within a third share one height (`@vgrp`). `show_mei` colours a note and
   its cents label while either is under the mouse (`highlight=None` turns
-  this off). Documents are MEI 5.1 with a header. Dense
+  this off). Documents are MEI 5.1 with a header. `events_to_mei` also
+  stores the onset times (MEI `<when>`), and the rendered score gets a time
+  ruler under each system that shows where each chord lies in seconds
+  (`timeline=False` to leave it out; see `docs/notation.md`). Dense
   snapshots (many partials within a semitone or two) read better with
   `layout="sequence"`; `nlargest(n, "amp")` helps only when the strongest
   partials lie a third or more apart.

@@ -533,11 +533,236 @@ def test_notation_modules_load_no_display_or_verovio():
     script = (
         "import sys\n"
         "import audiospylt.notation.mei, audiospylt.notation.pitch, audiospylt.notation.render\n"
+        "import audiospylt.notation._timeline\n"
         "tops = {name.partition('.')[0] for name in sys.modules}\n"
         "assert not {'IPython', 'ipywidgets', 'matplotlib', 'plotly', 'verovio'} & tops, tops\n"
     )
     modules = {path.stem for path in (root / "audiospylt" / "notation").glob("*.py")} - {"__init__"}
-    assert modules == {"mei", "pitch", "render"}
+    assert modules == {"mei", "pitch", "render", "_timeline"}
     result = subprocess.run([sys.executable, "-c", script], cwd=root, capture_output=True, text=True,
                             env={**os.environ, "PYTHONPATH": str(root)})
     assert result.returncode == 0, result.stderr
+
+
+# Real time: MEI <performance> timeline and the ruler render_svg draws from it.
+
+SVG = {"s": "http://www.w3.org/2000/svg"}
+
+
+def test_events_encode_onsets_as_an_mei_timeline(make_mei):
+    # Spans in measures (0.5 s each): 0 → 2, 1.000001 → 3, last group 2.5–3.25 → 2.
+    table = events([(1.000001, 2, 60), (0, .5, 48), (0, .5, 69), (2.5, 3.25, 72)])
+    _, root = make_mei(table, kind="events")
+    music = root.find("m:music", NS)
+    assert [child.tag.split("}")[1] for child in music] == ["performance", "body"]
+    recording = music.find("m:performance/m:recording", NS)
+    assert dict(recording.attrib) == {"begin": "00:00:00", "end": "00:00:03.25", "betype": "time"}
+    assert [(w.get(XML_ID), w.get("absolute")) for w in recording] == [
+        ("w1", "00:00:00"), ("w2", "00:00:01.000001"), ("w3", "00:00:02.5")]
+    measures = root.xpath("//m:measure", namespaces=NS)
+    assert [m.get(XML_ID) for m in measures] == [f"m{i}" for i in range(1, 8)]
+    assert [(m.get(XML_ID), m.get("when")) for m in measures if m.get("when")] == [
+        ("m1", "#w1"), ("m3", "#w2"), ("m6", "#w3")]
+    assert all(m.xpath(".//m:note", namespaces=NS) for m in measures if m.get("when"))
+    _, snap = make_mei()
+    assert not snap.xpath("//m:performance | //@when | //@color", namespaces=NS)
+    assert snap.xpath("//m:measure/@xml:id", namespaces=NS) == ["m1"]
+
+
+def test_onset_times_are_whole_microseconds_below_a_day(make_mei):
+    _, root = make_mei(events([(59.9999996, 61, 60), (3599.5, 3600.25, 62)]), kind="events",
+                       measure_seconds=1000)
+    assert root.xpath("//m:when/@absolute", namespaces=NS) == ["00:01:00", "00:59:59.5"]
+    assert root.xpath("//m:recording/@end", namespaces=NS) == ["01:00:00.25"]
+    for rows in ([(86_399.9999996, 86_400, 60)], [(0, 86_400, 60)]):
+        with pytest.raises(ValueError, match="below 24 h"):
+            events_to_mei(events(rows), measure_seconds=86_400)
+
+
+def test_colors_cycle_per_onset(make_mei):
+    from audiospylt.notation.mei import _COLORS
+
+    table = events([(i * .5, i * .5 + .5, 60 + i) for i in range(8)] + [(0, .5, 40)])
+    _, root = make_mei(table, kind="events", colors=True)
+    onsets = root.xpath("//m:measure[@when]", namespaces=NS)
+    assert [m.xpath(".//m:chord/@color", namespaces=NS) for m in onsets] == [
+        [_COLORS[0]] * 2] + [[_COLORS[k % 6]] for k in range(1, 8)]
+    _, custom = make_mei(table, kind="events", colors=("#000000", "#Ff000080"))
+    assert custom.xpath("//m:measure[@when][3]//m:chord/@color", namespaces=NS) == ["#000000"]
+    assert custom.xpath("//m:measure[@when][4]//m:chord/@color", namespaces=NS) == ["#Ff000080"]
+    for colors in (False, np.bool_(False)):
+        _, plain = make_mei(table, kind="events", colors=colors)
+        assert not plain.xpath("//@color", namespaces=NS)
+    assert make_mei(table, kind="events", colors=np.bool_(True))[0] == make_mei(
+        table, kind="events", colors=True)[0]
+
+
+@pytest.mark.parametrize("colors", [None, 1, "#ff0000", [], ["red"], ["#fff"], [0x112233],
+                                    ["#12345"], {"#123456"}])
+def test_colors_errors(colors):
+    with pytest.raises(ValueError, match="colors must be"):
+        events_to_mei(events([(0, 1, 69)]), colors=colors)
+
+
+def test_read_timeline_needs_measure_when_in_iso_time():
+    from audiospylt.notation._timeline import read_timeline
+
+    mei = events_to_mei(events([(0, .5, 60), (1, 1.5, 62)]))
+    marks = read_timeline(mei)
+    assert (marks.onsets, marks.whens, marks.end) == ({"m1": 0.0, "m3": 1.0}, {"m1": "#w1", "m3": "#w2"}, 1.5)
+    assert read_timeline(snapshot_to_mei(snapshot())) is None
+    assert read_timeline("X:1\nK:C\nC") is None  # Verovio also reads ABC; not XML
+    assert read_timeline(mei.replace('betype="time"', 'betype="smil"')) is None
+    assert read_timeline(mei.replace("<when ", '<when abstype="smpte-25" ')) is None
+    assert read_timeline(mei.replace('when="#w2"', 'when="#w9"')).onsets == {"m1": 0.0}
+
+
+def _timeline_parts(svg):
+    """Per ruler in drawing order: axis (x1, x2, y), ticks [(x, label)], dots [(measure, cx, cy, ...)]."""
+    root = ET.fromstring(svg)
+    strip = root.find(".//s:g[@class='asp-timeline']", SVG)
+    rulers = []
+    for group in strip:
+        if group.get("class") == "asp-ruler":
+            axis = group.find("s:line[@class='asp-axis']", SVG)
+            ticks = [float(t.get("x1")) for t in group.findall("s:line[@class='asp-tick']", SVG)]
+            labels = [t.text for t in group.findall("s:text", SVG)]
+            rulers.append({"axis": (float(axis.get("x1")), float(axis.get("x2")), float(axis.get("y1"))),
+                           "ticks": list(zip(ticks, labels)), "dots": []})
+        else:
+            dot = group.find("s:circle[@class='asp-dot']", SVG)
+            lines = group.findall("s:line[@class='asp-connector']", SVG)
+            rulers[-1]["dots"].append({
+                "measure": group.get("data-measure"), "when": group.get("data-when"),
+                "cx": float(dot.get("cx")), "cy": float(dot.get("cy")), "fill": dot.get("fill"),
+                "stroke": {line.get("stroke") for line in lines},
+                "top": (float(lines[0].get("x1")), float(lines[0].get("y1"))),
+                "path": [(float(line.get(a)), float(line.get(b))) for line in lines
+                         for a, b in (("x1", "y1"), ("x2", "y2"))]})
+    return root, rulers
+
+
+def _system_boxes(root):
+    systems = root.findall(".//s:g[@class='system']", SVG)
+    return [[(float(r.get("x")), float(r.get("y")), float(r.get("x")) + float(r.get("width")),
+              float(r.get("y")) + float(r.get("height")))
+             for r in system.iterfind(".//s:g/s:rect", SVG)] for system in systems]
+
+
+def test_ruler_places_onsets_at_true_scale(make_mei, capfd):
+    table = events([(0, .25, 60), (.25, .5, 64), (.25, .5, 52), (1, 1.25, 67), (3, 4, 72)])
+    mei, root = make_mei(table, kind="events", time_labels=True, labels=True)
+    capfd.readouterr()
+    svg = render_svg(mei, options={"svgBoundingBoxes": True})  # kept for the geometry checks
+    tree, (ruler,) = _timeline_parts(svg)
+    x1, x2, y = ruler["axis"]
+    assert [(d["measure"], d["when"]) for d in ruler["dots"]] == [
+        ("m1", "#w1"), ("m2", "#w2"), ("m4", "#w3"), ("m8", "#w4")]
+    # The ruler runs from the first onset (at its chord) to the latest time_stop.
+    for dot, onset in zip(ruler["dots"], [0, .25, 1, 3]):
+        assert dot["cx"] == pytest.approx(x1 + onset / 4 * (x2 - x1), abs=0.1)
+        assert dot["cy"] == y and dot["fill"] == "currentColor" and dot["stroke"] == {"#898781"}
+        # Connector: down from under its chord, across, down into the dot.
+        xs, ys = zip(*dot["path"])
+        assert xs[0] == xs[1] == xs[2] and xs[3:] == (dot["cx"],) * 3 and ys[5] == y
+        assert ys[0] < ys[1] == ys[2] < ys[3] == ys[4] < ys[5]
+    # Under each onset's chord: the centre of its heads (notehead bounding boxes).
+    for dot in ruler["dots"]:
+        measure = tree.find(f".//s:g[@id='{dot['measure']}']", SVG)
+        heads = [r for g in measure.iterfind(".//s:g[@class='note']", SVG)
+                 for r in g.findall("s:g[@class='note bounding-box']/s:rect", SVG)]
+        left = min(float(r.get("x")) for r in heads)
+        right = max(float(r.get("x")) + float(r.get("width")) for r in heads)
+        assert dot["top"][0] == pytest.approx((left + right) / 2, abs=0.1)
+    (boxes,) = _system_boxes(tree)
+    assert min(d["top"][1] for d in ruler["dots"]) > max(box[3] for box in boxes)
+    # Scale ticks: evenly spaced multiples of one step, the last with the unit.
+    xs, labels = zip(*ruler["ticks"])
+    values = [float(label.removesuffix(" s")) for label in labels]
+    assert labels[-1].endswith(" s") and not any(label.endswith(" s") for label in labels[:-1])
+    assert values[0] == 0 and values[-1] == 4 and len(set(np.round(np.diff(values), 9))) == 1
+    assert xs == pytest.approx([x1 + v / 4 * (x2 - x1) for v in values], abs=0.1)
+    # The page grew to fit the strip, keeping Verovio's bottom margin.
+    inner = tree.find("s:svg", SVG)
+    height = float(inner.get("viewBox").split()[3])
+    assert height >= 500 + y + 0.5 * 180 + 2.25 * 180 + 500 - 1
+    width_px, height_px = (float(tree.get(k).removesuffix("px")) for k in ("width", "height"))
+    assert height_px / width_px == pytest.approx(height / float(inner.get("viewBox").split()[2]), abs=1e-3)
+    captured = capfd.readouterr()
+    assert "[Warning]" not in captured.out + captured.err
+
+
+def test_ruler_colours_follow_chord_colours(capfd):
+    from audiospylt.notation.mei import _COLORS
+
+    mei = events_to_mei(events([(0, .5, 60), (.5, 1, 62), (1, 2, 64)]), colors=True)
+    _, (ruler,) = _timeline_parts(render_svg(mei))
+    assert [(d["fill"], d["stroke"]) for d in ruler["dots"]] == [(c, {c}) for c in _COLORS[:3]]
+    # A colour from a foreign MEI file is copied as an attribute value, never as markup.
+    hostile = mei.replace(_COLORS[1], 'red&quot; onmouseover=&quot;alert(1)')
+    tree, (ruler,) = _timeline_parts(render_svg(hostile))
+    assert ruler["dots"][1]["fill"] == 'red" onmouseover="alert(1)'
+    assert not [e for e in tree.iter() if "onmouseover" in e.attrib]
+    capfd.readouterr()  # Verovio may warn about the colour
+
+
+def test_timeline_switch_boxes_and_errors(make_mei):
+    mei, _ = make_mei(kind="events")
+    for svg in (render_svg(mei), render_svg(mei, timeline=True), render_svg_pages(mei)[0]):
+        assert svg.count('class="asp-ruler"') == 1 and svg.count('class="asp-when"') == 2
+        assert "bounding-box" not in svg and "bbox-" not in svg
+    plain = render_svg(mei, timeline=False)
+    assert "asp-" not in plain and "bounding-box" not in plain
+    assert "bounding-box" in render_svg(mei, options={"svgBoundingBoxes": True})
+    snap, _ = make_mei()
+    assert "asp-" not in render_svg(snap)
+    for render in (render_svg, render_svg_pages):
+        with pytest.raises(ValueError, match="timeline=True needs"):
+            render(snap, timeline=True)
+        for bad in ("yes", 1, 0):
+            with pytest.raises(ValueError, match="timeline must be"):
+                render(mei, timeline=bad)
+        with pytest.raises(ValueError, match="svgHtml5"):
+            render(mei, options={"svgHtml5": True})
+    assert "data-class" in render_svg(mei, options={"svgHtml5": True}, timeline=False)
+
+
+def test_rulers_follow_systems_and_pages(capfd):
+    # 30 onsets 0.5 s apart with one 4 s gap: several systems on narrow, short pages.
+    onsets = [i * .5 for i in range(15)] + [11 + i * .5 for i in range(15)]
+    table = events([(t, t + .5, 60 + 3 * (i % 8)) for i, t in enumerate(onsets)])
+    mei = events_to_mei(table, labels=True)
+    capfd.readouterr()
+    options = {"pageWidth": 1500, "pageHeight": 1200, "adjustPageHeight": False,
+               "svgBoundingBoxes": True}
+    pages = render_svg_pages(mei, options=options)
+    assert len(pages) > 1
+    seen, rulers = [], []
+    for svg in pages:
+        tree, page_rulers = _timeline_parts(svg)
+        boxes = [b for b in _system_boxes(tree) if b]
+        assert len(page_rulers) == len(boxes) > 0
+        for ruler, system, below in zip(page_rulers, boxes, boxes[1:] + [None]):
+            y = ruler["axis"][2]
+            # The strip lies under its system and above the next one.
+            assert min(d["top"][1] for d in ruler["dots"]) > max(b[3] for b in system)
+            if below is not None:
+                assert y + 2.75 * 180 < min(b[1] for b in below)
+        steps = {round(float(b.removesuffix(" s")) - float(a.removesuffix(" s")), 9)
+                 for ruler in page_rulers for (_, a), (_, b) in zip(ruler["ticks"], ruler["ticks"][1:])}
+        assert len(steps) == 1  # one tick step per page
+        rulers += page_rulers
+        seen += [d["measure"] for ruler in page_rulers for d in ruler["dots"]]
+    marks = __import__("audiospylt.notation._timeline", fromlist=["read_timeline"]).read_timeline(mei)
+    assert seen == list(marks.onsets)
+    # Each ruler ends where the next system starts (or at the end), across pages too.
+    starts = [marks.onsets[r["dots"][0]["measure"]] for r in rulers] + [marks.end]
+    for ruler, t0, t1 in zip(rulers, starts, starts[1:]):
+        x1, x2, _ = ruler["axis"]
+        first, last = ruler["dots"][0], ruler["dots"][-1]
+        assert first["cx"] == x1
+        if last is not first:
+            scale = (last["cx"] - first["cx"]) / (marks.onsets[last["measure"]] - t0)
+            assert t0 + (x2 - x1) / scale == pytest.approx(t1, abs=2e-3)
+    captured = capfd.readouterr()
+    assert "[Warning]" not in captured.out + captured.err
