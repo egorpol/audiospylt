@@ -5,7 +5,7 @@ Usage (from outside the checkout, so that the import finds the installed package
     cd "$RUNNER_TEMP" && /path/to/venv/bin/python -I /path/to/scripts/smoke_install.py all
 
 Both modes run the compute pipeline on a synthetic stereo file: write_audio, load_audio with
-resampling, spectrum, find_peaks, snapshot_to_events, tracks_to_events, synthesize, a table round trip,
+resampling, spectrum, find_peaks, snapshot_to_events, tracks_to_events, synthesize, a table round trip, read_partiels,
 pitch_table, snapshot_to_mei, events_to_mei and harmonic_f0. "core" then checks that no optional package is installed or
 imported and that each optional feature names its extra; "all" checks that those features
 work and that the 0.6 API still resolves. Standard library and core dependencies only; no
@@ -95,6 +95,12 @@ def main(argv=None):
 
         with check("write_table / read_table round trip"):
             pd.testing.assert_frame_equal(asp.read_table(asp.write_table(events, folder / "events.tsv")), events)
+
+        with check("read_partiels: a stereo PM2 CSV export, channel 1 split at its gap"):
+            block = "0.01,0,440,0.5,0\n0.02,0,441,0.5,1\n0.03,0,\n0.04,0,442,0.25,2\n"
+            (folder / "Group_1_Partial_1.csv").write_text(block + "\n" + block.replace("0.5", "0.4"))
+            tracks = asp.read_partiels(folder / "Group_1_Partial_1.csv", channel=1)
+            assert list(tracks["track_id"]) == [0, 0, 1] and list(tracks["amp"]) == [0.4, 0.4, 0.25], tracks
 
     with check("pitch_table -> snapshot_to_mei"):
         assert list(asp.pitch_table(peaks["freq"])["written_midi"]) == [69, 76]
