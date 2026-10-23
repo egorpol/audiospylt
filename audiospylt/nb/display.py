@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+import sys
 import uuid
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from audiospylt._optional import import_optional
 from audiospylt.io.audio import _audio_array, _sample_rate
 
 if TYPE_CHECKING:
@@ -30,12 +32,8 @@ _SVG_ATTR = re.compile(r'([\w:.-]+)="([^"]*)"')
 
 
 def _ipython_display():
-    try:
-        from IPython.display import display
-    except ImportError as error:
-        raise ImportError(
-            "notebook display requires IPython; install audiospylt[notebook]"
-        ) from error
+    import_optional("IPython", extra="notebook", feature="notebook display")
+    from IPython.display import display
     return display
 
 
@@ -149,16 +147,13 @@ def show(obj: object, *, renderer: str | None = None) -> None:
     Raises
     ------
     ImportError
-        IPython (or Plotly, for figures) is missing.
+        IPython is missing (for anything but a Plotly figure).
     ValueError
         ``obj`` looks like MEI.
     """
-    try:
-        from plotly.basedatatypes import BaseFigure
-    except ImportError:
-        BaseFigure = ()
-
-    if BaseFigure and isinstance(obj, BaseFigure):
+    # A figure exists only once plotly is loaded, so no import is needed to test for one.
+    plotly_base = sys.modules.get("plotly.basedatatypes")
+    if plotly_base is not None and isinstance(obj, plotly_base.BaseFigure):
         if renderer is None:
             obj.show()
         else:
@@ -319,11 +314,7 @@ def play(audio: ArrayLike, sr: int, *, normalize: bool = False) -> None:
             f"({peak:.6g}), above full scale; pass normalize=True to play "
             f"without clipping"
         )
-    try:
-        from IPython.display import Audio, display
-    except ImportError as error:
-        raise ImportError(
-            "notebook display requires IPython; install audiospylt[notebook]"
-        ) from error
+    display = _ipython_display()
+    from IPython.display import Audio
     display(Audio(data=array, rate=sr, normalize=normalize))
     return None

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from numbers import Integral
 
+from audiospylt._optional import import_optional
 from audiospylt.notation import _timeline
 
 __all__ = ["render_svg", "render_svg_pages"]
@@ -33,10 +34,7 @@ def _timeline_for(mei, timeline, options):
 
 
 def _load(mei, options, timeline=None):
-    try:
-        import verovio
-    except ImportError as error:
-        raise ImportError("SVG rendering requires verovio; install audiospylt[notation]") from error
+    verovio = import_optional("verovio", extra="notation", feature="SVG rendering")
     toolkit = verovio.toolkit()
     toolkit.setOptions({**_DEFAULT_OPTIONS, **(options if options is not None else {})})
     if timeline is not None:

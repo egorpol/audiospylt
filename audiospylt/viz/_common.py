@@ -9,17 +9,14 @@ import numpy as np
 import pandas as pd
 from pandas.api.types import is_number
 
+from audiospylt._optional import import_optional
 from audiospylt.analysis.spectrum import amplitude_to_db
 from audiospylt.model.schema import TABLE_CONTRACTS, infer_kind, validate
 from audiospylt.notation.pitch import cents_label, pitch_table
 
-try:
-    import plotly.graph_objects as go
-    import plotly.io as pio
-except ImportError as error:
-    raise ImportError(
-        "plotting requires plotly; install audiospylt[plot]"
-    ) from error
+import_optional("plotly", extra="plot", feature="plotting")
+import plotly.graph_objects as go  # noqa: E402
+import plotly.io as pio  # noqa: E402
 
 _FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 _SEQUENTIAL = (

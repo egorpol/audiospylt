@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - librosa is optional: `load_audio(sr=...)` resamples with soxr (HQ) directly, and its output length is exactly `ceil(n * sr / rate)` (librosa's rounding sometimes added one zero sample). `mel_spectrogram()` and the mel axes in `audiospylt.viz` raise an `ImportError` naming `audiospylt[librosa]` when it is missing.
 - `import audiospylt as asp` exposes the 47 v1 compute names lazily at the top level (`asp.load_audio`, `asp.spectrum`, `asp.find_peaks`, `asp.morph`, …); figures and notebook display stay namespaced as `asp.viz` and `asp.nb`. The 0.6 names leave `__all__` and `dir()` but still resolve.
 - Version 1.0.0.dev0, with PEP 639 license metadata (`License-Expression: MIT`). The sdist ships the package only; tests run from a git checkout.
+- An `ImportError` names the extra to install only when the optional package itself is missing. When plotly, verovio, IPython or librosa is installed but fails on an import of its own, that error is raised unchanged.
 
 ### Added
 - v1 subpackage layout (`io`, `analysis`, `model`, `transform`, `synth`, `notation`, `viz`, `nb`); the 0.6 modules are unchanged.

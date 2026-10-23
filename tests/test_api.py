@@ -374,6 +374,35 @@ def test_import_optional_translates_only_a_missing_module(tmp_path, monkeypatch)
         assert "install audiospylt" not in str(caught.value)
 
 
+def test_display_extras_keep_the_error_of_a_broken_install(tmp_path):
+    # Each package is installed but fails on a dependency of its own: no install hint.
+    for name in ("plotly", "verovio", "IPython"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "__init__.py").write_text("import asp_probe_missing_dep\n")
+    run_script(f'''
+import sys
+sys.path.insert(0, {str(tmp_path)!r})
+import pandas as pd
+from audiospylt import nb
+from audiospylt.notation.mei import snapshot_to_mei
+from audiospylt.notation.render import render_svg
+mei = snapshot_to_mei(pd.DataFrame({{"freq": [440.0], "amp": [1.0]}}))
+calls = {{
+    "plotly": lambda: __import__("audiospylt.viz"),
+    "verovio": lambda: render_svg(mei),
+    "IPython": lambda: nb.show("hello"),
+}}
+for name, call in calls.items():
+    try:
+        call()
+    except ModuleNotFoundError as error:
+        assert error.name == "asp_probe_missing_dep", (name, error)
+        assert "install audiospylt" not in str(error), (name, error)
+    else:
+        raise AssertionError(f"{{name}}: no error")
+''')
+
+
 def test_resampling_needs_no_librosa(monkeypatch):
     from audiospylt.io.audio import load_audio
 

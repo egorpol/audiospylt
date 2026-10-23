@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 
 import numpy as np
@@ -238,18 +239,8 @@ def test_play_mono_stereo_and_peak(monkeypatch):
 
 def test_ipython_missing_message(monkeypatch):
     monkeypatch.setitem(sys.modules, "IPython", None)
-    monkeypatch.setitem(sys.modules, "IPython.display", None)
-    # Force re-import failure inside the helper
-    import builtins
-    real_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name.startswith("IPython"):
-            raise ImportError("hidden")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-    with pytest.raises(ImportError, match=r"audiospylt\[notebook\]"):
-        nb.show("hello")
-    with pytest.raises(ImportError, match=r"audiospylt\[notebook\]"):
-        nb.play(np.zeros(4), 8)
+    message = "notebook display requires IPython; install audiospylt[notebook]"
+    for call in (lambda: nb.show("hello"), lambda: nb.play(np.zeros(4), 8)):
+        with pytest.raises(ImportError, match=f"^{re.escape(message)}$") as raised:
+            call()
+        assert isinstance(raised.value.__cause__, ModuleNotFoundError)
