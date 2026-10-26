@@ -1,0 +1,7 @@
+row,excerpt,runs,metric,mean,min,max
+pm2-inharmonic/matched+asp,bayle,5,bin,27.767,27.511,28.015
+pm2-inharmonic/matched+asp,bayle,5,band,30.737,28.177,32.855
+pm2-inharmonic/matched+asp,bayle,5,gain,-0.869,-1.004,-0.803
+pm2-inharmonic/matched+asp,de_natura_son,5,bin,4.029,3.980,4.072
+pm2-inharmonic/matched+asp,de_natura_son,5,band,12.047,11.904,12.178
+pm2-inharmonic/matched+asp,de_natura_son,5,gain,-21.591,-21.831,-21.388
