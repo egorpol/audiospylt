@@ -1,0 +1,903 @@
+{
+ "sets": {
+  "icmc2000": "ICMC 2000 analysis/synthesis panel: Wright, Beauchamp, Fitz, Rodet, Robel, Serra and Wakefield (2000), 'Analysis/synthesis comparison', Organised Sound 5(3): 173-189. Inputs, the authors' resyntheses and SMS analysis settings, from the Wayback Machine copy of http://www.cnmat.berkeley.edu/SDIF/ICMC2000/. No licence stated: fetched, not redistributed.",
+  "tools": "Test sounds of the tools' own repositories: Loris 1.8 test/ (GPL), sms-tools-materials sounds/ (CC BY 4.0, freesound pack xserra/13038)."
+ },
+ "files": [
+  {
+   "url": "https://web.archive.org/web/20070609195233id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/sounds/all-sounds.tar.gz",
+   "sha256": "927a8a1430caba008a800e9a8ffe0da73663793b79e47d7ce3c324978c1a6399",
+   "members": {
+    "angry_cat.aiff": {
+     "save": "icmc2000/input/angry_cat.aiff",
+     "sha256": "76759846ddda79ada54a46f31be5b1f741340ef4a64179dff6027868a736991e"
+    },
+    "applebite2.aiff": {
+     "save": "icmc2000/input/applebite2.aiff",
+     "sha256": "a2e38f3b379b4223e55e013289c027369c829a3d41d7b25cbf100f91c95767f0"
+    },
+    "bassdrum.aiff": {
+     "save": "icmc2000/input/bassdrum.aiff",
+     "sha256": "2d24e2366122da59cebfd483ecfc9c9c90542656fd8b514a200adfa906373bcc"
+    },
+    "berimbao.aiff": {
+     "save": "icmc2000/input/berimbao.aiff",
+     "sha256": "1dbd611cbd5b284e602302d7ef95b999a17b1a243b1b45317d700af650e82814"
+    },
+    "bongo_roll.aiff": {
+     "save": "icmc2000/input/bongo_roll.aiff",
+     "sha256": "708ed10853c3015bde7527690155210157b29ae798ea61f4834d6526a793524d"
+    },
+    "brokendownengine.aiff": {
+     "save": "icmc2000/input/brokendownengine.aiff",
+     "sha256": "84ae358493ac9dfa0821bfda4c570c1a5115414827d78ca50e36ce2e25aaeac1"
+    },
+    "conant-trombone-flutter.aiff": {
+     "save": "icmc2000/input/conant-trombone-flutter.aiff",
+     "sha256": "a4f9a6a3d326511349d919904fa11e0eb93b99c124b5cbec680fe1e0dfe1d9c8"
+    },
+    "deplus.trim.aiff": {
+     "save": "icmc2000/input/deplus.aiff",
+     "sha256": "22a99180eaac3015dd7eb5dd1fe542c4d883616c0777969ca51339f23666fa28"
+    },
+    "flute+voice.aiff": {
+     "save": "icmc2000/input/flute+voice.aiff",
+     "sha256": "743ffa9e5c2dc6478ffc31f3538eaf52acb4b71cc77d8cc8419dd75826d05a0e"
+    },
+    "gamelan-gong.aiff": {
+     "save": "icmc2000/input/gamelan-gong.aiff",
+     "sha256": "1191fb8cc9db7b7fc21edbfd47a6942ffb6a41c532101a4506909bc06ddd1741"
+    },
+    "giggle.aiff": {
+     "save": "icmc2000/input/giggle.aiff",
+     "sha256": "d22cfd5de856e68e66c51e8a123522be3c2c6ff6a036af033656bf02128e0498"
+    },
+    "harp_descend.aiff": {
+     "save": "icmc2000/input/harp_descend.aiff",
+     "sha256": "45e452a6ca5c69ea682aa32cae3a30fb2839829df45f27f582fe042fc3706318"
+    },
+    "harris.trim.aiff": {
+     "save": "icmc2000/input/harris.aiff",
+     "sha256": "5bbefef7e1187a2f0aaed617f963cf7ac0a5e1ff32b5bb59e9340e6aef6567c8"
+    },
+    "leonard.trim.aiff": {
+     "save": "icmc2000/input/leonard.aiff",
+     "sha256": "13c1ac826fe92253022360d5a8ab456f913bae95c9b9fd48d094280747e9c5b9"
+    },
+    "piano.aiff": {
+     "save": "icmc2000/input/piano.aiff",
+     "sha256": "45f680aa7541e1b9780947c4c260fde483e9f7489af62cee11211f1ff6484a6e"
+    },
+    "research.aiff": {
+     "save": "icmc2000/input/research.aiff",
+     "sha256": "f51de7561a790d6f357b8389a170cf82d8e0fa98e200085073722926d554aef3"
+    },
+    "screw.aiff": {
+     "save": "icmc2000/input/screw.aiff",
+     "sha256": "8a728486d56a78cbd3c6404a122c1ce46cab3a4bcef209ccd2d1b1fc02de2398"
+    },
+    "shafqat-derbari.aiff": {
+     "save": "icmc2000/input/shafqat-derbari.aiff",
+     "sha256": "9a255bad635affb77f713083e820ac46a1c05acd071009a71c3fd279b804c7f5"
+    },
+    "shaku.aiff": {
+     "save": "icmc2000/input/shaku.aiff",
+     "sha256": "616cb59468d57a301cbf046b1a70017ff104b8a2265c8cf83e1d26be6ba7f068"
+    },
+    "sop6a6.aiff": {
+     "save": "icmc2000/input/sop6a6.aiff",
+     "sha256": "838f26ba682e302da501807348042d6233b7773d6347f022f7854385150ccd09"
+    },
+    "suling-phrase.aiff": {
+     "save": "icmc2000/input/suling-phrase.aiff",
+     "sha256": "5efac7ab875297f591790d42cd39b6530964750991397e7d61f82cefa1c11891"
+    },
+    "tampura.aiff": {
+     "save": "icmc2000/input/tampura.aiff",
+     "sha256": "d767aa9a9872981545c3d3b1e42b1d1ffae3c5738fe9deca9b054cfbf9b92daa"
+    },
+    "tatum.aiff": {
+     "save": "icmc2000/input/tatum.aiff",
+     "sha256": "1dde8ebc60925bc00fe1ab12de66f99e18870a9ab16425c7436e92f7db9a44ab"
+    },
+    "toby_yodel.trim.aiff": {
+     "save": "icmc2000/input/toby_yodel.aiff",
+     "sha256": "33fec3f983faaf4be1a1e66976d76e0d3f189e6ddc88e684d57eee864e3adfff"
+    },
+    "trumpet.aiff": {
+     "save": "icmc2000/input/trumpet.aiff",
+     "sha256": "b36ba6ba7a68077a39db3f70949593b44cbc244a0dbf6230718f7119d41a57a6"
+    },
+    "webern_choral.aiff": {
+     "save": "icmc2000/input/webern_choral.aiff",
+     "sha256": "affa14a2a1c817e47b160e38df68c294f940de6b8cd65fde4e1a08a860055db9"
+    },
+    "xylo.aiff": {
+     "save": "icmc2000/input/xylo.aiff",
+     "sha256": "3ad19d9e06d91db06c493b4242eff7672a7ae8f3cd21873f791b8a7922ab9f10"
+    }
+   }
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213813id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/angry_cat.synt.aiff",
+   "sha256": "256d0969bb557617cac4ec4b0176a49bb6cdc2e36a73bb20d1fdae1c43979a4f",
+   "save": "icmc2000/render/ircam-2000/author/angry_cat.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213844id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/applebite2.noise+trans.aiff",
+   "sha256": "ad17066edcce049ec39845f191a2ea31702897ddccfbe4901d16d4990af5a607",
+   "save": "icmc2000/render/ircam-2000/author/applebite2.noise+trans.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213552id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/bassdrum.synt.aiff",
+   "sha256": "410b795a9d5c74fff4447cf3f34a46e259cd9fd8ac33239d7fe734f0ed6fe273",
+   "save": "icmc2000/render/ircam-2000/author/bassdrum.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213327id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/berimbao.synt.aiff",
+   "sha256": "4574a9343647578f2a4894a1ade5966243440797d32c1f65a14b3ed912db409d",
+   "save": "icmc2000/render/ircam-2000/author/berimbao.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213703id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/bongo_roll.synt.aiff",
+   "sha256": "d042d2808f4be2eaf49e04198b1175de3e04051b3344849f3ed6640a54744b29",
+   "save": "icmc2000/render/ircam-2000/author/bongo_roll.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213603id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/brokendownengine.synt.aiff",
+   "sha256": "62d5db5befe4c0d6b311642e53ba10f578248c8fdde9678aeb19fc0faf01e573",
+   "save": "icmc2000/render/ircam-2000/author/brokendownengine.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213354id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/conant-trombone-flutter.synt.aiff",
+   "sha256": "8f04a1f54e7c3c92fdc6f06f6176c9eb670b886e09cdfac16b10d33d4fdb5e6f",
+   "save": "icmc2000/render/ircam-2000/author/conant-trombone-flutter.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213627id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/deplus.trim.synt.aiff",
+   "sha256": "a61105a1f44fdf93df9849dac2b69056f24da4ae0772c101415a1cbfa61d5cf6",
+   "save": "icmc2000/render/ircam-2000/author/deplus.trim.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213405id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/flute+voice.synt.aiff",
+   "sha256": "adf651b1d09d371899a4880f9a13e26f831ca5577e9fa1f8d02b97d3810d685d",
+   "save": "icmc2000/render/ircam-2000/author/flute+voice.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213436id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/gamelan-gong.hmm.synt.aiff",
+   "sha256": "8f2d1a6646b42e0567e781c97ad4b5d12f73ffd51bde2f18f6b8f72a690beadd",
+   "save": "icmc2000/render/ircam-2000/author/gamelan-gong.hmm.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213416id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/giggle.synt.aiff",
+   "sha256": "0f21587dd9b4747d6dd90200bb790a6f46f6f5071d329386561b08aa8305277b",
+   "save": "icmc2000/render/ircam-2000/author/giggle.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213712id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/harp_descend.hmm.synt.aiff",
+   "sha256": "29bc9acd15a66e893b7459ea666981b1c4908760d1c51d6b71a5494b79d87f43",
+   "save": "icmc2000/render/ircam-2000/author/harp_descend.hmm.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213452id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/harris.trim.synt.aiff",
+   "sha256": "60f175b6056394c8091c3f0dc35c2a7c5962e58044ba3b4e0ab9bdbca0fb461c",
+   "save": "icmc2000/render/ircam-2000/author/harris.trim.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213721id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/leonard.trim.synt.aiff",
+   "sha256": "4a6f6ba90b0599727ad276490593b863dcac9e37efbc2358d1f363830dc5c07e",
+   "save": "icmc2000/render/ircam-2000/author/leonard.trim.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213654id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/piano.hmm.synt.aiff",
+   "sha256": "96a7d28f63a0d2da08190efb4dc0b89bb26e9e624a9033b9b6689883b4aae080",
+   "save": "icmc2000/render/ircam-2000/author/piano.hmm.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213834id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/research.synt.aiff",
+   "sha256": "13c790940ebe3eab7172c19eba650884a945cd634d7d93802c8a7acce7c6d8b9",
+   "save": "icmc2000/render/ircam-2000/author/research.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213636id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/screw.hmm.synt.aiff",
+   "sha256": "82ce0bbf0b6804600c04a9bf6086f461f61a508fecac1c74dbe7c4a837ae57e0",
+   "save": "icmc2000/render/ircam-2000/author/screw.hmm.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213758id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/shafqat-derbari.synt.aiff",
+   "sha256": "889997d966eff53cef88840d0694e60b7dabe0824f142fed6b31ff7fa6f9aee9",
+   "save": "icmc2000/render/ircam-2000/author/shafqat-derbari.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213645id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/shaku.synt.aiff",
+   "sha256": "857f81668e13c39d9535fb7e24a3c8708334411bbf935184e2e319e618595102",
+   "save": "icmc2000/render/ircam-2000/author/shaku.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213738id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/sop6a6.hmm.synt.aiff",
+   "sha256": "32e18adde2e2824dea539b2f075d29487fc9395cc2347456ac38572a012b7e65",
+   "save": "icmc2000/render/ircam-2000/author/sop6a6.hmm.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213445id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/suling-phrase.synt.aiff",
+   "sha256": "9043b3076a27f20797afae1a9223c503c69ef2117a41bf8ad649abff355b9ee4",
+   "save": "icmc2000/render/ircam-2000/author/suling-phrase.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213825id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/tampura.hmm.synt.aiff",
+   "sha256": "2cc55a2bf7967a1b35013c6e167523a45fb780cd058e0d84b44f4bbf6fe30a0f",
+   "save": "icmc2000/render/ircam-2000/author/tampura.hmm.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213317id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/tatum.hmm.synt.aiff",
+   "sha256": "72c622ab024a4ded7fafb11dc199404bef8661177842e42a0ac092cb91b2c948",
+   "save": "icmc2000/render/ircam-2000/author/tatum.hmm.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213525id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/toby_yodel.trim.synt.aiff",
+   "sha256": "e87e174dbdad9dcadcc1f533d27c723bd0a95ebe2c1b486a4b2990fd6478ce7f",
+   "save": "icmc2000/render/ircam-2000/author/toby_yodel.trim.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213427id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/trumpet.synt.aiff",
+   "sha256": "fc83352129616238de03332a17913439a01a43f99415212542dc288aa8a6b52e",
+   "save": "icmc2000/render/ircam-2000/author/trumpet.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213746id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/webern_choral.hmm.synt.aiff",
+   "sha256": "3ddcfb39ea89736ac862ceca52b7bbd31d51e1f0ffd67da578c29d540169ad5d",
+   "save": "icmc2000/render/ircam-2000/author/webern_choral.hmm.synt.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609213337id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/IRCAM/resynthesis/xylo.m6.synth.aiff",
+   "sha256": "e349d0881c78757b45bea3a01c728f5b97da6f13f414ee163d3394d32de2f5d2",
+   "save": "icmc2000/render/ircam-2000/author/xylo.m6.synth.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223651id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/angry_cat.d.loris.aiff",
+   "sha256": "947122f79a90d7bf725674d79c605001bb64be9ce155f8b2c783fd3f0aae72ab",
+   "save": "icmc2000/render/loris-2000/author/angry_cat.d.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224256id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/angry_cat.d.rs.loris.aiff",
+   "sha256": "8e1a11503865ea62867c7addc43de9a525ad7ad7af7242532024985432ff2f84",
+   "save": "icmc2000/render/loris-2000/author-rs/angry_cat.d.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223826id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/apple.loris.aiff",
+   "sha256": "2fd9dcac3c29a780e3daecb636c64e60051a010c250f63d97c6910c4065b9d0f",
+   "save": "icmc2000/render/loris-2000/author/apple.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224131id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/apple.rs.loris.aiff",
+   "sha256": "f20f541dbb69168f7e2dd7775fe47bb858693c2d6702687dfaff6c3ea0027fcf",
+   "save": "icmc2000/render/loris-2000/author-rs/apple.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223624id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/bassdrum.loris.aiff",
+   "sha256": "5180f1903b5405bf4fa0ee63636954eb07f6db8a9ea90c4e1a0cd0cb57dc4955",
+   "save": "icmc2000/render/loris-2000/author/bassdrum.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223429id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/bassdrum.rs.loris.aiff",
+   "sha256": "e558517bbf8848b435145d9169a03e404a257661c99a2f5751259dba1b6e83bf",
+   "save": "icmc2000/render/loris-2000/author-rs/bassdrum.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223919id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/berimbao.loris.aiff",
+   "sha256": "dda0ac2ea1baf08e29c4bab3869944330b3c0d1045333e4d2a065d78d7133b74",
+   "save": "icmc2000/render/loris-2000/author/berimbao.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223851id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/berimbao.rs.loris.aiff",
+   "sha256": "bc3044bdc029dac5cd9a8383bdbee892de801d26eda5191ea2dee39609cffa23",
+   "save": "icmc2000/render/loris-2000/author-rs/berimbao.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224332id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/bongo.loris.aiff",
+   "sha256": "cae7301d30502a392e5925779bd8624683b7c76a17eb9acd05d6d0fdbb15d414",
+   "save": "icmc2000/render/loris-2000/author/bongo.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224306id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/bongo.rs.loris.aiff",
+   "sha256": "f7384496a191d263f1a167c6d1c50c78245b2878b53784e8ad9e86c387a47d37",
+   "save": "icmc2000/render/loris-2000/author-rs/bongo.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223747id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/broken.loris.aiff",
+   "sha256": "2e327439517e24df7fbca6c397fe0f1f0856de9e998e8d5de3d37a0974d63069",
+   "save": "icmc2000/render/loris-2000/author/broken.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224033id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/broken.rs.loris.aiff",
+   "sha256": "b5c7e358fe6b2c31ecd5e91dbef8ef4f5d3753c6049614d27ceb98d481983b82",
+   "save": "icmc2000/render/loris-2000/author-rs/broken.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223607id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/conant.d.loris.aiff",
+   "sha256": "948f32b783d2fb2720008e04c4552ea56e30f0a887c64174cf74a139499e9cd4",
+   "save": "icmc2000/render/loris-2000/author/conant.d.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224358id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/conant.d.rs.loris.aiff",
+   "sha256": "2fa45d1d6a77d4a39849d78b878596653e079cc513953d7dd072b6fc1a63f883",
+   "save": "icmc2000/render/loris-2000/author-rs/conant.d.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223449id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/deplus.loris.aiff",
+   "sha256": "356eddcc5cecdcabb3e0267c9cd09ba83e227572060b618738beaf0846ff547c",
+   "save": "icmc2000/render/loris-2000/author/deplus.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223437id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/deplus.rs.loris.aiff",
+   "sha256": "4f7c18b43c34dfe6c9cbae3af4e13750b33531ba7fd1be175745880af9792d65",
+   "save": "icmc2000/render/loris-2000/author-rs/deplus.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223353id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/flute+voice.loris.aiff",
+   "sha256": "f29e9d954337dace9f610a75265959db80437f37f717045c18eafe0b37dae478",
+   "save": "icmc2000/render/loris-2000/author/flute+voice.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223840id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/flute+voice.rs.loris.aiff",
+   "sha256": "0172b590f3bd9a46e7ebdef99f2caacd341932b8ef043225dc3be1a9a60f3c1f",
+   "save": "icmc2000/render/loris-2000/author-rs/flute+voice.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224412id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/gamelan-gong.loris.aiff",
+   "sha256": "c627f3ed37f50ef06985a3caf79821999349fb7187a58d92c00849bc8e01c1a6",
+   "save": "icmc2000/render/loris-2000/author/gamelan-gong.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224406id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/gamelan-gong.rs.loris.aiff",
+   "sha256": "baca90372c55c56a0ed6db118f7e297eae1ea9cce832806408d1247a91c3c36c",
+   "save": "icmc2000/render/loris-2000/author-rs/gamelan-gong.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224340id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/giggle.loris.aiff",
+   "sha256": "940a828898420bac85e2d2c958bc1e5d8066ceafc22fc7a044b7dff16f113558",
+   "save": "icmc2000/render/loris-2000/author/giggle.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224453id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/giggle.rs.loris.aiff",
+   "sha256": "213ba7f3a831a722b012d78b7b64818df0716701f80c27efa626a9e066f243cd",
+   "save": "icmc2000/render/loris-2000/author-rs/giggle.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224027id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/harp.loris.aiff",
+   "sha256": "eecffa60e9c8868e3fbecd91cf6bef1b0840086e01688bf57a21bcea5fdbc380",
+   "save": "icmc2000/render/loris-2000/author/harp.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223420id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/harp.rs.loris.aiff",
+   "sha256": "66d5e536d5be5fe3b027f2448e704f5426c122492a8d87057e7c63120f7d6785",
+   "save": "icmc2000/render/loris-2000/author-rs/harp.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224447id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/harris.loris.aiff",
+   "sha256": "8791f00652a7952c1a5105e249beb60014fd24f927622d3cf7b9a3dc77e420db",
+   "save": "icmc2000/render/loris-2000/author/harris.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223332id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/harris.rs.loris.aiff",
+   "sha256": "b5a93ef39d45594cdbaeea9b831d928f342169556996c6432372d12244a941e7",
+   "save": "icmc2000/render/loris-2000/author-rs/harris.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223406id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/leonard.loris.aiff",
+   "sha256": "98dac4cea8fcdb6c33bca017eb4c1dcf8c2d5912cf3150d45f4dce530e41c199",
+   "save": "icmc2000/render/loris-2000/author/leonard.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224435id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/leonard.rs.loris.aiff",
+   "sha256": "f289206db9fe8658e25601841dce70719884896762e808aaaf47f339f9ebef0d",
+   "save": "icmc2000/render/loris-2000/author-rs/leonard.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223551id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/piano.d.loris.aiff",
+   "sha256": "d1a771fb8e50aa6a000eab427b4c5a707cd19ed99ab6f21bcd885e643ac4b766",
+   "save": "icmc2000/render/loris-2000/author/piano.d.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224202id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/piano.d.rs.loris.aiff",
+   "sha256": "577f64a8ae884091f45549f1f30fad86ce796adef4709efbcf63b0f875882842",
+   "save": "icmc2000/render/loris-2000/author-rs/piano.d.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223709id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/research.loris.aiff",
+   "sha256": "99df5a1b1b1c69f9a76b902bf44679502f6fba881a5fbc4cd69d123f077436dd",
+   "save": "icmc2000/render/loris-2000/author/research.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224231id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/research.rs.loris.aiff",
+   "sha256": "eeb8b1ed8b637ca03aa734a7c5384f28a53cdbc5c2defc79641c6241633bbeae",
+   "save": "icmc2000/render/loris-2000/author-rs/research.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224314id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/shafqat.loris.aiff",
+   "sha256": "e1da2da679de19924de26ef7c16eea28a1dae46ed30eaed05aac7a92bc489c57",
+   "save": "icmc2000/render/loris-2000/author/shafqat.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224421id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/shafqat.rs.loris.aiff",
+   "sha256": "623f6391b0bb9ee74afe8e28ab379df86b35e1fbdaefd512c2c345e23812a4c5",
+   "save": "icmc2000/render/loris-2000/author-rs/shafqat.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224319id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/shaku.loris.aiff",
+   "sha256": "cd3cc42903807d5da6ae441efb7e58b8facf1626d04e3526fab3c9227c2585b6",
+   "save": "icmc2000/render/loris-2000/author/shaku.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224010id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/shaku.rs.loris.aiff",
+   "sha256": "f0a1457056eb1ba2b579fec8c1179f32eb42669b32e98c51561018b9835c5cdf",
+   "save": "icmc2000/render/loris-2000/author-rs/shaku.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223805id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/sop6a6.loris.aiff",
+   "sha256": "72dc83decb87ade076bfcea77aff1893d2ae03542dba42368478633d11ceb3cb",
+   "save": "icmc2000/render/loris-2000/author/sop6a6.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224125id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/sop6a6.rs.loris.aiff",
+   "sha256": "5daad2b617e780686072bc91ceda7e8e8b45340239bcf438ecc6e91b0f2bd51e",
+   "save": "icmc2000/render/loris-2000/author-rs/sop6a6.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224018id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/tampura.loris.aiff",
+   "sha256": "e3628a5163b4dbdbae56f7462d5d1fdceb4119ae4062bef6a0f25e2d596b7220",
+   "save": "icmc2000/render/loris-2000/author/tampura.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223537id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/tampura.rs.loris.aiff",
+   "sha256": "8c34c0da22a845880fdc832917e23f26724d98703e62c51080ad1c592127636d",
+   "save": "icmc2000/render/loris-2000/author-rs/tampura.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223929id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/tatum.loris.aiff",
+   "sha256": "5d06a8da62f3f1e890d751334e1cd3ee275a603392b414ef35b4b59db7ff202d",
+   "save": "icmc2000/render/loris-2000/author/tatum.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224138id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/tatum.rs.loris.aiff",
+   "sha256": "d439963ab472c6aa9fbc992f42f869dc85eaf34946066b872e2a1157a65a05f6",
+   "save": "icmc2000/render/loris-2000/author-rs/tatum.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223946id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/toby.loris.aiff",
+   "sha256": "ff5bcf7da9b20f45b82d1d54f85c578f6d8f82d47951b741a306c49206b82c4b",
+   "save": "icmc2000/render/loris-2000/author/toby.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609224119id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/toby.rs.loris.aiff",
+   "sha256": "3b987d61c6c929b1dd91c168af08a006b8fe133ab357820aae6260b1409139fc",
+   "save": "icmc2000/render/loris-2000/author-rs/toby.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223957id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/webern.loris.aiff",
+   "sha256": "0c955553ffdf9ab99114eb8aa8179f5b86db0a79f042ac5ee3925c65317356f0",
+   "save": "icmc2000/render/loris-2000/author/webern.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223459id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/webern.rs.loris.aiff",
+   "sha256": "0d546c20dd6253a4ab4d74205a46bde0468f8f1313aa97b1acfb492d1f4133bb",
+   "save": "icmc2000/render/loris-2000/author-rs/webern.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223906id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/xylo.d.loris.aiff",
+   "sha256": "3bc583f9ddee1becb765d1cd5cb97c405b04212f47ca486a41f2632e7c97a5dd",
+   "save": "icmc2000/render/loris-2000/author/xylo.d.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609223936id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/Loris/resynthesis/xylo.d.rs.loris.aiff",
+   "sha256": "51569662d900406fec6b2d08b88ed1f450c937d8650c5777593f90bb85cf96b5",
+   "save": "icmc2000/render/loris-2000/author-rs/xylo.d.rs.loris.aiff"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212028id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/angry_cat.anl",
+   "sha256": "6d69b3afdf3718818cf37fa8fc498c88668dfff492fc1b7f44a4e9cc6c575eee",
+   "save": "icmc2000/sms-anl/angry_cat.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212222id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/angry_cat.sms.wav",
+   "sha256": "718f6cc23e684a1cbde4e58812b63644b662a1a9a72575986284b207566e036b",
+   "save": "icmc2000/render/sms-2000/author/angry_cat.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211711id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/applebite2.anl",
+   "sha256": "ee0b564052a1cd8919e18c6d577685122fa4f0ee3b6035999cb9768b9b14d085",
+   "save": "icmc2000/sms-anl/applebite2.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212338id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/applebite2.sms.wav",
+   "sha256": "000eac55bba832b5c1ffc813d96fb4066555c32a03ef8f7971f82cf7374efaa8",
+   "save": "icmc2000/render/sms-2000/author/applebite2.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212623id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/bassdrum.anl",
+   "sha256": "936bc88b87b4c061a88823a596138fbc8572519e8836822260ca2edfc8dd0f8c",
+   "save": "icmc2000/sms-anl/bassdrum.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211608id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/bassdrum.sms.wav",
+   "sha256": "32617e4b5358add8aad8081014c9719d8d0d2e4394aebbbcb5efb943d202ab0a",
+   "save": "icmc2000/render/sms-2000/author/bassdrum.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212110id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/berimbao.anl",
+   "sha256": "a43faeec4c8349f7552dfc2c98ce3304451c0e15043060cf8a83b893c88417dc",
+   "save": "icmc2000/sms-anl/berimbao.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212634id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/berimbao.sms.wav",
+   "sha256": "50b43c092ab0abda8829c2e812384c5cc3a1fe02cd180020065793d5cefe6ca9",
+   "save": "icmc2000/render/sms-2000/author/berimbao.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211356id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/bongo_roll.anl",
+   "sha256": "08e073fcee60f87859c835082de4967ce4710065f1a1c0a1c8ab1a52b6c709ba",
+   "save": "icmc2000/sms-anl/bongo_roll.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211457id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/bongo_roll.sms.wav",
+   "sha256": "8f5c39ce8b1a9d7d3d0f6dc676c1d3e8c2de82a06560bdc29ff5826d2a7b1199",
+   "save": "icmc2000/render/sms-2000/author/bongo_roll.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211812id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/brokendownengine.anl",
+   "sha256": "3382ad74a19a2a0999f6bce84200bf57758eae99cf8b1c49d95f4caf6e9e8f26",
+   "save": "icmc2000/sms-anl/brokendownengine.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212103id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/brokendownengine.sms.wav",
+   "sha256": "3508be0f69707f0ee57c9e8ed868cf5bf2382d21819d503aff62e5b438b89eae",
+   "save": "icmc2000/render/sms-2000/author/brokendownengine.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211856id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/deplus.trim.anl",
+   "sha256": "6f07ce525ad3bd2480492144b3c29ecbeb517bd9beeb77cc4c61840612439056",
+   "save": "icmc2000/sms-anl/deplus.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211801id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/deplus.trim.sms.wav",
+   "sha256": "e6af83c25a56e5270c5efc464757dc49b9577c05c504c11ef7397e48ebed6e5f",
+   "save": "icmc2000/render/sms-2000/author/deplus.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211919id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/gamelan-gong.anl",
+   "sha256": "36bb88538aba836d1fb1a6cff97aad2ba9d836fbe9c6c67de7e151f582e9369f",
+   "save": "icmc2000/sms-anl/gamelan-gong.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211849id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/gamelan-gong.sms.wav",
+   "sha256": "f2c027da32b2d5e2305d3130433b7eec2cfdedbd6688c329bd06fd0fdb79faec",
+   "save": "icmc2000/render/sms-2000/author/gamelan-gong.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211614id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/harp_descend.anl",
+   "sha256": "14304a767be9c977d742392eca6b23c57563b32dda9a99f2c7fe5f72f93a4623",
+   "save": "icmc2000/sms-anl/harp_descend.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211445id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/harp_descend.sms.wav",
+   "sha256": "8a7462f26563d929f64bb09fdabe94a798982eafd76a7a57577921bf6de3f6d5",
+   "save": "icmc2000/render/sms-2000/author/harp_descend.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212807id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/harris.trim.anl",
+   "sha256": "f29fa4005c51e5dab4633ee2d873590ce1f77ec70bbbd8a1a374bf95e9718726",
+   "save": "icmc2000/sms-anl/harris.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212116id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/harris.trim.sms.wav",
+   "sha256": "e16d111a264d40b8493cb9d7c3587c105cbb2b34e18914d433150823a23a0278",
+   "save": "icmc2000/render/sms-2000/author/harris.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211942id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/leonard.trim.anl",
+   "sha256": "de58ef3d6a23f7557b10d53d357ca53ab4cc71180b45eca07edf9072a093a231",
+   "save": "icmc2000/sms-anl/leonard.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212150id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/leonard.trim.sms.wav",
+   "sha256": "085cc185a26d8d9a7e4f9c7c9f972dd5a4f521ecd767eb042acc85118631c84a",
+   "save": "icmc2000/render/sms-2000/author/leonard.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211746id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/piano.anl",
+   "sha256": "26bd74c7da5c132a86a57a807977b61a2f053294ca335a550c9a5845773cacad",
+   "save": "icmc2000/sms-anl/piano.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212034id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/piano.sms.wav",
+   "sha256": "0e313733d7e43ff4bfd1c8180e2d79efc8fd02a73127c8352650af4278864b20",
+   "save": "icmc2000/render/sms-2000/author/piano.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211503id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/research.anl",
+   "sha256": "edb785e6117e828ba3a2ccdcde8ee6d400abb82b1ed71e021915cc047d0f8876",
+   "save": "icmc2000/sms-anl/research.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211432id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/research.sms.wav",
+   "sha256": "e69456b2a03fbdadf4132155e2c0165dbde0b9931e03e90d998d8edbfeb9a218",
+   "save": "icmc2000/render/sms-2000/author/research.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211350id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/screw.anl",
+   "sha256": "2c412d0b340a1a2ffeb2f3742bbe22f1ec4b49f3f4e327cceecfa36c9753a373",
+   "save": "icmc2000/sms-anl/screw.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212548id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/screw.sms.wav",
+   "sha256": "995d32f12e5a198ea5af1e0ed10e22077a48d2b2a9975ea24fa60adc66efd23f",
+   "save": "icmc2000/render/sms-2000/author/screw.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211843id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/shaku.anl",
+   "sha256": "f6fe8aeb04f8827bd4a974424aa53907fdb8da2d7ef7ee147615915280dbad2b",
+   "save": "icmc2000/sms-anl/shaku.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212123id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/shaku.sms.wav",
+   "sha256": "68d5d53f20648afa8c151bf72483485236a955fce291d270238e7174517db2e3",
+   "save": "icmc2000/render/sms-2000/author/shaku.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212211id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/sop6a6.anl",
+   "sha256": "c3b5b8fbdd144f187e5fed3e934768f6b36fac656f65fdc6dd271275e935603d",
+   "save": "icmc2000/sms-anl/sop6a6.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211717id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/sop6a6.sms.wav",
+   "sha256": "0ba84f35e02d37962d055aaed04002f1bef23432a811ba9d2c112ecdda86bcbf",
+   "save": "icmc2000/render/sms-2000/author/sop6a6.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211836id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/suling-phrase.anl",
+   "sha256": "678aaa8bad47272154d583b1e244c17d0ed9c9b7f052ea455859685524ce6ff4",
+   "save": "icmc2000/sms-anl/suling-phrase.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212705id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/suling-phrase.sms.wav",
+   "sha256": "707baee802f97ab2874dba83828eda85a6fc5c083a8a5841fb67270b2c2d9306",
+   "save": "icmc2000/render/sms-2000/author/suling-phrase.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211700id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/tampura.anl",
+   "sha256": "05442e575ea9f47528c47c7e9882201c56e244fcff134d96bbb5e9cf76d78062",
+   "save": "icmc2000/sms-anl/tampura.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212539id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/tampura.sms.wav",
+   "sha256": "97d489e8e0c952487ba36afe271388bd6e717496cb2d137d1887d3f68b9b718f",
+   "save": "icmc2000/render/sms-2000/author/tampura.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212439id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/trumpet.anl",
+   "sha256": "4435e114d913f10e14b75933a61648ac3dcc17186ce7cece3026c37f74049f93",
+   "save": "icmc2000/sms-anl/trumpet.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212346id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/trumpet.sms.wav",
+   "sha256": "34c163dc6d74981ede696d5139ec16986473c2ee4ca1a9429aaf9044a3167187",
+   "save": "icmc2000/render/sms-2000/author/trumpet.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211819id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/webern_choral.anl",
+   "sha256": "0663638fc30f40ab690982704a427d51bbeefe1aff41f2bb1fd84f1979b0ec0e",
+   "save": "icmc2000/sms-anl/webern_choral.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212411id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/webern_choral.sms.wav",
+   "sha256": "9dc2e5422cfa7cdd562f7cf7720b29518629fc8693d531e7ca6141d6359df7c5",
+   "save": "icmc2000/render/sms-2000/author/webern_choral.sms.wav"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609212156id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/xylo.anl",
+   "sha256": "fd9f5e4cd0a7f553d20ff6109c1e63dfe0395c0a48399fe6bd9ea07d14d9afbe",
+   "save": "icmc2000/sms-anl/xylo.anl"
+  },
+  {
+   "url": "https://web.archive.org/web/20070609211559id_/http://www.cnmat.berkeley.edu/SDIF/ICMC2000/results/CD/analysis-results/SMS/SMS-format/xylo.sms.wav",
+   "sha256": "a72871e937c86fab6566217978b2220377cc921fa6385bcf00b600ac0ec99dc3",
+   "save": "icmc2000/render/sms-2000/author/xylo.sms.wav"
+  },
+  {
+   "url": "https://sourceforge.net/projects/loris/files/Loris/1.8/loris-1.8.tar.gz/download",
+   "sha256": "2ef7b7881159b1cd851a7f9bcd00253bfe4341ef2292e51644283c4170d8f236",
+   "members": {
+    "loris-1.8/test/clarinet.aiff": {
+     "save": "tools/input/loris-clarinet.aiff",
+     "sha256": "f134be858c7debda39482bf1ff05ba5ddb260baf3ab0f37482795e911cbc434a"
+    },
+    "loris-1.8/test/flute.aiff": {
+     "save": "tools/input/loris-flute.aiff",
+     "sha256": "e2502a3a3b96ab9e964915475030491a29fca807f3a662b7745774abcb04e64f"
+    }
+   }
+  },
+  {
+   "url": "https://raw.githubusercontent.com/MTG/sms-tools-materials/227d7c4b34d1a7fe8d1e63b4fab0eea25da43a84/sounds/bendir.wav",
+   "sha256": "0fb733a3852b920981fbe1b458997ebc465dd2f6b90008d54561e044f0872b2f",
+   "save": "tools/input/sms-bendir.wav"
+  },
+  {
+   "url": "https://raw.githubusercontent.com/MTG/sms-tools-materials/227d7c4b34d1a7fe8d1e63b4fab0eea25da43a84/sounds/vignesh.wav",
+   "sha256": "1f06b70d1c32e9f9f739b2481dd84394dca17816d2ee78cc6e6ff9e7d2a8146a",
+   "save": "tools/input/sms-vignesh.wav"
+  },
+  {
+   "url": "https://raw.githubusercontent.com/MTG/sms-tools-materials/227d7c4b34d1a7fe8d1e63b4fab0eea25da43a84/sounds/sax-phrase-short.wav",
+   "sha256": "5bcf8f091386572d6181744bfd10d789006b4e4ac1950be0b1e3c61bce81227d",
+   "save": "tools/input/sms-sax-phrase-short.wav"
+  }
+ ],
+ "inputs": {
+  "icmc2000": {
+   "angry_cat": "icmc2000/input/angry_cat.aiff",
+   "applebite2": "icmc2000/input/applebite2.aiff",
+   "bassdrum": "icmc2000/input/bassdrum.aiff",
+   "berimbao": "icmc2000/input/berimbao.aiff",
+   "bongo_roll": "icmc2000/input/bongo_roll.aiff",
+   "brokendownengine": "icmc2000/input/brokendownengine.aiff",
+   "conant-trombone-flutter": "icmc2000/input/conant-trombone-flutter.aiff",
+   "deplus": "icmc2000/input/deplus.aiff",
+   "flute+voice": "icmc2000/input/flute+voice.aiff",
+   "gamelan-gong": "icmc2000/input/gamelan-gong.aiff",
+   "giggle": "icmc2000/input/giggle.aiff",
+   "harp_descend": "icmc2000/input/harp_descend.aiff",
+   "harris": "icmc2000/input/harris.aiff",
+   "leonard": "icmc2000/input/leonard.aiff",
+   "piano": "icmc2000/input/piano.aiff",
+   "research": "icmc2000/input/research.aiff",
+   "screw": "icmc2000/input/screw.aiff",
+   "shafqat-derbari": "icmc2000/input/shafqat-derbari.aiff",
+   "shaku": "icmc2000/input/shaku.aiff",
+   "sop6a6": "icmc2000/input/sop6a6.aiff",
+   "suling-phrase": "icmc2000/input/suling-phrase.aiff",
+   "tampura": "icmc2000/input/tampura.aiff",
+   "tatum": "icmc2000/input/tatum.aiff",
+   "toby_yodel": "icmc2000/input/toby_yodel.aiff",
+   "trumpet": "icmc2000/input/trumpet.aiff",
+   "webern_choral": "icmc2000/input/webern_choral.aiff",
+   "xylo": "icmc2000/input/xylo.aiff"
+  },
+  "tools": {
+   "loris-clarinet": "tools/input/loris-clarinet.aiff",
+   "loris-flute": "tools/input/loris-flute.aiff",
+   "sms-bendir": "tools/input/sms-bendir.wav",
+   "sms-vignesh": "tools/input/sms-vignesh.wav",
+   "sms-sax-phrase-short": "tools/input/sms-sax-phrase-short.wav"
+  }
+ },
+ "renders": {
+  "ircam-2000/author": {
+   "angry_cat": "icmc2000/render/ircam-2000/author/angry_cat.synt.aiff",
+   "applebite2": "icmc2000/render/ircam-2000/author/applebite2.noise+trans.aiff",
+   "bassdrum": "icmc2000/render/ircam-2000/author/bassdrum.synt.aiff",
+   "berimbao": "icmc2000/render/ircam-2000/author/berimbao.synt.aiff",
+   "bongo_roll": "icmc2000/render/ircam-2000/author/bongo_roll.synt.aiff",
+   "brokendownengine": "icmc2000/render/ircam-2000/author/brokendownengine.synt.aiff",
+   "conant-trombone-flutter": "icmc2000/render/ircam-2000/author/conant-trombone-flutter.synt.aiff",
+   "deplus": "icmc2000/render/ircam-2000/author/deplus.trim.synt.aiff",
+   "flute+voice": "icmc2000/render/ircam-2000/author/flute+voice.synt.aiff",
+   "gamelan-gong": "icmc2000/render/ircam-2000/author/gamelan-gong.hmm.synt.aiff",
+   "giggle": "icmc2000/render/ircam-2000/author/giggle.synt.aiff",
+   "harp_descend": "icmc2000/render/ircam-2000/author/harp_descend.hmm.synt.aiff",
+   "harris": "icmc2000/render/ircam-2000/author/harris.trim.synt.aiff",
+   "leonard": "icmc2000/render/ircam-2000/author/leonard.trim.synt.aiff",
+   "piano": "icmc2000/render/ircam-2000/author/piano.hmm.synt.aiff",
+   "research": "icmc2000/render/ircam-2000/author/research.synt.aiff",
+   "screw": "icmc2000/render/ircam-2000/author/screw.hmm.synt.aiff",
+   "shafqat-derbari": "icmc2000/render/ircam-2000/author/shafqat-derbari.synt.aiff",
+   "shaku": "icmc2000/render/ircam-2000/author/shaku.synt.aiff",
+   "sop6a6": "icmc2000/render/ircam-2000/author/sop6a6.hmm.synt.aiff",
+   "suling-phrase": "icmc2000/render/ircam-2000/author/suling-phrase.synt.aiff",
+   "tampura": "icmc2000/render/ircam-2000/author/tampura.hmm.synt.aiff",
+   "tatum": "icmc2000/render/ircam-2000/author/tatum.hmm.synt.aiff",
+   "toby_yodel": "icmc2000/render/ircam-2000/author/toby_yodel.trim.synt.aiff",
+   "trumpet": "icmc2000/render/ircam-2000/author/trumpet.synt.aiff",
+   "webern_choral": "icmc2000/render/ircam-2000/author/webern_choral.hmm.synt.aiff",
+   "xylo": "icmc2000/render/ircam-2000/author/xylo.m6.synth.aiff"
+  },
+  "loris-2000/author": {
+   "angry_cat": "icmc2000/render/loris-2000/author/angry_cat.d.loris.aiff",
+   "applebite2": "icmc2000/render/loris-2000/author/apple.loris.aiff",
+   "bassdrum": "icmc2000/render/loris-2000/author/bassdrum.loris.aiff",
+   "berimbao": "icmc2000/render/loris-2000/author/berimbao.loris.aiff",
+   "bongo_roll": "icmc2000/render/loris-2000/author/bongo.loris.aiff",
+   "brokendownengine": "icmc2000/render/loris-2000/author/broken.loris.aiff",
+   "conant-trombone-flutter": "icmc2000/render/loris-2000/author/conant.d.loris.aiff",
+   "deplus": "icmc2000/render/loris-2000/author/deplus.loris.aiff",
+   "flute+voice": "icmc2000/render/loris-2000/author/flute+voice.loris.aiff",
+   "gamelan-gong": "icmc2000/render/loris-2000/author/gamelan-gong.loris.aiff",
+   "giggle": "icmc2000/render/loris-2000/author/giggle.loris.aiff",
+   "harp_descend": "icmc2000/render/loris-2000/author/harp.loris.aiff",
+   "harris": "icmc2000/render/loris-2000/author/harris.loris.aiff",
+   "leonard": "icmc2000/render/loris-2000/author/leonard.loris.aiff",
+   "piano": "icmc2000/render/loris-2000/author/piano.d.loris.aiff",
+   "research": "icmc2000/render/loris-2000/author/research.loris.aiff",
+   "shafqat-derbari": "icmc2000/render/loris-2000/author/shafqat.loris.aiff",
+   "shaku": "icmc2000/render/loris-2000/author/shaku.loris.aiff",
+   "sop6a6": "icmc2000/render/loris-2000/author/sop6a6.loris.aiff",
+   "tampura": "icmc2000/render/loris-2000/author/tampura.loris.aiff",
+   "tatum": "icmc2000/render/loris-2000/author/tatum.loris.aiff",
+   "toby_yodel": "icmc2000/render/loris-2000/author/toby.loris.aiff",
+   "webern_choral": "icmc2000/render/loris-2000/author/webern.loris.aiff",
+   "xylo": "icmc2000/render/loris-2000/author/xylo.d.loris.aiff"
+  },
+  "loris-2000/author-rs": {
+   "angry_cat": "icmc2000/render/loris-2000/author-rs/angry_cat.d.rs.loris.aiff",
+   "applebite2": "icmc2000/render/loris-2000/author-rs/apple.rs.loris.aiff",
+   "bassdrum": "icmc2000/render/loris-2000/author-rs/bassdrum.rs.loris.aiff",
+   "berimbao": "icmc2000/render/loris-2000/author-rs/berimbao.rs.loris.aiff",
+   "bongo_roll": "icmc2000/render/loris-2000/author-rs/bongo.rs.loris.aiff",
+   "brokendownengine": "icmc2000/render/loris-2000/author-rs/broken.rs.loris.aiff",
+   "conant-trombone-flutter": "icmc2000/render/loris-2000/author-rs/conant.d.rs.loris.aiff",
+   "deplus": "icmc2000/render/loris-2000/author-rs/deplus.rs.loris.aiff",
+   "flute+voice": "icmc2000/render/loris-2000/author-rs/flute+voice.rs.loris.aiff",
+   "gamelan-gong": "icmc2000/render/loris-2000/author-rs/gamelan-gong.rs.loris.aiff",
+   "giggle": "icmc2000/render/loris-2000/author-rs/giggle.rs.loris.aiff",
+   "harp_descend": "icmc2000/render/loris-2000/author-rs/harp.rs.loris.aiff",
+   "harris": "icmc2000/render/loris-2000/author-rs/harris.rs.loris.aiff",
+   "leonard": "icmc2000/render/loris-2000/author-rs/leonard.rs.loris.aiff",
+   "piano": "icmc2000/render/loris-2000/author-rs/piano.d.rs.loris.aiff",
+   "research": "icmc2000/render/loris-2000/author-rs/research.rs.loris.aiff",
+   "shafqat-derbari": "icmc2000/render/loris-2000/author-rs/shafqat.rs.loris.aiff",
+   "shaku": "icmc2000/render/loris-2000/author-rs/shaku.rs.loris.aiff",
+   "sop6a6": "icmc2000/render/loris-2000/author-rs/sop6a6.rs.loris.aiff",
+   "tampura": "icmc2000/render/loris-2000/author-rs/tampura.rs.loris.aiff",
+   "tatum": "icmc2000/render/loris-2000/author-rs/tatum.rs.loris.aiff",
+   "toby_yodel": "icmc2000/render/loris-2000/author-rs/toby.rs.loris.aiff",
+   "webern_choral": "icmc2000/render/loris-2000/author-rs/webern.rs.loris.aiff",
+   "xylo": "icmc2000/render/loris-2000/author-rs/xylo.d.rs.loris.aiff"
+  },
+  "sms-2000/author": {
+   "angry_cat": "icmc2000/render/sms-2000/author/angry_cat.sms.wav",
+   "applebite2": "icmc2000/render/sms-2000/author/applebite2.sms.wav",
+   "bassdrum": "icmc2000/render/sms-2000/author/bassdrum.sms.wav",
+   "berimbao": "icmc2000/render/sms-2000/author/berimbao.sms.wav",
+   "bongo_roll": "icmc2000/render/sms-2000/author/bongo_roll.sms.wav",
+   "brokendownengine": "icmc2000/render/sms-2000/author/brokendownengine.sms.wav",
+   "deplus": "icmc2000/render/sms-2000/author/deplus.sms.wav",
+   "gamelan-gong": "icmc2000/render/sms-2000/author/gamelan-gong.sms.wav",
+   "harp_descend": "icmc2000/render/sms-2000/author/harp_descend.sms.wav",
+   "harris": "icmc2000/render/sms-2000/author/harris.sms.wav",
+   "leonard": "icmc2000/render/sms-2000/author/leonard.sms.wav",
+   "piano": "icmc2000/render/sms-2000/author/piano.sms.wav",
+   "research": "icmc2000/render/sms-2000/author/research.sms.wav",
+   "screw": "icmc2000/render/sms-2000/author/screw.sms.wav",
+   "shaku": "icmc2000/render/sms-2000/author/shaku.sms.wav",
+   "sop6a6": "icmc2000/render/sms-2000/author/sop6a6.sms.wav",
+   "suling-phrase": "icmc2000/render/sms-2000/author/suling-phrase.sms.wav",
+   "tampura": "icmc2000/render/sms-2000/author/tampura.sms.wav",
+   "trumpet": "icmc2000/render/sms-2000/author/trumpet.sms.wav",
+   "webern_choral": "icmc2000/render/sms-2000/author/webern_choral.sms.wav",
+   "xylo": "icmc2000/render/sms-2000/author/xylo.sms.wav"
+  }
+ },
+ "sms_anl": {
+  "angry_cat": "icmc2000/sms-anl/angry_cat.anl",
+  "applebite2": "icmc2000/sms-anl/applebite2.anl",
+  "bassdrum": "icmc2000/sms-anl/bassdrum.anl",
+  "berimbao": "icmc2000/sms-anl/berimbao.anl",
+  "bongo_roll": "icmc2000/sms-anl/bongo_roll.anl",
+  "brokendownengine": "icmc2000/sms-anl/brokendownengine.anl",
+  "deplus": "icmc2000/sms-anl/deplus.anl",
+  "gamelan-gong": "icmc2000/sms-anl/gamelan-gong.anl",
+  "harp_descend": "icmc2000/sms-anl/harp_descend.anl",
+  "harris": "icmc2000/sms-anl/harris.anl",
+  "leonard": "icmc2000/sms-anl/leonard.anl",
+  "piano": "icmc2000/sms-anl/piano.anl",
+  "research": "icmc2000/sms-anl/research.anl",
+  "screw": "icmc2000/sms-anl/screw.anl",
+  "shaku": "icmc2000/sms-anl/shaku.anl",
+  "sop6a6": "icmc2000/sms-anl/sop6a6.anl",
+  "suling-phrase": "icmc2000/sms-anl/suling-phrase.anl",
+  "tampura": "icmc2000/sms-anl/tampura.anl",
+  "trumpet": "icmc2000/sms-anl/trumpet.anl",
+  "webern_choral": "icmc2000/sms-anl/webern_choral.anl",
+  "xylo": "icmc2000/sms-anl/xylo.anl"
+ }
+}
