@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The 0.6 modules and their top-level function names now warn on calls with `AudiospyltDeprecationWarning`; they are removed in 1.1. See `docs/migration.md` for replacements and changed conventions.
 
 ### Changed
+- `synthesize(fade=0.005)`: voice ends fade by default (5 ms raised cosine). In `'continuous'` each ramp is centred on the voice end; `'reset'` and `'absolute'` keep inside ramps. `fade=0` gives the previous unfaded ends.
 - `import audiospylt` no longer imports the 0.6 modules or IPython; old names load lazily on first access.
 - Dependencies are split into a lean core (`numpy`, `pandas`, `requests`, `scipy`, `soundfile`, `soxr`) and extras: `[plot]` (`plotly`), `[notebook]` (`ipython`, `ipykernel`, `ipywidgets`, `nbformat`, `tqdm`), `[notation]` (`verovio`), `[librosa]` (`librosa`), `[all]` (all four; the 0.6 API and the notebooks need it) and `[dev]` (`[all]` plus build, lint, type-check and test tools).
 - librosa is optional: `load_audio(sr=...)` resamples with soxr (HQ) directly, and its output length is exactly `ceil(n * sr / rate)` (librosa's rounding sometimes added one zero sample). `mel_spectrogram()` and the mel axes in `audiospylt.viz` raise an `ImportError` naming `audiospylt[librosa]` when it is missing.

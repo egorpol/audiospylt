@@ -99,7 +99,7 @@ def synthesize(
     phase: str = "continuous",
     link_cents: float | None = 100.0,
     link_ramp: float = 0.005,
-    fade: float = 0.0,
+    fade: float = 0.005,
     nyquist: str = "drop",
     duration: float | None = None,
 ) -> np.ndarray:
@@ -137,8 +137,8 @@ def synthesize(
     ``link_ramp`` only acts inside ``'continuous'`` voices. Measured on the
     conga frame table (``data/tables/conga_multidft.tsv``, steps up to 24 dB
     between frames, ``fade=0.0025``): energy above 6 kHz within 2 ms of the
-    frame boundaries is -31/-46/-73 dB re the render's RMS with hard links
-    (``link_ramp=0``) and -79/-110/-121 dB with the 5 ms default, the level
+    frame boundaries is -32/-47/-73 dB re the render's RMS with hard links
+    (``link_ramp=0``) and -77/-102/-124 dB with the 5 ms default, the level
     the voice fades leave (``'reset'``: -81/-101/-119 dB).
 
     Parameters
@@ -185,11 +185,17 @@ def synthesize(
         covers at most half of either row. Links without a step keep their
         amplitude lines. 0 keeps hard steps, which click. Ignored in
         ``'reset'`` and ``'absolute'`` (no links).
-    fade : float, default 0.0
+    fade : float, default 0.005
         Raised-cosine ramp, in seconds, at the start and end of each voice
         (each row is its own voice in ``'reset'`` and ``'absolute'``).
-        Links inside a voice get no fade (see ``link_ramp``). When a voice is
-        shorter than two ramps, the ramps overlap and multiply.
+        In ``'continuous'`` each ramp is centred on the voice end (half before,
+        half after), holding the end frequency and amplitude on the extension
+        and continuing the phase; a side that would leave the output stays
+        inside instead. In ``'reset'`` and ``'absolute'`` the ramps stay
+        inside the voice. Links inside a voice get no fade (see
+        ``link_ramp``). When a voice is shorter than ``fade``, the ramps
+        overlap and multiply. ``fade=0`` leaves unfaded ends, which click on
+        frame-by-frame tables.
     nyquist : {'drop', 'alias'}, default 'drop'
         ``'drop'`` silences every sample whose instantaneous frequency is at
         or above ``sr / 2`` and warns once; ``'alias'`` keeps them, so they
@@ -293,18 +299,43 @@ def synthesize(
         right = a0[row] + (a1[row] - a0[row]) * half / (t1[row] - t0[row])
         steps[int(row)] = (centre, half, left, right)
 
+    # Continuous mode: centre each voice fade when the half-ramp fits in the output.
+    ext_start = np.zeros(len(table))
+    ext_stop = np.zeros(len(table))
+    if phase == "continuous" and fade > 0:
+        ext_start = np.where(_sample_index(voice_start - fade / 2, sr) >= 0, fade / 2, 0.0)
+        ext_stop = np.where(_sample_index(voice_stop + fade / 2, sr) <= n_samples, fade / 2, 0.0)
+
     dropped = 0
     for row in order:
-        first, stop = n0[row], min(n1[row], n_samples)
+        # Rows that cover no sample stay silent even when fade would extend them.
+        if n1[row] <= n0[row]:
+            continue
+        first, stop = int(n0[row]), min(int(n1[row]), n_samples)
+        if pred[row] < 0 and ext_start[row] > 0:
+            first = max(int(_sample_index(t0[row] - ext_start[row], sr)), 0)
+        if succ[row] < 0 and ext_stop[row] > 0:
+            stop = min(int(_sample_index(t1[row] + ext_stop[row], sr)), n_samples)
         if stop <= first:
             continue
         span = t1[row] - t0[row]
         times = np.arange(first, stop) / sr
         tau = times - t0[row]
-        frac = tau / span
-        freq = f0[row] + (f1[row] - f0[row]) * frac
-        cycles = start_cycles[row] + tau * (f0[row] + 0.5 * (f1[row] - f0[row]) * frac)
-        amp = a0[row] + (a1[row] - a0[row]) * frac
+        body_stop = min(int(n1[row]), n_samples)
+        if first < n0[row] or stop > body_stop:
+            frac = np.clip(tau / span, 0.0, 1.0)
+            freq = f0[row] + (f1[row] - f0[row]) * frac
+            cycles = start_cycles[row] + np.where(
+                tau <= span,
+                tau * (f0[row] + 0.5 * (f1[row] - f0[row]) * frac),
+                span * 0.5 * (f0[row] + f1[row]) + (tau - span) * f1[row],
+            )
+            amp = a0[row] + (a1[row] - a0[row]) * frac
+        else:
+            frac = tau / span
+            freq = f0[row] + (f1[row] - f0[row]) * frac
+            cycles = start_cycles[row] + tau * (f0[row] + 0.5 * (f1[row] - f0[row]) * frac)
+            amp = a0[row] + (a1[row] - a0[row]) * frac
         for link in (row, succ[row]):
             if link in steps:
                 centre, half, left, right = steps[link]
@@ -312,8 +343,8 @@ def synthesize(
                 x = (times[inside] - (centre - half)) / (2 * half)
                 amp[inside] = left + (right - left) * (0.5 - 0.5 * np.cos(np.pi * x))
         if fade > 0:
-            rise = np.clip((times - voice_start[row]) / fade, 0.0, 1.0)
-            fall = np.clip((voice_stop[row] - times) / fade, 0.0, 1.0)
+            rise = np.clip((times - (voice_start[row] - ext_start[row])) / fade, 0.0, 1.0)
+            fall = np.clip((voice_stop[row] + ext_stop[row] - times) / fade, 0.0, 1.0)
             amp = amp * (0.5 - 0.5 * np.cos(np.pi * rise)) * (0.5 - 0.5 * np.cos(np.pi * fall))
         keep = slice(None)
         if nyquist == "drop":

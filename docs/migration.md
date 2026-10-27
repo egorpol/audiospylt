@@ -73,9 +73,11 @@ used when reading old tables.
   `"continuous"`, linking abutting rows into phase-continuous voices; where
   the amplitude steps at a link, `link_ramp` (default 5 ms) turns the step
   into a raised-cosine transition (`link_ramp=0` keeps the hard step, which
-  clicks). The 0.6 notebooks restarted and faded every row instead
-  (`phase_mode="chirp"`, `edge_fade_s=0.0025`); `phase="reset"` with
-  `fade=0.0025` comes closest to that sound. See [synthesis modes](synthesis.md).
+  clicks). v1's `synthesize` now fades voice ends by default (5 ms, centred on
+  the voice ends in `'continuous'`); `fade=0` gives unfaded ends. The 0.6
+  notebooks restarted and faded every row instead (`phase_mode="chirp"`,
+  `edge_fade_s=0.0025`); `phase="reset"` with `fade=0.0025` comes closest to
+  that sound. See [synthesis modes](synthesis.md).
   v1 export never resamples: render at the target `sr`; 0.6 `fs_target_name`
   resampled after synthesis and its exporter always normalised to full scale. `io.audio.write_audio` raises if integer PCM
   would clip; `normalize=` explicitly opts into a peak level in dBFS.

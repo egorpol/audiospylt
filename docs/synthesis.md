@@ -17,9 +17,11 @@ most for frame-by-frame tables (one row per partial and analysis frame, such as
 
 The other options:
 
-- `fade` (seconds, default 0): raised-cosine fade at the start and end of each
-  voice. In `"reset"` and `"absolute"` every row is its own voice, so every row
-  fades; in `"continuous"` only the ends of linked chains fade.
+- `fade` (seconds, default 0.005): raised-cosine fade at the start and end of
+  each voice. In `"continuous"` each ramp is centred on the voice end (half
+  before, half after); a side that would leave the output stays inside instead.
+  In `"reset"` and `"absolute"` every row is its own voice and the ramps stay
+  inside. `fade=0` leaves unfaded ends, which click on frame tables.
 - `link_ramp` (seconds, default 0.005): only in `"continuous"`, only at links
   where `amp_stop` of one row differs from `amp_start` of the next. The ramp is
   centred on the link and shortened so it covers at most half of either row.
@@ -41,9 +43,9 @@ at those links are 14 dB (median) and up to 24 dB. Energy above 6 kHz within
 
 | render | 0.1 s | 0.2 s | 0.4 s |
 | --- | --- | --- | --- |
-| `"continuous"`, `link_ramp=0` (hard steps) | −31 dB | −46 dB | −73 dB |
-| `"continuous"`, `link_ramp=0.0025` | −79 dB | −108 dB | −111 dB |
-| `"continuous"`, default `link_ramp=0.005` | −79 dB | −110 dB | −121 dB |
+| `"continuous"`, `link_ramp=0` (hard steps) | −32 dB | −47 dB | −73 dB |
+| `"continuous"`, `link_ramp=0.0025` | −77 dB | −103 dB | −112 dB |
+| `"continuous"`, default `link_ramp=0.005` | −77 dB | −102 dB | −124 dB |
 | `"reset"` | −81 dB | −101 dB | −119 dB |
 | `"absolute"` | −87 dB | −102 dB | −120 dB |
 
@@ -61,18 +63,18 @@ with no phase jumps and no link ramps. Two tracks never join, even where one
 starts on the frequency at which another stops. A track with a single point
 gives no row, and a `phase` column is not used.
 
-A track starts and stops at the amplitude of its first and last point, so pass
-a `fade` of a few milliseconds unless those are 0. On a 223.3 Hz sine tracked by
-`pyin`, whose last point has amplitude 0.055, energy above 6 kHz within 2 ms of
-the track ends is −51 dB re the render's RMS with `fade=0` and −136 dB with
-`fade=0.005`.
+A track starts and stops at the amplitude of its first and last point; the
+default `fade` covers those ends unless they are already 0. On a 223.3 Hz sine
+tracked by `pyin`, whose last point has amplitude 0.055, energy above 6 kHz
+within 2 ms of the track ends is −51 dB re the render's RMS with `fade=0` and
+−102 dB with the default `fade`.
 
 ```python
 import audiospylt as asp
 
 x, sr = asp.load_audio("samples/cello_arco_d_sul_c_01.wav", mono=True)
 contour = asp.pyin(x, sr, fmin=65.41, fmax=2093.0)
-audio = asp.synthesize(asp.tracks_to_events(asp.f0_to_tracks(contour)), sr, fade=0.005)
+audio = asp.synthesize(asp.tracks_to_events(asp.f0_to_tracks(contour)), sr)
 asp.write_audio("cello_f0.wav", audio, sr, normalize=-1.0)
 ```
 

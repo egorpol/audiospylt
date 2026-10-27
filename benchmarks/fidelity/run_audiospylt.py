@@ -10,6 +10,7 @@ samples at 44.1 kHz); `audiospylt-v1/default` keeps the function defaults in sam
 from __future__ import annotations
 
 import contextlib
+import inspect
 import io
 import pathlib
 import re
@@ -26,11 +27,12 @@ from excerpts import points  # noqa: E402
 import audiospylt as asp  # noqa: E402
 
 MATCHED = {"frame_s": excerpts.FRAME_S, "hop_s": excerpts.HOP_S}
+DEFAULT_FADE = inspect.signature(asp.synthesize).parameters["fade"].default
 V1 = {
     # function defaults: spectrogram(2048, 512, hann, zero_pad=1), find_peaks(min_db=-60), synthesize()
-    "audiospylt-v1/default": {"frame_length": 2048, "hop": 512, "zero_pad": 1, "min_db": -60.0, "fade": 0.0},
-    "audiospylt-v1/matched": {**MATCHED, "zero_pad": 4, "min_db": -80.0, "fade": 0.0},
-    "audiospylt-v1/matched-fade": {**MATCHED, "zero_pad": 4, "min_db": -80.0, "fade": 0.0025},
+    "audiospylt-v1/default": {"frame_length": 2048, "hop": 512, "zero_pad": 1, "min_db": -60.0},
+    "audiospylt-v1/matched": {**MATCHED, "zero_pad": 4, "min_db": -80.0},
+    "audiospylt-v1/matched-nofade": {**MATCHED, "zero_pad": 4, "min_db": -80.0, "fade": 0.0},
 }
 # 0.6: the 4.1 matched analysis, then the tutorial render path (tutorials_tech/resynth.ipynb, as in G1); the
 # synthesis grid k stays 0.15 ms (6.67 kHz) at every rate
@@ -49,6 +51,11 @@ def frame_hop(p: dict, sr: int) -> tuple[int, int]:
 def v1_rows(out: pathlib.Path, chosen: list[excerpts.Excerpt]) -> None:
     for row, p in V1.items():
         done = {}
+        fade = p.get("fade", DEFAULT_FADE)
+        if fade == 0:
+            placement = "no fades"
+        else:
+            placement = "centred on voice ends"
         for e in chosen:
             frame, hop = frame_hop(p, e.sr)
             h = hop / e.sr
@@ -57,11 +64,15 @@ def v1_rows(out: pathlib.Path, chosen: list[excerpts.Excerpt]) -> None:
             ev = pd.concat([asp.snapshot_to_events(pk[["freq", "amp"]], max(0.0, t - h / 2), t + h / 2)
                             for i, t in enumerate(S.times)
                             if len(pk := asp.find_peaks(S.frame(i), min_db=p["min_db"]))], ignore_index=True)
-            excerpts.write_render(out, row, e, asp.synthesize(ev, e.sr, fade=p["fade"]))
+            excerpts.write_render(out, row, e, asp.synthesize(ev, e.sr, fade=fade))
             done[e.name] = {"set": e.set, "sr": e.sr, "frame": frame, "hop": hop, "events": len(ev)}
             print(row, e.name, len(ev), "events", flush=True)
-        excerpts.write_meta(out, row, version=asp.__version__, params={**p, "window": "hann", "center": True},
-                            synth="audiospylt.synthesize (continuous, link_cents 100, link_ramp 0.005)", excerpts=done)
+        params = {**p, "fade": fade, "window": "hann", "center": True}
+        excerpts.write_meta(
+            out, row, version=asp.__version__, params=params, excerpts=done,
+            synth=(f"audiospylt.synthesize (continuous, link_cents 100, link_ramp 0.005, "
+                   f"fade={fade}, {placement})"),
+        )
 
 
 def old_row(out: pathlib.Path, chosen: list[excerpts.Excerpt]) -> None:

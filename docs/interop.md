@@ -25,7 +25,7 @@ low = tracks[tracks["partial_id"] <= 4]  # harmonics 1-4 (JSON exported with --d
 
 x, sr = asp.load_audio("samples/saariaho_flute.wav", mono=True)
 fig = asp.viz.plot_spectrogram(asp.spectrogram(x, sr), overlay=tracks)
-resynthesis = asp.synthesize(asp.tracks_to_events(tracks), sr, fade=0.005)
+resynthesis = asp.synthesize(asp.tracks_to_events(tracks), sr)
 ```
 
 On the Saariaho flute excerpt (harmonic template, 19 partials, channel 0) this
@@ -235,7 +235,7 @@ The inharmonic cello export (3,755 tracks, 17 chords) gives medians of 220,
 50 cents apart, so no two share a written quarter-tone pitch.
 
 The chords keep the `track_id` of the track each note comes from, so
-`synthesize(chords, sr, fade=0.005)` plays the reduction. A track kept in
+`synthesize(chords, sr)` plays the reduction. A track kept in
 consecutive windows continues as one voice where its note moves by at most
 `link_cents` (100 cents). In the flute reduction with `max_notes=8`, 85 of the
 120 notes continue into the next window this way.

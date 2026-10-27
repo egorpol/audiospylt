@@ -135,8 +135,8 @@ def tracks_to_events(tracks: pd.DataFrame) -> pd.DataFrame:
     Notes
     -----
     A track starts and stops at the amplitude of its first and last point.
-    Unless those are 0, pass ``synthesize`` a ``fade`` of a few milliseconds,
-    or each track end clicks.
+    ``synthesize`` fades those ends by default; pass ``fade=0`` for unfaded
+    ends, which click unless the end amplitudes are already 0.
     """
     table = validate(tracks, "tracks")
     ids = table["track_id"].to_numpy(dtype=np.int64)

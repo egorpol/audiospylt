@@ -90,7 +90,7 @@ def main(argv=None):
 
         with check("tracks_to_events -> synthesize: one phase-continuous 440 Hz voice"):
             tracks = pd.DataFrame({"track_id": 0, "time": [0.0, 0.2, 0.5], "freq": 440.0, "amp": 0.5})
-            voice = asp.synthesize(asp.tracks_to_events(tracks), sr=sr)
+            voice = asp.synthesize(asp.tracks_to_events(tracks), sr=sr, fade=0)
             expected = 0.5 * np.sin(2 * np.pi * 440 * np.arange(sr // 2) / sr)
             assert np.abs(voice - expected).max() < 1e-9
 

@@ -12,7 +12,7 @@ analysis/synthesis panel, and five test sounds from the Loris and sms-tools repo
 the resyntheses that the authors of IRCAM's tools, Loris and SMS made in 2000 are scored as historical rows.
 
 The external tools and the reference sounds are not part of AudioSpylt's dependencies or CI. Results from the
-run of 2026-10-26 are in [`results/`](results/).
+run of 2026-10-27 are in [`results/`](results/).
 
 ## Sounds
 
@@ -65,9 +65,9 @@ and 279 at 48 kHz. Each sound is analysed and rendered at its own rate.
 
 | row | analysis | synthesis |
 | --- | --- | --- |
-| `audiospylt-v1/default` | AudioSpylt 1.0.0.dev0: `spectrogram` defaults (frame 2048, hop 512 samples at every rate, Hann, `zero_pad=1`, centred frames), `find_peaks(min_db=-60)` per frame | `synthesize` defaults: continuous phase, rows linked within `link_cents=100`, `link_ramp=0.005`, `fade=0` |
+| `audiospylt-v1/default` | AudioSpylt 1.0.0.dev0: `spectrogram` defaults (frame 2048, hop 512 samples at every rate, Hann, `zero_pad=1`, centred frames), `find_peaks(min_db=-60)` per frame | `synthesize` defaults: continuous phase, rows linked within `link_cents=100`, `link_ramp=0.005`, `fade=0.005` centred on voice ends |
 | `audiospylt-v1/matched` | matched frame and hop, Hann, `zero_pad=4`; `find_peaks(min_db=-80)` | as above |
-| `audiospylt-v1/matched-fade` | as `matched` | as above with `fade=0.0025` (the setting of the G1 listening check) |
+| `audiospylt-v1/matched-nofade` | as `matched` | as above with `fade=0` (kept to show the clicks) |
 | `audiospylt-0.6/matched` | 0.6 API (`dft_analysis.analyze_signal`, kept as a deprecated shim) per frame: matched frame and hop, Hann, frame k centred at k·hop, `thresh_amp_low=2.5e-5` (−80 dBFS on 0.6's scale), `thresh_amp_high=1` | the path of `tutorials_tech/resynth.ipynb`: `plot_waves(k=0.00015, phase_mode="chirp", edge_fade_s=0.0025)`, then `render_audio(fs_target_name="44.1kHz", alias_above_nyquist=True)`; see [How the 0.6 row runs](#how-the-06-row-runs-and-what-v1-changes) |
 | `loris/matched` | loristrck 1.7.2: `resolution` 43.07 Hz, `windowsize` 86.13 Hz, `hoptime` 5.805 ms, `ampfloor` −80 | `loristrck.synthesize(start=0, end=duration)` |
 | `loris/matched+asp` | the same tracks | `synthesize(tracks_to_events(tracks), fade=0.005)` |
@@ -93,9 +93,12 @@ Notes on the rows:
 - With `fade=0`, an event that does not link starts and stops at full amplitude. On `de_natura_son`, the peaks
   of the 20–80 Hz rumble (bins 1–4 of a 2048-sample frame, 21.5 Hz each) move by more than 100 cents from
   frame to frame, so few of them link, and each one switches on and off every 5.8 ms. The result is broadband
-  clicks: in `audiospylt-v1/matched`, every band above 354 Hz has a band LSD between 18.9 and 42.1 dB.
-  `fade=0.0025` removes the clicks (`matched-fade`), but it also fades every unlinked event inside its own
-  5.8 ms span, which raises the flute's band LSD from 6.46 to 11.71 dB.
+  clicks: in `audiospylt-v1/matched-nofade`, every band above 354 Hz has a band LSD between 18.9 and 42.1 dB.
+  The library default (centred 5 ms fades) removes the clicks: on `de_natura_son` the band excess falls from
+  29.98 to 1.94 dB, and the band LSD from 29.98 to 9.55 dB. On the flute the fade-0 row still scores a lower
+  band LSD (6.46 against 11.67 dB) because its click noise fills the high bands where the peaks leave out the
+  breath noise, which LSD counts as closer. The split shows it: the band excess is 0.88 dB without fades and
+  0.77 dB with them, and the band deficit 6.40 and 11.65 dB.
 - `audiospylt-v1/default` has hop 512, no zero padding and a −60 dB threshold, so it keeps 37, 4 and 9 events
   per frame on the case-study excerpts.
 - `loristrck.synthesize` starts its output at the first breakpoint unless `start` is given (83 ms into
@@ -115,9 +118,9 @@ Notes on the rows:
 - PM2 inharmonic output differs from run to run on the same file (as in the accuracy benchmark). On `case` the
   row ran five times (`r1` … `r5`); `summary.md` shows the mean and the min–max spread. On `bayle`, with 10–12
   partials per frame, many frames have no partial in a given band: in run 1, the render is at least 40 dB
-  below the excerpt in 1782–2245 Hz in 51 % of the frames and in each band above 5.7 kHz in 45–100 %. On
-  `de_natura_son`, it misses most of the sub-bass that carries the excerpt's energy: in run 1 the 0–177 Hz band
-  is 22.7 dB low (band LSD 32.3 dB), and the gain is −21.7 dB.
+  below the excerpt in 1782–2245 Hz in 50 % of the frames and in each band above 5.7 kHz in 43–97 %. On
+  `de_natura_son`, it misses much of the sub-bass that carries the excerpt's energy: in run 1 the 0–177 Hz
+  band is 11.5 dB low (band LSD 24.4 dB), and the gain is −11.9 dB.
 - PM2 harmonic finds 19 tracks on the ICMC `shaku` (PM2 inharmonic 1,564). This comes from the template's f0
   settings, which were not tuned per sound.
 - Partiels has no synthesizer, so the PM2 rows exist only as `+asp` rows.
@@ -216,9 +219,9 @@ v0.6.3 HEAD`), so the row computes what v0.6.3 computes. At 44.1 kHz:
 The v1 matched row instead uses `spectrogram(2048, 256, hann, zero_pad=4)` scaled to peak amplitude (a sine of
 amplitude a reads a) and `find_peaks(min_db=-80)` with quadratic interpolation on the dB magnitudes. It
 synthesises at the output rate directly, with half-open rows and continuous phase (rows within 100 cents link
-into one voice that keeps its phase), a 5 ms raised-cosine ramp on amplitude steps at links, no fades
-(`fade=0`, or 0.0025 in `matched-fade`), Nyquist gate `drop`, and no normalisation (`write_audio` refuses to
-clip).
+into one voice that keeps its phase), a 5 ms raised-cosine ramp on amplitude steps at links, the library
+default 5 ms voice fades centred on voice ends (`fade=0` in `matched-nofade`), Nyquist gate `drop`, and no
+normalisation (`write_audio` refuses to clip).
 
 Which of these changes sets the score? The table crosses {0.6, v1} analysis with {0.6, v1} synthesis on the
 case-study excerpts, every render scaled to the excerpt's RMS before scoring (bin / band LSD in dB; probe of
@@ -255,6 +258,10 @@ rate. Both go through the same STFT, `scipy.signal.stft` with a Hann window of 4
   last band. That gives 18 bands at 44.1 kHz, 15 at 22.05 kHz and 19 at 48 kHz. Powers are floored at
   10⁻⁸ × the loudest reference band (−80 dB). The score is the RMS over all bands and frames of the
   difference in dB.
+- **Excess / deficit.** With the same floored dB values, `d = render_dB − reference_dB` per bin or band, per
+  frame; excess is the RMS of `max(d, 0)` and deficit the RMS of `min(d, 0)` over the same cells as the LSD,
+  so `LSD² = excess² + deficit²`. Excess is sound the render adds (such as clicks); deficit is sound it
+  misses (such as noise a sinusoidal model leaves out).
 - **Gain.** RMS level of the render re the input, in dB.
 - `per_band.csv` gives both LSDs for each band as well (the bin LSD over the bins of that band).
 
@@ -291,59 +298,75 @@ PM2 inharmonic on `de_natura_son` (see above).
 
 ## Headline results
 
-These tables are copied from [`results/summary.md`](results/summary.md) (run of 2026-10-26). Lower is better.
-"–" means the row has no render of that sound.
+These tables are copied from [`results/summary.md`](results/summary.md) (run of 2026-10-27). Lower is better.
+"–" means the row has no render of that sound. The excess / deficit tables split the band LSD into the
+part where the render is louder than the sound and the part where it is quieter (see
+[Metrics](#metrics-evaluatepy)); `summary.md` gives the same split of the bin LSD.
 
 ### Case-study excerpts
 
-The PM2 inharmonic row shows the mean of five runs and the min–max spread. Its runs differ from those of the
-first run of this benchmark (step 4.2), so its cells differ too; every other case-study cell is unchanged.
-Noise-pair floor: bin LSD 7.89, band LSD 1.86.
+The PM2 inharmonic row shows the mean of five runs and the min–max spread; its excess / deficit cells show
+the means. Noise-pair floor: bin LSD 7.89, band LSD 1.86.
 
 **Bin LSD (dB)**
 
 | row | bayle | de_natura_son | saariaho_flute |
 | --- | ---: | ---: | ---: |
-| audiospylt-v1/default | 18.23 | 16.97 | 10.34 |
-| audiospylt-v1/matched | 6.19 | 22.20 | 6.51 |
-| audiospylt-v1/matched-fade | 6.51 | 2.93 | 7.03 |
+| audiospylt-v1/default | 21.13 | 3.24 | 12.00 |
+| audiospylt-v1/matched | 6.45 | 2.56 | 7.05 |
+| audiospylt-v1/matched-nofade | 6.19 | 22.20 | 6.51 |
 | audiospylt-0.6/matched | 16.76 | 5.33 | 17.34 |
 | loris/matched | 7.48 | 3.11 | 7.08 |
-| loris/matched+asp | 10.58 | 3.19 | 8.99 |
+| loris/matched+asp | 10.12 | 3.17 | 8.81 |
 | sms-tools/matched | 20.32 | 2.17 | 7.31 |
-| sms-tools/matched+asp | 20.95 | 2.47 | 7.78 |
-| pm2-harmonic/matched+asp | – | – | 10.27 |
-| pm2-inharmonic/matched+asp (5 runs) | 28.10 (27.69–28.53) | 4.04 (3.96–4.15) | – |
+| sms-tools/matched+asp | 20.63 | 2.40 | 7.48 |
+| pm2-harmonic/matched+asp | – | – | 10.26 |
+| pm2-inharmonic/matched+asp (5 runs) | 28.08 (27.67–28.51) | 3.58 (3.50–3.70) | – |
 
 **Band LSD (dB)**
 
 | row | bayle | de_natura_son | saariaho_flute |
 | --- | ---: | ---: | ---: |
-| audiospylt-v1/default | 5.96 | 23.56 | 14.26 |
-| audiospylt-v1/matched | 1.14 | 29.98 | 6.46 |
-| audiospylt-v1/matched-fade | 1.12 | 9.21 | 11.71 |
+| audiospylt-v1/default | 8.49 | 10.88 | 22.61 |
+| audiospylt-v1/matched | 1.11 | 9.55 | 11.67 |
+| audiospylt-v1/matched-nofade | 1.14 | 29.98 | 6.46 |
 | audiospylt-0.6/matched | 12.82 | 13.17 | 21.88 |
 | loris/matched | 2.02 | 10.11 | 12.39 |
-| loris/matched+asp | 2.49 | 10.47 | 14.04 |
+| loris/matched+asp | 2.20 | 10.42 | 13.72 |
 | sms-tools/matched | 11.67 | 8.71 | 12.23 |
-| sms-tools/matched+asp | 12.07 | 9.71 | 12.73 |
-| pm2-harmonic/matched+asp | – | – | 16.92 |
-| pm2-inharmonic/matched+asp (5 runs) | 33.62 (29.01–37.50) | 12.13 (12.01–12.28) | – |
+| sms-tools/matched+asp | 11.83 | 9.64 | 12.43 |
+| pm2-harmonic/matched+asp | – | – | 16.90 |
+| pm2-inharmonic/matched+asp (5 runs) | 33.52 (28.85–37.44) | 10.86 (10.72–11.04) | – |
 
 **Gain (dB re excerpt RMS)**
 
 | row | bayle | de_natura_son | saariaho_flute |
 | --- | ---: | ---: | ---: |
-| audiospylt-v1/default | -0.16 | -1.60 | -0.18 |
-| audiospylt-v1/matched | -0.17 | 0.21 | -0.08 |
-| audiospylt-v1/matched-fade | -0.20 | -1.47 | -0.09 |
+| audiospylt-v1/default | -0.16 | -1.79 | -0.19 |
+| audiospylt-v1/matched | -0.18 | -0.45 | -0.09 |
+| audiospylt-v1/matched-nofade | -0.17 | 0.21 | -0.08 |
 | audiospylt-0.6/matched | 9.55 | 10.61 | 20.99 |
 | loris/matched | -0.47 | -3.62 | -0.44 |
-| loris/matched+asp | -0.49 | -3.62 | -0.46 |
+| loris/matched+asp | -0.48 | -3.62 | -0.45 |
 | sms-tools/matched | -0.65 | -2.03 | -0.44 |
-| sms-tools/matched+asp | -0.39 | -1.81 | -0.18 |
+| sms-tools/matched+asp | -0.36 | -1.30 | -0.16 |
 | pm2-harmonic/matched+asp | – | – | -0.40 |
-| pm2-inharmonic/matched+asp (5 runs) | -0.96 (-1.33–-0.79) | -21.80 (-21.89–-21.75) | – |
+| pm2-inharmonic/matched+asp (5 runs) | -0.91 (-1.28–-0.75) | -11.86 (-11.90–-11.81) | – |
+
+**Band excess / deficit (dB)**
+
+| row | bayle | de_natura_son | saariaho_flute |
+| --- | ---: | ---: | ---: |
+| audiospylt-v1/default | 0.72 / 8.46 | 1.05 / 10.83 | 0.23 / 22.61 |
+| audiospylt-v1/matched | 0.79 / 0.78 | 1.94 / 9.35 | 0.77 / 11.65 |
+| audiospylt-v1/matched-nofade | 0.85 / 0.76 | 29.98 / 0.07 | 0.88 / 6.40 |
+| audiospylt-0.6/matched | 11.87 / 4.86 | 11.68 / 6.08 | 21.88 / 0.21 |
+| loris/matched | 0.47 / 1.97 | 0.15 / 10.11 | 0.57 / 12.38 |
+| loris/matched+asp | 0.22 / 2.19 | 0.06 / 10.42 | 0.20 / 13.72 |
+| sms-tools/matched | 0.71 / 11.65 | 0.45 / 8.70 | 0.13 / 12.23 |
+| sms-tools/matched+asp | 0.71 / 11.81 | 0.86 / 9.61 | 0.29 / 12.43 |
+| pm2-harmonic/matched+asp | – | – | 1.31 / 16.85 |
+| pm2-inharmonic/matched+asp (5 runs) | 0.59 / 33.51 | 0.67 / 10.84 | – |
 
 ### ICMC 2000 panel sounds
 
@@ -353,22 +376,43 @@ median over all the sounds it rendered.
 
 | row | n | bin LSD mean | bin LSD median | band LSD mean | band LSD median | gain median |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| audiospylt-v1/default | 27 | 9.06 | 8.55 | 10.83 | 10.39 | -0.92 |
-| audiospylt-v1/matched | 27 | 5.39 | 5.19 | 5.53 | 5.21 | -0.48 |
-| audiospylt-v1/matched-fade | 27 | 4.94 | 4.90 | 5.30 | 4.77 | -0.59 |
+| audiospylt-v1/default | 27 | 9.82 | 9.72 | 14.36 | 14.76 | -1.03 |
+| audiospylt-v1/matched | 27 | 4.82 | 4.76 | 5.16 | 4.69 | -0.53 |
+| audiospylt-v1/matched-nofade | 27 | 5.39 | 5.19 | 5.53 | 5.21 | -0.48 |
 | audiospylt-0.6/matched | 27 | 12.66 | 13.10 | 12.73 | 12.67 | 6.23 |
 | loris/matched | 27 | 6.18 | 6.55 | 7.67 | 6.82 | -2.00 |
-| loris/matched+asp | 27 | 7.43 | 7.38 | 9.37 | 8.52 | -2.03 |
+| loris/matched+asp | 27 | 6.97 | 6.89 | 8.75 | 7.52 | -1.91 |
 | sms-tools/matched | 27 | 8.37 | 7.44 | 7.89 | 8.25 | -1.24 |
-| sms-tools/matched+asp | 27 | 8.99 | 8.31 | 8.52 | 8.77 | -0.95 |
+| sms-tools/matched+asp | 27 | 8.68 | 7.91 | 8.14 | 8.42 | -0.86 |
 | sms-tools/home | 21 | 6.97 | 5.65 | 7.73 | 7.08 | -1.04 |
-| sms-tools/home+asp | 21 | 7.76 | 6.84 | 8.70 | 7.41 | -1.03 |
-| pm2-harmonic/matched+asp | 27 | 11.69 | 10.71 | 15.65 | 14.56 | -1.82 |
-| pm2-inharmonic/matched+asp | 27 | 13.90 | 14.03 | 20.48 | 21.60 | -2.47 |
+| sms-tools/home+asp | 21 | 7.47 | 6.36 | 8.11 | 6.84 | -0.95 |
+| pm2-harmonic/matched+asp | 27 | 11.68 | 10.71 | 15.58 | 14.45 | -1.82 |
+| pm2-inharmonic/matched+asp | 27 | 13.72 | 13.91 | 19.88 | 20.98 | -2.35 |
 | ircam-2000/author | 27 | 5.51 | 5.77 | 6.32 | 4.98 | -0.27 |
 | loris-2000/author | 24 | 5.30 | 5.32 | 7.00 | 4.93 | -0.66 |
 | loris-2000/author-rs | 24 | 5.71 | 5.83 | 7.38 | 5.34 | -0.72 |
 | sms-2000/author | 21 | 4.09 | 3.53 | 3.62 | 3.11 | -0.51 |
+
+**Band excess / deficit (dB)**, mean and median over the 18 sounds
+
+| row | n | mean | median |
+| --- | ---: | ---: | ---: |
+| audiospylt-v1/default | 27 | 0.97 / 14.30 | 0.69 / 14.70 |
+| audiospylt-v1/matched | 27 | 1.16 / 4.96 | 0.89 / 4.46 |
+| audiospylt-v1/matched-nofade | 27 | 4.02 / 2.88 | 3.51 / 2.95 |
+| audiospylt-0.6/matched | 27 | 10.75 / 4.84 | 10.33 / 3.47 |
+| loris/matched | 27 | 0.82 / 7.56 | 0.50 / 6.75 |
+| loris/matched+asp | 27 | 0.40 / 8.73 | 0.16 / 7.49 |
+| sms-tools/matched | 27 | 0.59 / 7.84 | 0.32 / 7.98 |
+| sms-tools/matched+asp | 27 | 0.67 / 8.08 | 0.38 / 8.17 |
+| sms-tools/home | 21 | 0.80 / 7.59 | 0.31 / 6.53 |
+| sms-tools/home+asp | 21 | 0.76 / 8.01 | 0.35 / 6.67 |
+| pm2-harmonic/matched+asp | 27 | 1.76 / 15.30 | 0.87 / 13.99 |
+| pm2-inharmonic/matched+asp | 27 | 0.51 / 19.86 | 0.23 / 20.96 |
+| ircam-2000/author | 27 | 1.68 / 5.79 | 1.48 / 4.69 |
+| loris-2000/author | 24 | 0.81 / 6.82 | 0.43 / 4.87 |
+| loris-2000/author-rs | 24 | 0.67 / 7.25 | 0.34 / 5.15 |
+| sms-2000/author | 21 | 1.88 / 2.37 | 1.66 / 1.09 |
 
 ### Test sounds of Loris and sms-tools
 
@@ -376,40 +420,66 @@ Bin LSD / band LSD in dB.
 
 | row | `loris-clarinet` | `loris-flute` | `sms-bendir` | `sms-vignesh` | `sms-sax-phrase-short` |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| audiospylt-v1/default | 14.27 / 22.68 | 7.98 / 7.74 | 2.07 / 5.36 | 8.74 / 8.51 | 5.59 / 12.64 |
-| audiospylt-v1/matched | 8.19 / 8.22 | 4.56 / 3.48 | 1.68 / 5.02 | 4.47 / 2.97 | 3.36 / 6.85 |
-| audiospylt-v1/matched-fade | 8.42 / 10.49 | 4.51 / 6.39 | 1.42 / 2.46 | 4.45 / 4.80 | 3.26 / 7.18 |
+| audiospylt-v1/default | 14.40 / 23.79 | 8.89 / 14.23 | 2.28 / 5.87 | 9.65 / 13.01 | 5.64 / 13.33 |
+| audiospylt-v1/matched | 8.40 / 10.56 | 4.42 / 6.31 | 1.37 / 2.50 | 4.37 / 4.73 | 3.18 / 7.06 |
+| audiospylt-v1/matched-nofade | 8.19 / 8.22 | 4.56 / 3.48 | 1.68 / 5.02 | 4.47 / 2.97 | 3.36 / 6.85 |
 | audiospylt-0.6/matched | 15.10 / 21.53 | 12.59 / 10.14 | 3.31 / 5.12 | 12.89 / 8.47 | 14.64 / 21.92 |
 | loris/matched | 8.46 / 12.90 | 5.40 / 8.09 | 1.93 / 3.63 | 6.25 / 5.91 | 3.90 / 7.58 |
-| loris/matched+asp | 11.66 / 14.43 | 6.31 / 8.73 | 2.09 / 4.28 | 6.79 / 7.38 | 4.35 / 8.57 |
+| loris/matched+asp | 11.39 / 13.91 | 6.08 / 8.50 | 2.00 / 3.88 | 6.34 / 6.76 | 4.24 / 8.31 |
 | loris/home | 6.30 / 11.87 | 5.10 / 8.47 | – | – | – |
-| loris/home+asp | 13.10 / 18.86 | 8.39 / 11.53 | – | – | – |
+| loris/home+asp | 9.85 / 13.41 | 6.38 / 9.21 | – | – | – |
 | sms-tools/matched | 10.83 / 11.55 | 7.18 / 8.93 | 1.26 / 2.52 | 8.99 / 7.85 | 2.85 / 6.88 |
-| sms-tools/matched+asp | 11.24 / 12.26 | 7.63 / 9.46 | 1.59 / 2.68 | 9.52 / 8.11 | 3.36 / 7.37 |
+| sms-tools/matched+asp | 10.98 / 11.82 | 7.45 / 9.14 | 1.48 / 2.61 | 9.30 / 7.92 | 3.26 / 7.23 |
 | sms-tools/home | – | – | 1.93 / 3.62 | 5.63 / 5.53 | 4.16 / 5.04 |
-| sms-tools/home+asp | – | – | 1.99 / 3.79 | 6.19 / 5.70 | 4.45 / 5.39 |
-| pm2-harmonic/matched+asp | 13.52 / 18.48 | 10.13 / 15.90 | 2.59 / 4.70 | 13.84 / 22.42 | 5.18 / 8.14 |
-| pm2-inharmonic/matched+asp | 14.49 / 23.31 | 12.66 / 22.33 | 3.02 / 5.79 | 15.31 / 25.04 | 6.55 / 15.14 |
+| sms-tools/home+asp | – | – | 1.97 / 3.68 | 6.17 / 5.64 | 4.45 / 5.37 |
+| pm2-harmonic/matched+asp | 13.51 / 18.41 | 10.13 / 15.88 | 2.59 / 4.64 | 13.84 / 22.42 | 5.18 / 8.11 |
+| pm2-inharmonic/matched+asp | 14.46 / 23.08 | 12.63 / 22.20 | 2.87 / 5.33 | 15.20 / 24.75 | 6.48 / 14.86 |
+
+**Band excess / deficit (dB)**
+
+| row | `loris-clarinet` | `loris-flute` | `sms-bendir` | `sms-vignesh` | `sms-sax-phrase-short` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| audiospylt-v1/default | 0.82 / 23.77 | 0.52 / 14.22 | 1.06 / 5.77 | 0.51 / 13.00 | 1.71 / 13.22 |
+| audiospylt-v1/matched | 1.66 / 10.43 | 0.56 / 6.28 | 1.19 / 2.20 | 0.63 / 4.69 | 2.03 / 6.76 |
+| audiospylt-v1/matched-nofade | 1.73 / 8.04 | 2.66 / 2.23 | 4.78 / 1.55 | 0.94 / 2.82 | 3.33 / 5.98 |
+| audiospylt-0.6/matched | 20.27 / 7.25 | 9.79 / 2.64 | 4.30 / 2.78 | 7.66 / 3.62 | 21.87 / 1.48 |
+| loris/matched | 0.48 / 12.89 | 0.29 / 8.08 | 0.78 / 3.55 | 0.70 / 5.86 | 1.46 / 7.44 |
+| loris/matched+asp | 0.35 / 13.91 | 0.10 / 8.50 | 0.09 / 3.88 | 0.23 / 6.75 | 0.85 / 8.27 |
+| loris/home | 0.10 / 11.87 | 0.37 / 8.47 | – | – | – |
+| loris/home+asp | 0.05 / 13.41 | 0.05 / 9.21 | – | – | – |
+| sms-tools/matched | 0.38 / 11.54 | 0.22 / 8.92 | 1.05 / 2.29 | 0.34 / 7.84 | 1.32 / 6.75 |
+| sms-tools/matched+asp | 1.58 / 11.72 | 0.29 / 9.14 | 1.02 / 2.40 | 0.42 / 7.91 | 1.80 / 7.00 |
+| sms-tools/home | – | – | 0.76 / 3.54 | 0.19 / 5.52 | 0.69 / 5.00 |
+| sms-tools/home+asp | – | – | 0.71 / 3.61 | 0.55 / 5.61 | 0.46 / 5.35 |
+| pm2-harmonic/matched+asp | 0.33 / 18.40 | 0.39 / 15.88 | 1.31 / 4.45 | 0.24 / 22.42 | 0.93 / 8.06 |
+| pm2-inharmonic/matched+asp | 1.41 / 23.03 | 0.14 / 22.20 | 0.63 / 5.29 | 0.38 / 24.75 | 1.43 / 14.80 |
 
 In short:
 
-- With the matched analysis, v1's per-frame peaks give the lowest LSDs on `bayle` and the flute, because they
-  keep every peak above −80 dBFS. On `de_natura_son` they need `fade=0.0025` to avoid clicks, which costs the
-  flute 5.3 dB of band LSD.
+- With the matched analysis and the library's default fades (`audiospylt-v1/matched`), v1's per-frame peaks
+  score lower than every tracker on `bayle` (bin / band LSD 6.45 / 1.11 dB) and the flute (7.05 / 11.67 dB;
+  Loris 7.08 / 12.39, sms-tools 7.31 / 12.23), because they keep every peak above −80 dBFS.
+- Without fades (`matched-nofade`), the unlinked rumble peaks of `de_natura_son` click (band LSD 29.98 dB
+  against 9.55 dB with fades). On the flute the same row scores a lower band LSD (6.46 dB), because its clicks
+  fill the high bands where the peaks miss the breath noise: its band deficit is 6.40 dB, against 11.65 dB with
+  fades.
 - Loris is the closest tracker on `bayle` (band LSD 2.02 dB, 0.9 dB above v1 with 14 % fewer points) and on
-  the flute's bin LSD. sms-tools is the closest on `de_natura_son`, where it also beats every v1 row. On
-  `bayle`, the sms-tools and PM2 limits on the number of partials show up as empty bands.
-- Played through `asp.synthesize` (frequency and amplitude only), the same tracks score 0.1–3.1 dB higher
+  the flute's bin LSD. sms-tools is the closest on `de_natura_son`, where it also beats every v1 row (bin /
+  band LSD 2.17 / 8.71 dB, v1 `matched` 2.56 / 9.55). On `bayle`, the sms-tools and PM2 limits on the number
+  of partials show up as empty bands.
+- Played through `asp.synthesize` (frequency and amplitude only), the same tracks score 0.1–2.6 dB higher
   than with the tool's own synthesizer on the case-study excerpts.
 - On the 18 common ICMC sounds, the authors' own renders of 2000 have mean bin LSDs of 4.09 (SMS) to 5.71 dB
-  (Loris `rs`) and median band LSDs of 3.11 to 5.34 dB. v1 `matched-fade` lies within that range (4.94 / 4.77);
+  (Loris `rs`) and median band LSDs of 3.11 to 5.34 dB. v1 `matched` lies within that range (4.82 / 4.69);
   today's tools at matched settings lie above it (Loris 6.18 / 6.82, sms-tools 8.37 / 8.25). The SMS 2000
   settings mapped onto sms-tools (`sms-tools/home`, 6.97 / 7.08) do not reach SMS's own 2000 renders; the
   mapping leaves out SMS 2000's residual, attack and synthesis settings.
 - On their own test sounds, the tools' home settings give the lowest bin LSD for Loris on the clarinet (6.30
-  against 8.19 for v1 `matched`); played through `asp.synthesize`, the same Loris tracks score 13.10. sms-tools
+  against 8.40 for v1 `matched`); played through `asp.synthesize`, the same Loris tracks score 9.85. sms-tools
   at matched settings has the lowest bin LSD on `sms-bendir` and `sms-sax-phrase-short`, and its home settings
-  the lowest band LSD on `sms-sax-phrase-short` (5.04). On the other cells a v1 matched row is lowest.
+  the lowest band LSD on `sms-sax-phrase-short` (5.04). On the other cells v1 `matched` is lowest, except that
+  `matched-nofade` has a lower band LSD on `loris-clarinet`, `loris-flute` and `sms-vignesh` (8.22, 3.48 and
+  2.97 against 10.56, 6.31 and 4.73 dB), with a lower band deficit, as on the case-study flute.
 
 ## Listening
 
@@ -474,6 +544,6 @@ code: it writes the matched templates to `OUT/partiels-templates/` and the mono 
 | `run_historical.py` | the authors' renders of 2000: resampling, shift, meta.json |
 | `evaluate.py` | scoring, listening WAVs, writes `results/` (no AudioSpylt import) |
 | `results/summary.md` | generated tables per set and the noise-pair floors |
-| `results/per_excerpt.csv` | bin LSD, band LSD and gain per set, row and sound, every PM2 run separately |
+| `results/per_excerpt.csv` | bin LSD, band LSD, gain, and bin/band excess and deficit per set, row and sound, every PM2 run separately |
 | `results/per_band.csv` | both LSDs per set, row, sound and band |
 | `results/repeats.csv` | mean, min and max over the PM2 inharmonic runs |

@@ -26,7 +26,7 @@ BIN_FLOOR = 1e-4  # bin LSD as in the 2026-10-10 audit: floor 80 dB below the re
 MIN_BINS = 8  # band LSD: third-octave bands merged upward until each holds this many STFT bins
 LISTEN_PEAK_DB = -1.0
 COVER, QUIET_DB = 0.9, -10.0  # summary notes: historical renders shorter than this share of their input, or quieter
-ORDER = ["audiospylt-v1/default", "audiospylt-v1/matched", "audiospylt-v1/matched-fade", "audiospylt-0.6/matched",
+ORDER = ["audiospylt-v1/default", "audiospylt-v1/matched", "audiospylt-v1/matched-nofade", "audiospylt-0.6/matched",
          "loris/matched", "loris/matched+asp", "loris/home", "loris/home+asp",
          "sms-tools/matched", "sms-tools/matched+asp", "sms-tools/home", "sms-tools/home+asp",
          "pm2-harmonic/matched+asp", "pm2-inharmonic/matched+asp",
@@ -34,6 +34,8 @@ ORDER = ["audiospylt-v1/default", "audiospylt-v1/matched", "audiospylt-v1/matche
 TITLES = {"case": "Case-study excerpts (`case`)", "icmc2000": "ICMC 2000 panel sounds (`icmc2000`)",
           "tools": "Test sounds of Loris and sms-tools (`tools`)"}
 METRICS = (("bin", "Bin LSD (dB)"), ("band", "Band LSD (dB)"), ("gain", "Gain (dB re excerpt RMS)"))
+EXCESS = (("bin_excess", "bin_deficit", "Bin excess / deficit (dB)"),
+          ("band_excess", "band_deficit", "Band excess / deficit (dB)"))
 
 
 def stft_size(sr: int) -> tuple[int, int]:
@@ -56,21 +58,40 @@ def magnitudes(x: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarray]:
     return f, np.abs(s)
 
 
+def _excess_deficit(d: np.ndarray) -> tuple[float, float]:
+    """RMS of the positive and negative parts of a signed dB difference (render − reference)."""
+    return float(np.sqrt(np.mean(np.maximum(d, 0.0) ** 2))), float(np.sqrt(np.mean(np.minimum(d, 0.0) ** 2)))
+
+
 def score(ref: np.ndarray, y: np.ndarray, sr: int) -> dict:
-    """Bin and band LSD (dB) over the whole excerpt and per band, plus the RMS gain re the reference."""
+    """Bin and band LSD (dB) over the whole excerpt and per band, plus the RMS gain re the reference.
+
+    Also returns bin/band excess and deficit (dB): the RMS of the positive and negative parts of
+    ``render_dB - reference_dB`` over the same cells as the LSD, so ``LSD**2 == excess**2 + deficit**2``.
+    """
     y = y[: ref.size] if y.size >= ref.size else np.pad(y, (0, ref.size - y.size))
     f, sx = magnitudes(ref, sr)
     _, sy = magnitudes(y, sr)
     floor = sx.max() * BIN_FLOOR
-    d_bin = (20 * np.log10(np.maximum(sx, floor)) - 20 * np.log10(np.maximum(sy, floor))) ** 2
+    dx = 20 * np.log10(np.maximum(sx, floor))
+    dy = 20 * np.log10(np.maximum(sy, floor))
+    signed_bin = dy - dx
+    d_bin = signed_bin ** 2
     edges = band_edges(sr)
     sel = [(f >= lo) & (f < hi) for lo, hi in zip(edges[:-1], edges[1:])]
     px = np.array([(sx[s] ** 2).sum(axis=0) for s in sel])
     py = np.array([(sy[s] ** 2).sum(axis=0) for s in sel])
     bfloor = px.max() * 1e-8  # 80 dB below the loudest band power
-    d_band = (10 * np.log10(np.maximum(px, bfloor)) - 10 * np.log10(np.maximum(py, bfloor))) ** 2
+    bx = 10 * np.log10(np.maximum(px, bfloor))
+    by = 10 * np.log10(np.maximum(py, bfloor))
+    signed_band = by - bx
+    d_band = signed_band ** 2
+    bin_excess, bin_deficit = _excess_deficit(signed_bin)
+    band_excess, band_deficit = _excess_deficit(signed_band)
     return {"bin": float(np.sqrt(d_bin.mean())), "band": float(np.sqrt(d_band.mean())),
             "gain": float(10 * np.log10(np.mean(y ** 2) / np.mean(ref ** 2))),
+            "bin_excess": bin_excess, "bin_deficit": bin_deficit,
+            "band_excess": band_excess, "band_deficit": band_deficit,
             "bands": [(float(np.sqrt(d_bin[s].mean())), float(np.sqrt(d_band[i].mean()))) for i, s in enumerate(sel)]}
 
 
@@ -123,15 +144,20 @@ def write_tables(results: pathlib.Path, known, rows, scores, floors, metas) -> N
     floor_rows = [("noise-pair", f"white noise, {sr} Hz", sr, f) for sr, f in floors.items()]
     with open(results / "per_excerpt.csv", "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["set", "row", "excerpt", "sr", "bin_lsd_db", "band_lsd_db", "gain_db"])
+        w.writerow(["set", "row", "excerpt", "sr", "bin_lsd_db", "band_lsd_db", "gain_db",
+                    "bin_excess_db", "bin_deficit_db", "band_excess_db", "band_deficit_db"])
         for s, members in sets.items():
             for row in rows:
                 for e in members:
                     if (row, e.name) in scores:
                         sc = scores[row, e.name]
-                        w.writerow([s, row, e.name, e.sr, f"{sc['bin']:.3f}", f"{sc['band']:.3f}", f"{sc['gain']:.3f}"])
+                        w.writerow([s, row, e.name, e.sr, f"{sc['bin']:.3f}", f"{sc['band']:.3f}", f"{sc['gain']:.3f}",
+                                    f"{sc['bin_excess']:.3f}", f"{sc['bin_deficit']:.3f}",
+                                    f"{sc['band_excess']:.3f}", f"{sc['band_deficit']:.3f}"])
         for row, name, sr, f in floor_rows:
-            w.writerow(["", row, name, sr, f"{f['bin']:.3f}", f"{f['band']:.3f}", f"{f['gain']:.3f}"])
+            w.writerow(["", row, name, sr, f"{f['bin']:.3f}", f"{f['band']:.3f}", f"{f['gain']:.3f}",
+                        f"{f['bin_excess']:.3f}", f"{f['bin_deficit']:.3f}",
+                        f"{f['band_excess']:.3f}", f"{f['band_deficit']:.3f}"])
     with open(results / "per_band.csv", "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["set", "row", "excerpt", "band_lo_hz", "band_hi_hz", "bin_lsd_db", "band_lsd_db"])
@@ -145,6 +171,7 @@ def write_tables(results: pathlib.Path, known, rows, scores, floors, metas) -> N
     for row in rows:
         groups.setdefault(group(row), []).append(row)
     ordered = [g for g in ORDER if g in groups] + sorted(set(groups) - set(ORDER))
+    repeat_metrics = [m for m, _ in METRICS] + [k for pair in EXCESS for k in pair[:2]]
     with open(results / "repeats.csv", "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["set", "row", "excerpt", "runs", "metric", "mean", "min", "max"])
@@ -153,7 +180,7 @@ def write_tables(results: pathlib.Path, known, rows, scores, floors, metas) -> N
                 for e in members:
                     got = [scores[r, e.name] for r in groups[g] if (r, e.name) in scores]
                     if len(got) > 1:
-                        for m, _ in METRICS:
+                        for m in repeat_metrics:
                             v = [sc[m] for sc in got]
                             w.writerow([s, g, e.name, len(v), m, f"{np.mean(v):.3f}", f"{min(v):.3f}", f"{max(v):.3f}"])
 
@@ -168,6 +195,12 @@ def write_tables(results: pathlib.Path, known, rows, scores, floors, metas) -> N
             return f"{v[0]:.2f}"
         return f"{np.mean(v):.2f} ({min(v):.2f}–{max(v):.2f})"
 
+    def excess_cell(g: str, name: str, excess: str, deficit: str) -> str:
+        e, d = runs(g, name, excess), runs(g, name, deficit)
+        if not e:
+            return "–"
+        return f"{np.mean(e):.2f} / {np.mean(d):.2f}"
+
     def bands_line(sr: int) -> str:
         edges = band_edges(sr)
         return (f"Bands at {sr} Hz ({len(edges) - 1}): "
@@ -176,7 +209,8 @@ def write_tables(results: pathlib.Path, known, rows, scores, floors, metas) -> N
     lines = ["# Resynthesis fidelity: results", "",
              "Generated by `evaluate.py`. LSD in dB, lower is better; gain is the RMS level of the render re the "
              "excerpt. \"–\": the row has no render of that excerpt. Rows with several runs show the mean and "
-             "(min–max). Every excerpt is scored at its own rate (STFT frame 46.4 ms, hop 11.6 ms).", "",
+             "(min–max), or the means alone in the excess / deficit tables (render louder / quieter than the "
+             "excerpt; LSD² = excess² + deficit²). Every excerpt is scored at its own rate (STFT frame 46.4 ms, hop 11.6 ms).", "",
              "Noise-pair floor (two independent white-noise realisations, 10 s), bin / band LSD: "
              + "; ".join(f"{sr} Hz {f['bin']:.2f} / {f['band']:.2f} dB" for sr, f in floors.items()) + ".", ""]
     for s, members in sets.items():
@@ -191,6 +225,15 @@ def write_tables(results: pathlib.Path, known, rows, scores, floors, metas) -> N
                     n_runs = max(len(runs(g, n, m)) for n in names)  # PM2 inharmonic ran 5 times on `case` only
                     label = g + (f" ({n_runs} runs)" if n_runs > 1 else "")
                     lines.append(f"| {label} | " + " | ".join(cell(g, n, m) for n in names) + " |")
+                lines.append("")
+            for excess, deficit, title in EXCESS:
+                lines += [f"**{title}**", "", "| row | " + " | ".join(names) + " |",
+                          "| --- |" + " ---: |" * len(names)]
+                for g in present:
+                    n_runs = max(len(runs(g, n, excess)) for n in names)
+                    label = g + (f" ({n_runs} runs)" if n_runs > 1 else "")
+                    lines.append(f"| {label} | " + " | ".join(
+                        excess_cell(g, n, excess, deficit) for n in names) + " |")
                 lines.append("")
         else:
             hist = [g for g in present if historical(g)]
@@ -207,6 +250,28 @@ def write_tables(results: pathlib.Path, known, rows, scores, floors, metas) -> N
                     agg = f"{np.mean(on):.2f} | {np.median(on):.2f}" if len(on) == len(common) else "– | –"
                     lines.append(f"| {g} | {len(per)} | {np.mean(list(per.values())):.2f} | "
                                  f"{np.median(list(per.values())):.2f} | {agg} |")
+                lines.append("")
+            for excess, deficit, title in EXCESS:
+                lines += [f"**{title}**", "", f"| row | n | mean | median | mean ({len(common)}) | "
+                          f"median ({len(common)}) |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
+                for g in present:
+                    per_e = {n: float(np.mean(runs(g, n, excess))) for n in names if runs(g, n, excess)}
+                    per_d = {n: float(np.mean(runs(g, n, deficit))) for n in names if runs(g, n, deficit)}
+                    if not per_e:
+                        continue
+                    on_e = [per_e[n] for n in common if n in per_e]
+                    on_d = [per_d[n] for n in common if n in per_d]
+                    if len(on_e) == len(common):
+                        agg = (f"{np.mean(on_e):.2f} / {np.mean(on_d):.2f} | "
+                               f"{np.median(on_e):.2f} / {np.median(on_d):.2f}")
+                    else:
+                        agg = "– | –"
+                    lines.append(
+                        f"| {g} | {len(per_e)} | "
+                        f"{np.mean(list(per_e.values())):.2f} / {np.mean(list(per_d.values())):.2f} | "
+                        f"{np.median(list(per_e.values())):.2f} / {np.median(list(per_d.values())):.2f} | "
+                        f"{agg} |"
+                    )
                 lines.append("")
             short = [(g, n, d) for g in hist for r in groups[g] for n, d in metas[r]["excerpts"].items()
                      if n in names and d["render_s"] < COVER * d["input_s"]]

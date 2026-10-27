@@ -1,5 +1,6 @@
 """Additive synthesis (D9 phase modes, half-open sample grid, Nyquist), snapshot and tracks conversion."""
 
+import inspect
 import warnings
 from decimal import Decimal
 
@@ -13,7 +14,7 @@ from audiospylt.analysis.spectrum import spectrum
 from audiospylt.model.convert import snapshot_to_events, tracks_to_events
 from audiospylt.model.schema import SchemaError, validate
 from audiospylt.plot_wave import plot_waves
-from audiospylt.synth.additive import synthesize
+from audiospylt.synth.additive import _sample_index, synthesize
 
 SR = 44100
 COLUMNS = ["time_start", "time_stop", "freq_start", "freq_stop", "amp_start", "amp_stop"]
@@ -73,16 +74,16 @@ def test_abutting_events_cover_each_sample_once():
     one = _events([(0.0, 0.1, 1001.3, 1001.3, 0.5, 0.5)])
     two = _events([(0.0, 0.05, 1001.3, 1001.3, 0.5, 0.5), (0.05, 0.1, 1001.3, 1001.3, 0.5, 0.5)])
     for phase in ("absolute", "continuous"):
-        np.testing.assert_allclose(synthesize(two, SR, phase=phase), synthesize(one, SR, phase=phase),
+        np.testing.assert_allclose(synthesize(two, SR, phase=phase, fade=0), synthesize(one, SR, phase=phase, fade=0),
                                    rtol=0, atol=1e-12)
-    assert synthesize(one, SR).shape == (4410,)
+    assert synthesize(one, SR, fade=0).shape == (4410,)
     # 1001.3 Hz * 50 ms is not a whole number of cycles, so a reset is audible.
-    assert np.abs(synthesize(two, SR, phase="reset") - synthesize(one, SR, phase="reset")).max() > 0.1
+    assert np.abs(synthesize(two, SR, phase="reset", fade=0) - synthesize(one, SR, phase="reset", fade=0)).max() > 0.1
 
 
 def test_membership_is_half_open_and_absorbs_float_noise():
     assert 1.1 * SR > 48510  # 48510.00000000001: a plain ceil would skip sample 48510
-    y = synthesize(_events([(0.7, 1.1, 441.0, 441.0, 1.0, 1.0)]), SR, phase="absolute")
+    y = synthesize(_events([(0.7, 1.1, 441.0, 441.0, 1.0, 1.0)]), SR, phase="absolute", fade=0)
     assert y.shape == (48510,)
     n = np.arange(30870, 48510)
     assert not y[:30870].any()
@@ -94,19 +95,19 @@ def test_membership_is_half_open_and_absorbs_float_noise():
 
 def test_continuous_integrates_phase_across_a_voice():
     n = 4719  # ceil(0.107 * 44100)
-    y = synthesize(_events(VOICE), SR)
+    y = synthesize(_events(VOICE), SR, fade=0)
     np.testing.assert_allclose(y, _render([VOICE], n), rtol=0, atol=1e-9)
-    np.testing.assert_allclose(synthesize(_events(VOICE), SR, link_cents=None), y, rtol=0, atol=0)
+    np.testing.assert_allclose(synthesize(_events(VOICE), SR, link_cents=None, fade=0), y, rtol=0, atol=0)
 
 
 def test_link_cents_limits_continuous_links():
-    y = synthesize(_events(VOICE), SR, link_cents=50)  # the 68-cent step is not linked
+    y = synthesize(_events(VOICE), SR, link_cents=50, fade=0)  # the 68-cent step is not linked
     expected = _render([VOICE[:2], VOICE[2:]], 4719)
     np.testing.assert_allclose(y, expected, rtol=0, atol=1e-9)
 
 
 def test_reset_starts_every_row_at_zero_and_matches_06_reset_and_chirp():
-    y = synthesize(_events(VOICE), SR, phase="reset")
+    y = synthesize(_events(VOICE), SR, phase="reset", fade=0)
     np.testing.assert_allclose(y, _render([[row] for row in VOICE], 4719), rtol=0, atol=1e-9)
     for mode in ("reset", "chirp"):
         old = plot_waves(_legacy(VOICE), k=1 / SR, interval_mode="half_open", phase_mode=mode,
@@ -115,7 +116,7 @@ def test_reset_starts_every_row_at_zero_and_matches_06_reset_and_chirp():
 
 
 def test_absolute_uses_global_time_and_matches_06_global():
-    y = synthesize(_events(VOICE), SR, phase="absolute")
+    y = synthesize(_events(VOICE), SR, phase="absolute", fade=0)
     starts = [f0 * ts for ts, _, f0, *_ in VOICE]
     np.testing.assert_allclose(y, _render([[row] for row in VOICE], 4719, starts), rtol=0, atol=1e-9)
     t = np.arange(1632) / SR  # constant first row: plain sin(2 pi f t)
@@ -126,7 +127,7 @@ def test_absolute_uses_global_time_and_matches_06_global():
 
 
 def test_the_three_modes_differ():
-    ys = {mode: synthesize(_events(VOICE), SR, phase=mode) for mode in ("continuous", "reset", "absolute")}
+    ys = {mode: synthesize(_events(VOICE), SR, phase=mode, fade=0) for mode in ("continuous", "reset", "absolute")}
     for a, b in (("continuous", "reset"), ("continuous", "absolute"), ("reset", "absolute")):
         assert np.abs(ys[a] - ys[b]).max() > 0.01
 
@@ -136,7 +137,7 @@ def test_links_are_one_to_one_nearest_first():
             (0.05, 0.1, 450.0, 450.0, 0.3, 0.3), (0.05, 0.1, 445.0, 445.0, 0.3, 0.3)]
     # cents: 452->450 (7.7) first, then 440->445 (19.6)
     expected = _render([[rows[0], rows[3]], [rows[1], rows[2]]], 4410)
-    np.testing.assert_allclose(synthesize(_events(rows), SR), expected, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(synthesize(_events(rows), SR, fade=0), expected, rtol=0, atol=1e-9)
     crossed = _render([[rows[0], rows[2]], [rows[1], rows[3]]], 4410)
     assert np.abs(expected - crossed).max() > 0.01
 
@@ -146,23 +147,23 @@ def test_track_id_restricts_links():
             (0.05, 0.1, 450.0, 450.0, 0.3, 0.3), (0.05, 0.1, 445.0, 445.0, 0.3, 0.3)]
     expected = _render([[rows[0], rows[2]], [rows[1], rows[3]]], 4410)
     for ids in ([1, 2, 1, 2], [1.0, 2.0, 1.0, 2.0], pd.array([1, 2, 1, 2], dtype="Int64")):
-        y = synthesize(_events(rows, track_id=ids), SR)
+        y = synthesize(_events(rows, track_id=ids), SR, fade=0)
         np.testing.assert_allclose(y, expected, rtol=0, atol=1e-9)
     with pytest.raises(ValueError, match="track_id"):
-        synthesize(_events(rows, track_id=[1, 2, np.nan, 2]), SR)
+        synthesize(_events(rows, track_id=[1, 2, np.nan, 2]), SR, fade=0)
     with pytest.raises(ValueError, match="track_id"):
-        synthesize(_events(rows, track_id=[1, 2, 1.5, 2]), SR)
+        synthesize(_events(rows, track_id=[1, 2, 1.5, 2]), SR, fade=0)
     with pytest.raises(ValueError, match="track_id"):
-        synthesize(_events(rows, track_id=["1", "2", "1", "2"]), SR)
+        synthesize(_events(rows, track_id=["1", "2", "1", "2"]), SR, fade=0)
     # Only continuous mode reads track_id.
-    synthesize(_events(rows, track_id=[1, 2, np.nan, 2]), SR, phase="reset")
+    synthesize(_events(rows, track_id=[1, 2, np.nan, 2]), SR, phase="reset", fade=0)
 
 
 def test_a_gap_of_one_sample_breaks_the_link():
     # The first row covers samples 0..2204; the second starts at 2206, leaving 2205 empty.
     rows = [(0.0, 0.05, 441.3, 441.3, 0.5, 0.5), (0.05 + 1 / SR, 0.1, 441.3, 441.3, 0.5, 0.5)]
     expected = _render([[rows[0]], [rows[1]]], 4410)
-    np.testing.assert_allclose(synthesize(_events(rows), SR), expected, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(synthesize(_events(rows), SR, fade=0), expected, rtol=0, atol=1e-9)
 
 
 def test_track_ids_above_2_53_stay_distinct():
@@ -170,26 +171,26 @@ def test_track_ids_above_2_53_stay_distinct():
     rows = [(0.0, 0.05, 441.3, 441.3, 0.5, 0.5), (0.05, 0.1, 441.3, 441.3, 0.5, 0.5)]
     ids = [Decimal(2**53), Decimal(2**53 + 1)]
     expected = _render([[rows[0]], [rows[1]]], 4410)
-    np.testing.assert_allclose(synthesize(_events(rows, track_id=ids), SR), expected, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(synthesize(_events(rows, track_id=ids), SR, fade=0), expected, rtol=0, atol=1e-9)
 
 
 def test_off_grid_rows_meeting_on_one_sample_hand_over_at_the_successor_start():
     # Both times map to boundary sample 2205; the join must equal one unbroken row.
     rows = [(0.0, 2204.5 / SR, 440.0, 440.0, 0.5, 0.5), (2205 / SR, 0.1, 440.0, 440.0, 0.5, 0.5)]
-    whole = synthesize(_events([(0.0, 0.1, 440.0, 440.0, 0.5, 0.5)]), SR)
-    np.testing.assert_allclose(synthesize(_events(rows), SR), whole, rtol=0, atol=1e-9)
+    whole = synthesize(_events([(0.0, 0.1, 440.0, 440.0, 0.5, 0.5)]), SR, fade=0)
+    np.testing.assert_allclose(synthesize(_events(rows), SR, fade=0), whole, rtol=0, atol=1e-9)
 
 
 def test_zero_hz_and_zero_length_rows_are_silent_and_never_linked():
     rows = [(0.0, 0.05, 441.3, 441.3, 0.5, 0.5), (0.05, 0.1, 0.0, 0.0, 1.0, 1.0),
             (0.05, 0.05, 441.3, 441.3, 1.0, 1.0), (0.1, 0.15, 441.3, 441.3, 0.5, 0.5)]
-    y = synthesize(_events(rows), SR)
+    y = synthesize(_events(rows), SR, fade=0)
     assert not y[2205:4410].any()  # 0 Hz after a 441 Hz row: no DC from an inherited phase
     expected = _render([[rows[0]], [rows[3]]], 6615)
     np.testing.assert_allclose(y, expected, rtol=0, atol=1e-9)
     # Only the side touching the boundary must be above 0 Hz: a glide up from 0 Hz still links.
     glide = [(0.0, 0.05, 0.0, 441.3, 0.5, 0.5), (0.05, 0.1, 441.3, 441.3, 0.5, 0.5)]
-    np.testing.assert_allclose(synthesize(_events(glide), SR), _render([glide], 4410), rtol=0, atol=1e-9)
+    np.testing.assert_allclose(synthesize(_events(glide), SR, fade=0), _render([glide], 4410), rtol=0, atol=1e-9)
 
 
 # ---------------------------------------------------------------- fades, Nyquist, duration
@@ -245,13 +246,13 @@ def test_link_ramp_replaces_amplitude_steps_with_a_raised_cosine(rows, half, lef
     inside = (t >= centre - half) & (t < centre + half)
     ramp = left + (right - left) * _raised_cosine((t - centre + half) / (2 * half))
     envelope = np.where(inside, ramp, lines)
-    y = synthesize(_events(rows), SR, link_ramp=0.005)
+    y = synthesize(_events(rows), SR, link_ramp=0.005, fade=0)
     np.testing.assert_allclose(y, _carrier(rows, n) * envelope, rtol=0, atol=1e-9)
-    np.testing.assert_allclose(synthesize(_events(rows), SR), y, rtol=0, atol=0)  # 5 ms is the default
+    np.testing.assert_allclose(synthesize(_events(rows), SR, fade=0), y, rtol=0, atol=0)  # 5 ms is the default
     # The envelope has no jump: neighbouring samples differ by far less than the 0.4 step.
     assert np.abs(np.diff(envelope)).max() < 0.02
     # link_ramp=0 keeps the hard step.
-    np.testing.assert_allclose(synthesize(_events(rows), SR, link_ramp=0), _carrier(rows, n) * lines,
+    np.testing.assert_allclose(synthesize(_events(rows), SR, link_ramp=0, fade=0), _carrier(rows, n) * lines,
                                rtol=0, atol=1e-9)
 
 
@@ -260,11 +261,11 @@ def test_link_ramp_needs_a_link_and_a_step():
     for kwargs in ({"phase": "reset"}, {"phase": "absolute"}, {"link_cents": 0.0, "track_id": [1, 2]}):
         track = kwargs.pop("track_id", None)
         events = _events(step) if track is None else _events(step, track_id=track)
-        np.testing.assert_array_equal(synthesize(events, SR, link_ramp=0.01, **kwargs),
-                                      synthesize(events, SR, link_ramp=0, **kwargs))
+        np.testing.assert_array_equal(synthesize(events, SR, link_ramp=0.01, **kwargs, fade=0),
+                                      synthesize(events, SR, link_ramp=0, **kwargs, fade=0))
     # Without a step the amplitude lines stay (VOICE has none at its links).
-    np.testing.assert_array_equal(synthesize(_events(VOICE), SR, link_ramp=0.01),
-                                  synthesize(_events(VOICE), SR, link_ramp=0))
+    np.testing.assert_array_equal(synthesize(_events(VOICE), SR, link_ramp=0.01, fade=0),
+                                  synthesize(_events(VOICE), SR, link_ramp=0, fade=0))
 
 
 def test_link_ramp_and_voice_fades_multiply():
@@ -272,18 +273,18 @@ def test_link_ramp_and_voice_fades_multiply():
     t = np.arange(4410) / SR
     fades = _raised_cosine(t / 0.03) * _raised_cosine((0.1 - t) / 0.03)
     np.testing.assert_allclose(synthesize(_events(rows), SR, fade=0.03),
-                               synthesize(_events(rows), SR) * fades, rtol=0, atol=1e-12)
+                               synthesize(_events(rows), SR, fade=0) * fades, rtol=0, atol=1e-12)
 
 
 def test_nyquist_drop_warns_and_alias_folds():
     rows = [(0.0, 0.1, 30000.0, 30000.0, 0.5, 0.5)]
     with pytest.warns(UserWarning, match=r"1 event\(s\) reach the Nyquist frequency 22050 Hz"):
-        dropped = synthesize(_events(rows), SR)
+        dropped = synthesize(_events(rows), SR, fade=0)
     assert dropped.shape == (4410,) and not dropped.any()
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        folded = synthesize(_events(rows), SR, nyquist="alias")
-        synthesize(_events([(0.0, 0.1, 22000.0, 22000.0, 0.5, 0.5)]), SR)
+        folded = synthesize(_events(rows), SR, nyquist="alias", fade=0)
+        synthesize(_events([(0.0, 0.1, 22000.0, 22000.0, 0.5, 0.5)]), SR, fade=0)
     peaks = find_peaks(spectrum(folded, SR), min_db=-20)
     assert len(peaks) == 1
     assert peaks.freq[0] == pytest.approx(14100.0, abs=0.01)
@@ -292,12 +293,12 @@ def test_nyquist_drop_warns_and_alias_folds():
 
 def test_nyquist_drop_gates_samples_not_rows():
     with pytest.warns(UserWarning, match="Nyquist"):
-        top = synthesize(_events([(0.0, 0.01, SR / 2, SR / 2, 1.0, 1.0)]), SR, phase="absolute")
+        top = synthesize(_events([(0.0, 0.01, SR / 2, SR / 2, 1.0, 1.0)]), SR, phase="absolute", fade=0)
     assert not top.any()
     rows = [(0.0, 0.1, 21000.0, 23000.0, 0.5, 0.5)]  # crosses 22050 Hz at 52.5 ms
     with pytest.warns(UserWarning, match="Nyquist"):
-        y = synthesize(_events(rows), SR)
-    alias = synthesize(_events(rows), SR, nyquist="alias")
+        y = synthesize(_events(rows), SR, fade=0)
+    alias = synthesize(_events(rows), SR, nyquist="alias", fade=0)
     crossing = int(np.ceil(0.0525 * SR))
     np.testing.assert_array_equal(y[:crossing], alias[:crossing])
     assert not y[crossing:].any() and np.abs(y[:crossing]).max() > 0.4
@@ -305,18 +306,18 @@ def test_nyquist_drop_gates_samples_not_rows():
 
 def test_duration_pads_or_cuts():
     events = _events(VOICE)
-    full = synthesize(events, SR)
-    longer = synthesize(events, SR, duration=0.2)
+    full = synthesize(events, SR, fade=0)
+    longer = synthesize(events, SR, duration=0.2, fade=0)
     assert longer.shape == (8820,)
     np.testing.assert_array_equal(longer[: full.size], full)
     assert not longer[full.size:].any()
-    np.testing.assert_array_equal(synthesize(events, SR, duration=0.05), full[:2205])
+    np.testing.assert_array_equal(synthesize(events, SR, duration=0.05, fade=0), full[:2205])
 
 
 def test_empty_table():
     empty = _events([])
-    assert synthesize(empty, SR).shape == (0,)
-    np.testing.assert_array_equal(synthesize(empty, SR, duration=0.01), np.zeros(441))
+    assert synthesize(empty, SR, fade=0).shape == (0,)
+    np.testing.assert_array_equal(synthesize(empty, SR, duration=0.01, fade=0), np.zeros(441))
 
 
 # ---------------------------------------------------------------- validation
@@ -325,13 +326,13 @@ def test_empty_table():
 def test_invalid_arguments():
     events = _events(VOICE)
     with pytest.raises(SchemaError, match="upgrade"):
-        synthesize(_legacy(VOICE), SR)
+        synthesize(_legacy(VOICE), SR, fade=0)
     with pytest.raises(SchemaError, match="time_stop"):
-        synthesize(_events([(0.1, 0.05, 440.0, 440.0, 1.0, 1.0)]), SR)
+        synthesize(_events([(0.1, 0.05, 440.0, 440.0, 1.0, 1.0)]), SR, fade=0)
     with pytest.raises(ValueError, match="phase='absolute'"):
-        synthesize(events, SR, phase="global")
+        synthesize(events, SR, phase="global", fade=0)
     with pytest.raises(ValueError, match="phase='reset'"):
-        synthesize(events, SR, phase="chirp")
+        synthesize(events, SR, phase="chirp", fade=0)
     for kwargs in ({"phase": "random"}, {"phase": ["reset"]}, {"nyquist": "fold"}, {"link_cents": -1.0},
                    {"link_cents": np.nan}, {"link_ramp": -0.001}, {"link_ramp": np.nan}, {"link_ramp": "5 ms"},
                    {"fade": -0.1}, {"fade": np.inf}, {"duration": -1.0}):
@@ -339,7 +340,7 @@ def test_invalid_arguments():
             synthesize(events, SR, **kwargs)
     for sr in (0, 44100.0, True):
         with pytest.raises(ValueError, match="sr"):
-            synthesize(events, sr)
+            synthesize(events, sr, fade=0)
 
 
 def test_input_table_is_not_modified():
@@ -379,7 +380,7 @@ def test_frame_based_resynthesis_log_spectral_distance(gliss, phase, limit):
     x = _test_signal(gliss)
     events = _frame_events(x)
     assert len(events) == 100
-    assert _lsd(x, synthesize(events, SR, phase=phase)[: x.size]) < limit
+    assert _lsd(x, synthesize(events, SR, phase=phase, fade=0)[: x.size]) < limit
 
 
 @pytest.mark.parametrize("phase", ["continuous", "reset", "absolute"])
@@ -387,15 +388,183 @@ def test_stationary_snapshot_resynthesis(phase):
     x = _test_signal(False)
     events = snapshot_to_events(find_peaks(spectrum(x, SR), min_db=-40, prominence_db=20), 0.0, 1.0)
     assert len(events) == 5
-    assert _lsd(x, synthesize(events, SR, phase=phase)) < 0.01  # measured 0.0003 dB
+    assert _lsd(x, synthesize(events, SR, phase=phase, fade=0)) < 0.01  # measured 0.0003 dB
 
 
 
 def test_nyquist_drop_never_evaluates_gated_samples():
     events = _events([(0.0, 1.0, 1e308, 1e308, 1.0, 1.0), (0.0, 1.0, 1.0, 1.0, 0.5, 0.5)])
     with pytest.warns(UserWarning, match="1 event"):
-        y = synthesize(events, 8)
+        y = synthesize(events, 8, fade=0)
     np.testing.assert_allclose(y, 0.5 * np.sin(2 * np.pi * np.arange(8) / 8), rtol=0, atol=1e-12)
+
+
+# ---------------------------------------------------------------- centred fades (D29)
+
+
+def _centred_reference(row, sr, fade, n_samples, *, ext=None):
+    """Closed-form faded render of one continuous-mode voice; ``ext`` = (start, stop) extension, 0 = inside."""
+    ts, te, f0, f1, a0, a1 = row
+    ext_start, ext_stop = (fade / 2, fade / 2) if ext is None else ext
+    first = max(int(_sample_index(ts - ext_start, sr)), 0)
+    stop = min(int(_sample_index(te + ext_stop, sr)), n_samples)
+    times = np.arange(first, stop) / sr
+    tau = times - ts
+    span = te - ts
+    frac = np.clip(tau / span, 0.0, 1.0)
+    cycles = np.where(
+        tau <= span,
+        tau * (f0 + 0.5 * (f1 - f0) * frac),
+        span * 0.5 * (f0 + f1) + (tau - span) * f1,
+    )
+    amp = a0 + (a1 - a0) * frac
+    rise = np.clip((times - (ts - ext_start)) / fade, 0.0, 1.0)
+    fall = np.clip((te + ext_stop - times) / fade, 0.0, 1.0)
+    gain = _raised_cosine(rise) * _raised_cosine(fall)
+    out = np.zeros(n_samples)
+    out[first:stop] = amp * gain * np.sin(2 * np.pi * cycles)
+    return out
+
+
+def _inside_reference(row, sr, fade, n_samples, *, phase="reset"):
+    """Closed-form inside-ramp fade for one row (reset/absolute)."""
+    ts, te, f0, f1, a0, a1 = row
+    first = int(_sample_index(ts, sr))
+    stop = min(int(_sample_index(te, sr)), n_samples)
+    if stop <= first:
+        return np.zeros(n_samples)
+    times = np.arange(first, stop) / sr
+    tau = times - ts
+    span = te - ts
+    frac = tau / span
+    if phase == "absolute":
+        start = np.mod(f0 * ts, 1.0)
+    else:
+        start = 0.0
+    cycles = start + tau * (f0 + 0.5 * (f1 - f0) * frac)
+    amp = (a0 + (a1 - a0) * frac) * _raised_cosine((times - ts) / fade) * _raised_cosine((te - times) / fade)
+    out = np.zeros(n_samples)
+    out[first:stop] = amp * np.sin(2 * np.pi * cycles)
+    return out
+
+
+def test_centred_fade_matches_closed_form_constant_and_glide():
+    fade = 0.005
+    # Distant second row sets the output length so the first voice is away from both edges.
+    pad = [(0.5, 0.55, 100.0, 100.0, 0.0, 0.0)]
+    constant = (0.1, 0.15, 1000.0, 1000.0, 0.4, 0.4)
+    glide = (0.1, 0.15, 800.0, 1200.0, 0.2, 0.5)
+    for row in (constant, glide):
+        ev = _events([row, *pad])
+        y = synthesize(ev, SR, fade=fade)
+        expected = _centred_reference(row, SR, fade, y.size)
+        np.testing.assert_allclose(y, expected, rtol=0, atol=1e-12)
+
+
+def test_centred_fade_gain_is_half_at_the_voice_ends():
+    # A centred raised cosine has g(end - d) + g(end + d) = 1 on each ramp, so g = 0.5 at both ends.
+    fade, f, a = 0.005, 1001.3, 0.4
+    y = synthesize(_events([(0.1, 0.15, f, f, a, a), (0.5, 0.55, 100.0, 100.0, 0.0, 0.0)]), SR, fade=fade)
+    k = np.arange(1, 110)  # 110 samples < fade / 2
+    for end, cycles in ((0.1, 0.0), (0.15, 0.05 * f)):
+        n = int(_sample_index(end, SR))
+        after, before = np.sin(2 * np.pi * (cycles + f * k / SR)), np.sin(2 * np.pi * (cycles - f * k / SR))
+        ok = (np.abs(after) > 0.2) & (np.abs(before) > 0.2)
+        assert ok.sum() > 50
+        gains = y[n + k] / (a * after) + y[n - k] / (a * before)
+        np.testing.assert_allclose(gains[ok], 1.0, rtol=0, atol=1e-9)
+
+
+def test_one_hop_voice_level_centred_vs_inside():
+    # 256 samples at 44.1 kHz = one hop; place away from t=0 so the start can centre.
+    n, fade = 256, 0.005
+    t0, t1 = 0.05, 0.05 + n / SR
+    row = (t0, t1, 1000.0, 1000.0, 1.0, 1.0)
+    pad = [(0.5, 0.55, 100.0, 100.0, 0.0, 0.0)]
+    ev = _events([row, *pad])
+    plain = synthesize(ev, SR, fade=0.0)
+    centred = synthesize(ev, SR)  # default fade
+    T = n / SR
+    expected_db = 10 * np.log10((T - fade / 4) / T)
+    assert expected_db == pytest.approx(-1.053, abs=0.001)
+    # Squared raised-cosine envelope energy matches the continuous formula within 0.02 dB.
+    ext = fade / 2
+    tt = np.arange(int(_sample_index(t0 - ext, SR)), int(_sample_index(t1 + ext, SR))) / SR
+    g2 = (_raised_cosine((tt - (t0 - ext)) / fade) * _raised_cosine((t1 + ext - tt) / fade)) ** 2
+    assert 10 * np.log10(np.sum(g2) / n) == pytest.approx(expected_db, abs=0.02)
+    # Audio energy at 1 kHz over one hop sits ~0.023 dB from the envelope formula (sin^2 not flat).
+    energy_db = 10 * np.log10(np.sum(centred**2) / np.sum(plain**2))
+    assert energy_db == pytest.approx(expected_db, abs=0.03)
+    inside = synthesize(ev, SR, phase="reset", fade=fade)
+    inside_db = 10 * np.log10(np.sum(inside**2) / np.sum(synthesize(ev, SR, phase="reset", fade=0.0)**2))
+    assert inside_db == pytest.approx(-12.55, abs=0.1)
+
+
+def test_edge_rule_keeps_ramps_inside_the_output():
+    fade = 0.005
+    half = fade / 2
+    cases = [  # row, duration, (start, stop) extension
+        ((0.0, 0.05, 1001.3, 1001.3, 1.0, 1.0), None, (0.0, 0.0)),  # starts at 0, stops at the output end
+        ((0.001, 0.05, 1001.3, 1001.3, 1.0, 1.0), None, (0.0, 0.0)),  # 1 ms in: half a ramp does not fit
+        ((0.05, 0.1, 1001.3, 1001.3, 1.0, 1.0), None, (half, 0.0)),  # stops at the output end
+        ((0.05, 0.1, 1001.3, 1001.3, 1.0, 1.0), 0.2, (half, half)),  # room after the stop
+    ]
+    for row, duration, ext in cases:
+        events = _events([row])
+        y = synthesize(events, SR, fade=fade, duration=duration)
+        assert y.shape == synthesize(events, SR, fade=0.0, duration=duration).shape
+        np.testing.assert_allclose(y, _centred_reference(row, SR, fade, y.size, ext=ext), rtol=0, atol=1e-12)
+
+
+def test_linked_chain_interior_equals_unfaded():
+    rows = [
+        (0.1, 0.15, 1000.0, 1000.0, 0.5, 0.5),
+        (0.15, 0.20, 1000.0, 1000.0, 0.2, 0.2),
+        (0.20, 0.25, 1000.0, 1000.0, 0.4, 0.4),
+    ]
+    pad = [(0.5, 0.55, 100.0, 100.0, 0.0, 0.0)]
+    ev = _events([*rows, *pad])
+    fade = 0.005
+    faded = synthesize(ev, SR, fade=fade)
+    plain = synthesize(ev, SR, fade=0.0)
+    vs, ve = 0.1, 0.25
+    lo = int(_sample_index(vs + fade / 2, SR))
+    hi = int(_sample_index(ve - fade / 2, SR))
+    np.testing.assert_array_equal(faded[lo:hi], plain[lo:hi])
+
+
+@pytest.mark.parametrize("phase", ["reset", "absolute"])
+@pytest.mark.parametrize("fade", [0.0025, 0.005])
+def test_reset_and_absolute_keep_inside_ramps(phase, fade):
+    row = (0.05, 0.12, 880.0, 920.0, 0.3, 0.6)
+    pad = [(0.4, 0.45, 100.0, 100.0, 0.0, 0.0)]
+    ev = _events([row, *pad])
+    y = synthesize(ev, SR, phase=phase, fade=fade)
+    expected = _inside_reference(row, SR, fade, y.size, phase=phase)
+    np.testing.assert_allclose(y, expected, rtol=0, atol=1e-12)
+
+
+def test_default_fade_is_five_ms_and_matches_explicit():
+    assert inspect.signature(synthesize).parameters["fade"].default == 0.005
+    row = (0.1, 0.2, 440.0, 440.0, 0.5, 0.5)
+    pad = [(0.5, 0.55, 100.0, 100.0, 0.0, 0.0)]
+    ev = _events([row, *pad])
+    np.testing.assert_array_equal(synthesize(ev, SR), synthesize(ev, SR, fade=0.005))
+
+
+def test_zero_length_row_stays_silent_and_short_voice_overlaps():
+    # Row shorter than one sample, between sample instants.
+    between = _events([(1.5 / SR, 1.75 / SR, 1000.0, 1000.0, 1.0, 1.0),
+                       (0.1, 0.11, 100.0, 100.0, 0.0, 0.0)])
+    y = synthesize(between, SR)  # default fade
+    assert not y.any()
+    # Voice shorter than fade: overlapping ramps, peak below row amp.
+    short = _events([(0.1, 0.102, 1000.0, 1000.0, 0.8, 0.8),
+                     (0.5, 0.55, 100.0, 100.0, 0.0, 0.0)])
+    y_short = synthesize(short, SR, fade=0.005)
+    assert np.isfinite(y_short).all()
+    assert np.abs(y_short).max() < 0.8
+
 
 # ---------------------------------------------------------------- snapshot_to_events
 
@@ -471,7 +640,7 @@ def test_tracks_resynthesise_as_one_phase_continuous_voice_per_track():
     events = tracks_to_events(_tracks(a + b))
     voice_a = [(a[i][1], a[i + 1][1], a[i][2], a[i + 1][2], a[i][3], a[i + 1][3]) for i in range(3)]
     voice_b = [(0.107, 0.15, 589.1, 520.0, 0.3, 0.2)]
-    y = synthesize(events, SR)
+    y = synthesize(events, SR, fade=0)
     np.testing.assert_allclose(y, _render([voice_a, voice_b], y.size), rtol=0, atol=1e-9)
     # Without track_id the abutting tracks would link into one voice.
-    assert np.abs(synthesize(events.drop(columns="track_id"), SR, link_ramp=0) - y).max() > 0.1
+    assert np.abs(synthesize(events.drop(columns="track_id"), SR, link_ramp=0, fade=0) - y).max() > 0.1
