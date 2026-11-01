@@ -93,13 +93,16 @@ SDIF files hold analyses as frames of matrices. Three matrix types carry
 partial tracks: `1TRC` (sinusoidal tracks: AudioSculpt and PM2, the CNMAT
 tools, loristrck), `1HRM` (PM2 harmonic tracks) and `RBEP` (Loris and SPEAR
 breakpoints). Each row holds an index, a frequency, an amplitude and a phase.
-AudioSculpt's chord-sequence analysis writes `1MRK` marker frames instead.
+`1FQ0` frames hold one fundamental-frequency estimate each (AudioSculpt,
+SuperVP, Partiels). AudioSculpt's chord-sequence analysis writes `1MRK`
+marker frames instead.
 
 ```python
 import audiospylt as asp
 
 tracks = asp.read_sdif("snare-trc.sdif")        # 1TRC, 1HRM or RBEP: the one the file holds
 right = asp.read_sdif("drum-trc.sdif", stream=1)  # PM2 writes a stereo analysis as streams 0 and 1
+f0 = asp.read_sdif("flute-f0.sdif")               # 1FQ0: one track per voiced run, like f0_to_tracks
 chords = asp.read_chord_seq("snare-cs.sdif")      # AudioSculpt chord sequence -> events table
 asp.write_sdif(tracks, "out.sdif")               # 1TRC, laid out as AudioSculpt writes it
 asp.write_sdif(tracks, "out.sdif", hop=0.005)    # resampled onto frames every 5 ms (for RBEP input)
@@ -134,8 +137,9 @@ it makes tracks, depends on the matrix type:
   `attrs["meta"]["streams"]` lists them all.
 - **Metadata.** `attrs["meta"]` keeps the file's name-value tables (`nvt`),
   with `table_name` (`SinusoidalTracks`, `HarmonicTracks`) and `written_by`
-  (`Pm2_Version_...`) when present. Other frame types in the file (f0,
-  markers, FFT) are ignored.
+  (`Pm2_Version_...`) when present. Other frame types in the file (markers,
+  FFT) are ignored. A file with partial tracks and `1FQ0` frames needs
+  `matrix=`.
 
 The reader needs only numpy. It matched pysdif3 0.9.1 frame for frame on 36
 test files (AudioSculpt and PM2, the CNMAT tools, CHANT, OpenMusic, Loris and
@@ -143,6 +147,52 @@ the IRCAM SDIF test set). pysdif3 itself is not a dependency: its current
 release (1.0.1) cannot open files without a `1TYP` declaration, and none of
 the AudioSculpt and PM2 `1TRC` and `1HRM` files tested has one; 0.9.1 opens
 them but has no wheels beyond Python 3.11.
+
+### f0 (`1FQ0`)
+
+`read_sdif` reads `1FQ0` frames as a `tracks` table of the kind
+`f0_to_tracks` makes from `pyin`: one row per frame with an estimate, in
+time order, with no `phase` and no `partial_id`. It picks `1FQ0` itself
+when the file holds no partial tracks.
+
+```python
+f0 = asp.read_sdif("flute-f0.sdif")
+f0.attrs["meta"]["amp_in_file"]           # False: the file holds frequencies only, amp is 0
+voice = asp.synthesize(asp.tracks_to_events(f0.assign(amp=0.1)), 44100)
+```
+
+- **Unvoiced frames and gaps.** A frame is unvoiced when it holds no `1FQ0`
+  row or its frequency is 0, negative or NaN. It gives no row and ends the
+  track. A missing frame (a time step over 1.5 times the median step) also
+  ends it, and `max_step_cents=` splits at frequency jumps. A frame with two
+  estimates raises.
+- **Columns.** The type lists Frequency, Confidence, Score and
+  RealAmplitude. They become `freq`, `confidence`, `score` and `amp`, as far
+  as every voiced frame holds them.
+- **Amplitude.** Partiels exports and the OMChroma example analysis tested
+  hold the frequency only. `amp` is then 0 and
+  `attrs["meta"]["amp_in_file"]` is False, which tells it apart from the 0
+  that `f0_to_tracks` writes for a voiced frame with no spectral peak near
+  f0 (a missing fundamental). The tracks draw, but synthesise silent until
+  you set a level.
+- **Other frames.** CHANT puts a `1FQ0` matrix inside its `1FOB` synthesis
+  frames. These are not read, and `attrs["meta"]["fq0_in_other_frames"]`
+  names them. Meta also gives `unvoiced` (frames without an estimate) and
+  `columns` (the type's column names read).
+
+Partiels 2.6.0 exports the SuperVP f0 of its PM2 harmonic template as `1FQ0`
+(`--export -f sdif --frame=1FQ0 --matrix=1FQ0`): one stream per channel,
+the frequency only. The Score column of its CSV export is dropped.
+`data/interop/sdif/saariaho_flute_supervp_f0.sdif` is this export for the
+flute sample: 1,273 frames per stream, one every 5.8 ms, 166-966 Hz and no
+unvoiced frame, so one track. `pyin(x[0], sr, fmin=130.81, fmax=2093,
+hop=256)` uses the same 256-sample hop. Of the 1,202 frames it calls voiced,
+68.7 % agree with SuperVP within 50 cents. 228 of the 248 frames more than
+1,100 cents apart lie after 6.0 s, where a peak at 1,182 Hz stands 25 dB
+above every peak more than 10 Hz away from it: pyin follows it, and SuperVP
+reads 297 Hz, a quarter of it. The CSV Score has a median of 0.98 on those
+frames, so it does not flag the error. A voiced run is the analysis's
+continuous estimate, not proof of an audible partial.
 
 ### What `write_sdif` writes
 

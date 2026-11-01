@@ -19,6 +19,7 @@ KRAFT = SDIF / "kraft_snare_mono-trc_45hz.sdif"
 PHEEK = SDIF / "pheek_bdrum-trc.sdif"
 CHORDS = SDIF / "kraft_snare_mono-cs.sdif"
 LORIS = SDIF / "loris_flute_rbep.sdif"
+SUPERVP = SDIF / "saariaho_flute_supervp_f0.sdif"
 NEG_MAX = -np.finfo(np.float64).max
 DTYPES = {0x0004: ">f4", 0x0008: ">f8", 0x0104: ">i4"}
 
@@ -222,7 +223,7 @@ def test_numeric_types_and_extra_columns(tmp_path):
                      frame("1TRC", 0.0, matrix("1TRC", [[3, 100.0, 0.1, 0.5, 9.0]], code=0x0008)),
                      frame("1TRC", 0.01, matrix("1TRC", [[3, 100.0, 0.1, 0.5]]), matrix("XTRA", [[1]], 0x0104)),
                      frame("1FQ0", 0.0, matrix("1FQ0", [[100.0, 1.0]])))
-    tracks = read_sdif(path)
+    tracks = read_sdif(path, matrix="1TRC")
     assert tracks["partial_id"].tolist() == [3, 3] and tracks["phase"].tolist() == [0.5, 0.5]
     empty = frame("1TRC", 0.005, b"1TRC" + struct.pack(">iii", 0x0004, 0, 0))  # a 0 x 0 matrix is a gap
     split = read_sdif(sdif_file(tmp_path / "z.sdif", trc(0.0, [[3, 100.0, 0.1, 0]]), empty,
@@ -233,7 +234,7 @@ def test_numeric_types_and_extra_columns(tmp_path):
 @pytest.mark.parametrize(("frames", "kw", "message"), [
     ([trc(0.0, [[1, 100.0, 0.1, 0]]), trc(0.0, [[1, 100.0, 0.1, 0]], sig="1HRM")], {}, "holds 1HRM, 1TRC; choose one"),
     ([trc(0.0, [[1, 100.0, 0.1, 0]])], {"matrix": "RBEP"}, "holds no RBEP frames, only 1TRC"),
-    ([frame("1FQ0", 0.0, matrix("1FQ0", [[100.0, 1.0]]))], {}, r"holds no partial tracks .*\['1FQ0'\]"),
+    ([frame("1FOF", 0.0, matrix("1FOF", [[100.0, 1.0]]))], {}, r"holds no partial tracks .* or f0 \(1FQ0\); .*\['1FOF'\]$"),
     ([frame("1TRC", 0.0, matrix("1TRC", [[1, 100.0, 0.1]]))], {}, "has 3 columns; expected 4"),
     ([frame("RBEP", 0.0, matrix("RBEP", [[1, 100.0, 0.1, 0, 0]]))], {}, "has 5 columns; expected 6"),
     ([trc(0.0, [[1.5, 100.0, 0.1, 0]])], {}, "index must be an integer, found 1.5"),
@@ -260,7 +261,7 @@ def test_file_and_argument_errors(tmp_path):
             read_sdif(tmp_path / "cut.sdif")
     with pytest.raises(FileNotFoundError):
         read_sdif(tmp_path / "missing.sdif")
-    for kw, message in [({"matrix": "1FQ0"}, "matrix must be one of"), ({"stream": "0"}, "stream must be an int"),
+    for kw, message in [({"matrix": "1FOB"}, "matrix must be one of"), ({"stream": "0"}, "stream must be an int"),
                         ({"stream": True}, "stream must be an int"), ({"max_step_cents": 0}, "positive")]:
         with pytest.raises(ValueError, match=message):
             read_sdif(good, **kw)
@@ -300,6 +301,127 @@ def test_chord_sequence_synthetic_and_errors(tmp_path):
 
 
 # Writer
+
+# f0 (1FQ0)
+
+def fq0(time, *rows, code=0x0008, cols=1, **kw):
+    return frame("1FQ0", time, matrix("1FQ0", list(rows), code=code, cols=cols), **kw)
+
+
+def test_partiels_supervp_1fq0_reads_as_f0_tracks():
+    # Partiels 2.6.0 export of the SuperVP f0 of samples/saariaho_flute.wav (revision/step-2.8/facts.md):
+    # 2 streams x 1,273 frames, each a 1 x 1 Frequency matrix, no 0 Hz frame, no NVT.
+    walked = parse(SUPERVP)
+    for stream in (0, 1):
+        frames = [f for f in walked if f[2] == stream]
+        tracks = read_sdif(SUPERVP, stream=None if stream == 0 else stream)
+        assert tracks.columns.tolist() == ["track_id", "time", "freq", "amp"]
+        assert tracks["time"].tolist() == [f[1] for f in frames]
+        assert tracks["freq"].tolist() == [float(f[3][0][2][0, 0]) for f in frames]
+        assert len(tracks) == 1273 and tracks["track_id"].eq(0).all() and tracks["amp"].eq(0).all()
+        assert tracks.attrs["meta"] == {
+            "source": "sdif", "file": SUPERVP.name, "matrix": "1FQ0", "stream": stream, "streams": [0, 1],
+            "frames": 1273, "unvoiced": 0, "columns": ["Frequency"], "amp_in_file": False,
+            "fq0_in_other_frames": [], "max_step_cents": None, "nvt": []}
+    assert tracks["time"].iloc[0] == 1.1338e-05  # Partiels starts f0 half a sample late
+    assert round(tracks["freq"].median(), 1) == 311.4
+    # SuperVP jumps by an octave or more (the subharmonic at 6.0-7.4 s): max_step_cents splits there.
+    assert read_sdif(SUPERVP, max_step_cents=600)["track_id"].nunique() == 42
+
+
+def test_1fq0_unvoiced_and_missing_frames_end_tracks(tmp_path):
+    path = sdif_file(tmp_path / "f0.sdif",
+                     fq0(0.0, [200.0]), fq0(0.01, [201.0]), fq0(0.02, [0.0]), fq0(0.03, [202.0]),
+                     fq0(0.04, [np.nan]), fq0(0.05), frame("1FQ0", 0.06), fq0(0.07, [203.0]),
+                     frame("1FQ0", 0.08, matrix("XTRA", [[1]], 0x0104), matrix("1FQ0", [[204.0]])),
+                     fq0(0.10, [205.0]),  # 20 ms after the last frame: a missing frame ends the track
+                     fq0(0.11, [206.0]), fq0(0.12, [-1.0]), fq0(0.13, [207.0]), nvt=None)
+    tracks = read_sdif(path)
+    assert tracks[["track_id", "time", "freq"]].to_numpy().tolist() == [
+        [0, 0.0, 200.0], [0, 0.01, 201.0], [1, 0.03, 202.0], [2, 0.07, 203.0], [2, 0.08, 204.0],
+        [3, 0.10, 205.0], [3, 0.11, 206.0], [4, 0.13, 207.0]]
+    meta = tracks.attrs["meta"]
+    assert (meta["frames"], meta["unvoiced"], meta["columns"], meta["amp_in_file"]) == (13, 5, ["Frequency"], False)
+    assert tracks["amp"].eq(0).all() and "phase" not in tracks and "partial_id" not in tracks
+
+
+def test_1fq0_columns_follow_the_type_definition(tmp_path):
+    full = read_sdif(sdif_file(tmp_path / "4.sdif", fq0(0.0, [200.0, 0.9, 0.8, 0.1, 7.0]),
+                               fq0(0.01, [0.0, 0.0]), fq0(0.02, [210.0, 0.7, 0.6, 0.2], code=0x0004)))
+    assert full.columns.tolist() == ["track_id", "time", "freq", "amp", "confidence", "score"]
+    assert full[["freq", "amp", "confidence", "score"]].to_numpy().tolist() == [
+        [200.0, 0.1, 0.9, 0.8], [210.0, np.float32(0.2), np.float32(0.7), np.float32(0.6)]]
+    meta = full.attrs["meta"]
+    assert meta["columns"] == ["Frequency", "Confidence", "Score", "RealAmplitude"] and meta["amp_in_file"] is True
+    assert meta["table_name"] == "SinusoidalTracks" and meta["written_by"] == "test"
+    two = read_sdif(sdif_file(tmp_path / "2.sdif", fq0(0.0, [200.0, 0.5])))
+    assert two.columns.tolist() == ["track_id", "time", "freq", "amp", "confidence"] and two["amp"].tolist() == [0.0]
+    mixed = read_sdif(sdif_file(tmp_path / "m.sdif", fq0(0.0, [200.0, 0.9, 0.8, 0.1]), fq0(0.01, [201.0])))
+    assert mixed.columns.tolist() == ["track_id", "time", "freq", "amp"] and mixed.attrs["meta"]["columns"] == [
+        "Frequency"]
+    silent = read_sdif(sdif_file(tmp_path / "s.sdif", fq0(0.0, [0.0]), fq0(0.01)))
+    assert silent.empty and silent.columns.tolist() == ["track_id", "time", "freq", "amp"]
+    assert silent.attrs["meta"]["unvoiced"] == 2 and silent.attrs["meta"]["columns"] == ["Frequency"]
+    unvoiced4 = read_sdif(sdif_file(tmp_path / "u.sdif", fq0(0.0, [0.0, 0.1, 0.2, 0.0])))
+    assert unvoiced4.empty and unvoiced4.attrs["meta"]["amp_in_file"] is True
+    assert unvoiced4.columns.tolist() == ["track_id", "time", "freq", "amp", "confidence", "score"]
+    with pytest.raises(ValueError, match="amp"):  # SchemaError: RealAmplitude below 0
+        read_sdif(sdif_file(tmp_path / "neg.sdif", fq0(0.0, [200.0, 0.9, 0.8, -0.1])))
+
+
+def test_1fq0_beside_other_types(tmp_path):
+    fob = frame("1FOB", 0.0, matrix("1FQ0", [[0.2064]]), matrix("1FOF", [[1.0, 2.0]]))  # CHANT synthesis frame
+    both = read_sdif(sdif_file(tmp_path / "b.sdif", fob, fq0(0.0, [300.0]), fq0(0.01, [301.0])))
+    assert both["freq"].tolist() == [300.0, 301.0] and both.attrs["meta"]["fq0_in_other_frames"] == ["1FOB"]
+    with pytest.raises(ValueError, match=r"frame types: \['1FOB'\]; 1FQ0 matrices inside 1FOB frames are not read"):
+        read_sdif(sdif_file(tmp_path / "fob.sdif", fob))
+    with pytest.raises(ValueError, match="1FQ0 matrices inside 1FOB frames are not read"):
+        read_sdif(sdif_file(tmp_path / "fob-trc.sdif", fob, trc(0.0, [[1, 100.0, 0.1, 0]])), matrix="1FQ0")
+    mixed = sdif_file(tmp_path / "t.sdif", trc(0.0, [[1, 100.0, 0.1, 0]]), fq0(0.0, [100.0]))
+    with pytest.raises(ValueError, match="holds 1FQ0, 1TRC; choose one with matrix="):
+        read_sdif(mixed)
+    assert read_sdif(mixed, matrix="1TRC")["partial_id"].tolist() == [1]
+    assert read_sdif(mixed, matrix="1FQ0")["freq"].tolist() == [100.0]
+    with pytest.raises(ValueError, match=r"holds no 1FQ0 frames, only 1TRC$"):
+        read_sdif(sdif_file(tmp_path / "trc.sdif", trc(0.0, [[1, 100.0, 0.1, 0]])), matrix="1FQ0")
+
+
+def test_1fq0_times_streams_and_steps(tmp_path):
+    below = read_sdif(sdif_file(tmp_path / "n.sdif", fq0(-2e-5, [100.0]), fq0(-1e-5, [110.0]), fq0(0.01, [120.0])))
+    assert below[["time", "freq"]].to_numpy().tolist() == [[0.0, 110.0], [0.01, 120.0]]
+    streams = sdif_file(tmp_path / "s.sdif", fq0(0.0, [100.0]), fq0(0.0, [150.0], stream=1),
+                        fq0(0.01, [151.0], stream=1))
+    right = read_sdif(streams, stream=1)
+    assert right["freq"].tolist() == [150.0, 151.0] and right.attrs["meta"]["streams"] == [0, 1]
+    with pytest.raises(ValueError, match=r"no 1FQ0 frames in stream 2; streams with 1FQ0 frames: \[0, 1\]"):
+        read_sdif(streams, stream=2)
+    jumps = sdif_file(tmp_path / "j.sdif", fq0(0.0, [100.0]), fq0(0.01, [200.0]), fq0(0.02, [150.0]))
+    assert read_sdif(jumps)["track_id"].tolist() == [0, 0, 0]
+    assert read_sdif(jumps, max_step_cents=600)["track_id"].tolist() == [0, 1, 1]
+    assert read_sdif(jumps, max_step_cents=1300)["track_id"].tolist() == [0, 0, 0]
+    assert read_sdif(sdif_file(tmp_path / "1.sdif", fq0(0.5, [100.0])))["time"].tolist() == [0.5]
+
+
+@pytest.mark.parametrize(("frames", "message"), [
+    ([fq0(0.0, [100.0], [200.0])], "the 1FQ0 frame at 0 s holds 2 rows; a 1FQ0 matrix holds one f0 estimate"),
+    ([frame("1FQ0", 0.0, matrix("1FQ0", [[100.0]]), matrix("1FQ0", [[200.0]]))], "holds 2 rows"),
+    ([fq0(0.0, [100.0]), fq0(0.01, [101.0]), fq0(0.01, [0.0])], "two 1FQ0 frames at 0.01 s in stream 0"),
+    ([frame("1FQ0", 0.0, text_matrix("1FQ0", "x"))], "1FQ0 matrix at 0 s holds text"),
+])
+def test_1fq0_errors(tmp_path, frames, message):
+    with pytest.raises(ValueError, match=message):
+        read_sdif(sdif_file(tmp_path / "e.sdif", *frames))
+
+
+def test_1fq0_tracks_feed_events_and_synthesis(tmp_path):
+    tracks = read_sdif(sdif_file(tmp_path / "a.sdif", *(fq0(k * 0.01, [440.0]) for k in range(11))))
+    events = audiospylt.tracks_to_events(tracks)
+    assert len(events) == 10 and events["amp_start"].eq(0).all()
+    assert np.max(np.abs(audiospylt.synthesize(events, 8000))) == 0  # amp 0: set a level first
+    loud = audiospylt.synthesize(audiospylt.tracks_to_events(tracks.assign(amp=0.1)), 8000)
+    assert 0.099 < np.max(np.abs(loud)) <= 0.1
+    assert len(audiospylt.tracks_to_events(read_sdif(SUPERVP))) == 1272
+
 
 def test_write_partiels_flute_round_trip_and_layout(tmp_path):
     tracks = read_partiels(DATA / "partiels" / "flute_json")

@@ -12,11 +12,18 @@ Partial-tracking output of other programs, read by the tutorials in `tutorials_t
 | `sdif/pheek_bdrum-trc.sdif` | stereo bass drum (not included) | AudioSculpt (PM2), 2012-07-11 | `1TRC`: stream 0 (69 partials, 245 points) and stream 1 (64, 243), 27 frames each |
 | `sdif/kraft_snare_mono-cs.sdif` | mono snare drum (not included) | AudioSculpt (PM2), 2012-07-22 | Chord sequence: 19 `1MRK` markers, 235 partials in 18 segments |
 | `sdif/loris_flute_rbep.sdif` | `samples/saariaho_flute.wav`, left channel | loristrck 1.7.2 + pysdif3 1.0.1 (Loris, resolution 60 Hz, window 120 Hz), 2026-10-23 | `RBEP` breakpoints cut to 1.10-1.20 s: 205 partials, 757 breakpoints (209 and 778 before loristrck drops its last frame group) |
+| `sdif/saariaho_flute_supervp_f0.sdif` | `samples/saariaho_flute.wav` (stereo) | Partiels 2.6.0, Ircam Vamp Plugins 2.1.0: the SuperVP f0 track `Feature_Scoring` of template `PM2-Partials-Tracking-Harmonic-20` (min/max pitch 50/1000 Hz), exported as SDIF, 2026-11-01 | `1FQ0` f0, unchanged: streams 0 and 1 (the two channels), 1,273 frames each, one every 256 samples from 1.1e-05 s; Frequency only (166-966 Hz, no unvoiced frame) |
 
 `saariaho_flute_pm2.sdif` is AudioSpylt's own export, not a file written by PM2 or AudioSculpt: it was made with
 `write_sdif(read_partiels(EXPORT), path)` from the 19 `Group_1_Partial_*.json` files of the Partiels JSON export
 (`read_partiels` skips the f0 track `Feature_Scoring`). Values are float32, as in PM2's files, and the SDIF
 matrix index is `track_id + 1`. Its 1NVT table names the sound and the analysis.
+
+`saariaho_flute_supervp_f0.sdif` is the file Partiels wrote, renamed from `Group_1_Feature_Scoring.sdif`:
+`Partiels --export -d saariaho_flute_pm2_harmonic.ptldoc -o OUT -f sdif --frame=1FQ0 --matrix=1FQ0` on the
+document behind the JSON exports (the same command also writes the FFT track, not kept). It has no 1NVT or 1TYP
+frame, and each frame holds one 1 x 1 matrix: Partiels drops the Score column of its CSV export, and the f0 track
+has no amplitude.
 
 The Partiels folders and the SDIF files are copies of the test fixtures in `tests/data/partiels/` and
 `tests/data/sdif/`; the READMEs there give the Partiels command lines and the scripts that cut the files

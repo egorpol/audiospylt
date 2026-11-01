@@ -1,4 +1,4 @@
-"""Read and write partial tracks in SDIF (AudioSculpt/PM2, Loris, SPEAR) and read AudioSculpt chord sequences."""
+"""Read and write partial tracks in SDIF (AudioSculpt/PM2, Loris, SPEAR), read f0 (1FQ0) and AudioSculpt chord sequences."""
 
 from __future__ import annotations
 
@@ -16,6 +16,9 @@ from audiospylt.model.schema import validate
 __all__ = ["read_sdif", "write_sdif", "read_chord_seq"]
 
 _PARTIALS = ("1TRC", "1HRM", "RBEP")
+_FQ0 = "1FQ0"
+_FQ0_COLUMNS = ("Frequency", "Confidence", "Score", "RealAmplitude")  # IRCAM SdifTypes.STYP order
+_FQ0_GAP = 1.5  # a step this many times the median frame step ends an f0 track
 _COLUMNS = {"1TRC": 4, "1HRM": 4, "RBEP": 6}
 _NAMES = "index, frequency, amplitude, phase"
 _NUMERIC = {
@@ -157,28 +160,33 @@ def read_sdif(
     stream: int | None = None,
     max_step_cents: float | None = None,
 ) -> pd.DataFrame:
-    """Read partial tracks from an SDIF file as a tracks table.
+    """Read partial tracks or an f0 analysis from an SDIF file as a tracks table.
 
     Reads the partial-tracking matrices of SDIF: ``1TRC`` (sinusoidal tracks,
     written by AudioSculpt and PM2, Loris, the CNMAT tools), ``1HRM``
     (harmonic tracks, PM2) and ``RBEP`` (Loris and SPEAR breakpoints). Each
     row of such a matrix holds an index, a frequency, an amplitude and a
-    phase; the index ties a frame's row to rows of other frames.
+    phase; the index ties a frame's row to rows of other frames. It also
+    reads ``1FQ0`` frames, a fundamental-frequency estimate per frame
+    (AudioSculpt, SuperVP, Partiels), as tracks of the voiced runs, like
+    ``f0_to_tracks``.
 
     Parameters
     ----------
     path : path
         The SDIF file.
-    matrix : {'1TRC', '1HRM', 'RBEP'}, optional
-        Matrix type to read. None (default) reads the one type the file holds
-        and raises if it holds several.
+    matrix : {'1TRC', '1HRM', 'RBEP', '1FQ0'}, optional
+        Matrix type to read. None (default) reads the one partial type the
+        file holds, or ``1FQ0`` when the file holds f0 frames and no partial
+        type; it raises if the file holds several of these types.
     stream : int, optional
         SDIF stream to read. None (default) reads the lowest stream that holds
-        ``matrix``. PM2 writes one stream per channel of a stereo analysis.
+        ``matrix``. PM2 and Partiels write one stream per channel.
     max_step_cents : float, optional
         Also end a track where the frequency moves by more than this many
-        cents from one point to the next of the same index. None (default)
-        splits ``1TRC`` and ``1HRM`` at gaps only and never splits ``RBEP``.
+        cents from one point to the next of the same index (``1FQ0``: from one
+        frame to the next). None (default) splits ``1TRC``, ``1HRM`` and
+        ``1FQ0`` at gaps only and never splits ``RBEP``.
 
     Returns
     -------
@@ -191,7 +199,7 @@ def read_sdif(
         ``matrix``, ``stream``, ``streams`` (all streams holding
         ``matrix``), ``frames`` (frames read), ``nvt`` (the file's name-value
         tables, a list of dicts), ``max_step_cents`` and, when an NVT has
-        them, ``table_name`` and ``written_by``.
+        them, ``table_name`` and ``written_by``. For ``1FQ0`` see Notes.
 
     Raises
     ------
@@ -199,10 +207,11 @@ def read_sdif(
         The file does not exist.
     ValueError
         Not an SDIF file, a truncated file, an unknown data type, no partial
-        matrices (a chord sequence points to ``read_chord_seq``), several
-        types and no ``matrix``, a missing ``stream``, a matrix with too few
-        columns, an index that is not an integer or appears twice in one
-        frame, or ``max_step_cents`` not positive.
+        or ``1FQ0`` matrices (a chord sequence points to ``read_chord_seq``),
+        several types and no ``matrix``, a missing ``stream``, a matrix with
+        too few columns, an index that is not an integer or appears twice in
+        one frame, a ``1FQ0`` frame with more than one row, two ``1FQ0``
+        frames at one time, or ``max_step_cents`` not positive.
 
     Notes
     -----
@@ -223,30 +232,57 @@ def read_sdif(
     peak amplitude, like ``spectrum``), ``phase`` its phase in radians.
     Times just below 0 (PM2 places its first frame half a sample early) are
     read as 0.
+
+    ``1FQ0`` (f0) frames give one row per frame with an estimate, in time
+    order, with no ``phase`` and no ``partial_id``. A frame is unvoiced when
+    it holds no ``1FQ0`` row or its frequency is 0, negative or not finite;
+    an unvoiced frame, a time step over 1.5 times the median step (a missing
+    frame) and, with ``max_step_cents``, a larger frequency step end a track.
+    Columns follow the type definition (Frequency, Confidence, Score,
+    RealAmplitude): ``freq``, then ``confidence`` and ``score`` and ``amp``
+    when every voiced frame holds them. Without RealAmplitude (Partiels and
+    OpenMusic files hold the frequency only) ``amp`` is 0, so the tracks
+    draw but synthesise silent: set a level first, e.g.
+    ``tracks.assign(amp=0.1)``. A voiced run is the analysis's continuous
+    estimate, not proof that a partial at that frequency is audible.
+    A frame with more than one ``1FQ0`` row raises. ``1FQ0`` matrices inside
+    other frames (in CHANT files, ``1FOB`` synthesis parameters) are not
+    read. Meta adds ``unvoiced`` (frames without an estimate), ``columns``
+    (the type's names read, e.g. ``['Frequency']``), ``amp_in_file`` (False:
+    ``amp`` is 0 because the file has none, not a measured 0 as in
+    ``f0_to_tracks``) and ``fq0_in_other_frames`` (signatures of other
+    frames that hold ``1FQ0`` matrices).
     """
-    if matrix is not None and matrix not in _PARTIALS:
-        raise ValueError(f"matrix must be one of {', '.join(_PARTIALS)} or None, got {matrix!r}")
+    types_read = _PARTIALS + (_FQ0,)
+    if matrix is not None and matrix not in types_read:
+        raise ValueError(f"matrix must be one of {', '.join(types_read)} or None, got {matrix!r}")
     _check_stream(stream)
     if max_step_cents is not None and not (np.isfinite(max_step_cents) and max_step_cents > 0):
         raise ValueError(f"max_step_cents must be a positive number or None, got {max_step_cents!r}")
     sdif = _read(path)
     name = sdif.name
-    present = sorted({frame.sig for frame in sdif.frames if frame.sig in _PARTIALS})
+    present = sorted({frame.sig for frame in sdif.frames if frame.sig in types_read})
     if matrix is None and len(present) == 1:
         matrix = present[0]
     if matrix is None or matrix not in present:
         if not present and _is_chord_seq(sdif):
             raise ValueError(f"{name} is an AudioSculpt chord sequence (1MRK frames); read it with read_chord_seq()")
+        elsewhere = _fq0_elsewhere(sdif)
+        note = (f"; 1FQ0 matrices inside {', '.join(elsewhere)} frames are not read as f0 (in CHANT files they are "
+                "synthesis parameters)" if elsewhere and matrix in (None, _FQ0) else "")
         if not present:
             types = sorted({frame.sig for frame in sdif.frames})
-            raise ValueError(f"{name} holds no partial tracks ({', '.join(_PARTIALS)}); frame types: {types}")
+            raise ValueError(f"{name} holds no partial tracks ({', '.join(_PARTIALS)}) or f0 ({_FQ0}); "
+                             f"frame types: {types}{note}")
         if matrix is None:
             raise ValueError(f"{name} holds {', '.join(present)}; choose one with matrix=")
-        raise ValueError(f"{name} holds no {matrix} frames, only {', '.join(present)}")
+        raise ValueError(f"{name} holds no {matrix} frames, only {', '.join(present)}{note}")
     streams = sorted({frame.stream for frame in sdif.frames if frame.sig == matrix})
     stream = _pick_stream(stream, streams, f"{matrix} frames", name)
     frames = sorted((frame for frame in sdif.frames if frame.sig == matrix and frame.stream == stream),
                     key=lambda frame: frame.time)  # stable: equal times keep file order
+    if matrix == _FQ0:
+        return _read_fq0(sdif, frames, stream, streams, max_step_cents)
 
     width = _COLUMNS[matrix]
     parts = []
@@ -320,6 +356,74 @@ def read_sdif(
     meta: dict[str, object] = {
         "source": "sdif", "file": name, "matrix": matrix, "stream": stream, "streams": streams,
         "frames": len(frames), "max_step_cents": max_step_cents,
+    }
+    _meta_nvt(meta, sdif.nvt)
+    tracks.attrs["meta"] = meta
+    return tracks
+
+
+def _fq0_elsewhere(sdif: _File) -> list[str]:
+    """Signatures of frames other than 1FQ0 that hold a 1FQ0 matrix (CHANT 1FOB)."""
+    return sorted({frame.sig for frame in sdif.frames
+                   if frame.sig != _FQ0 and any(sig == _FQ0 for sig, _ in frame.matrices)})
+
+
+def _read_fq0(sdif: _File, frames: list[_Frame], stream: int, streams: list[int],
+              max_step_cents: float | None) -> pd.DataFrame:
+    """Tracks of the voiced runs of the 1FQ0 frames of one stream (sorted by time)."""
+    name = sdif.name
+    estimates: list[np.ndarray | None] = []
+    for frame in frames:
+        rows: list[np.ndarray] = []
+        for sig, values in frame.matrices:
+            if sig != _FQ0:
+                continue
+            if isinstance(values, str):
+                raise ValueError(f"{name}: {_FQ0} matrix at {frame.time:g} s holds text, not numbers")
+            if values.size:
+                rows += list(values.astype(np.float64))
+        if len(rows) > 1:
+            raise ValueError(f"{name}: the {_FQ0} frame at {frame.time:g} s holds {len(rows)} rows; "
+                             "a 1FQ0 matrix holds one f0 estimate per frame")
+        estimates.append(rows[0] if rows else None)
+    time = np.array([frame.time for frame in frames], dtype=np.float64)
+    equal = np.flatnonzero(np.diff(time) == 0)
+    if equal.size:
+        raise ValueError(f"{name}: two {_FQ0} frames at {time[equal[0]]:g} s in stream {stream}")
+    # Frames just below 0 read as 0: of several, keep the last.
+    keep = np.ones(len(time), dtype=bool)
+    keep[:-1] = ~((time[:-1] < 0) & (time[1:] <= 0))
+    time = np.maximum(time[keep], 0.0)
+    estimates = [estimate for estimate, kept in zip(estimates, keep) if kept]
+
+    f0 = np.array([np.nan if estimate is None else estimate[0] for estimate in estimates], dtype=np.float64)
+    voiced = np.isfinite(f0) & (f0 > 0)
+    starts = np.zeros(len(time), dtype=bool)
+    starts[:1] = True
+    if len(time) > 1:
+        step = np.diff(time)
+        starts[1:] |= ~voiced[:-1] | (step > _FQ0_GAP * np.median(step))
+        if max_step_cents is not None:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                cents = np.abs(1200 * np.log2(f0[1:] / f0[:-1]))
+            starts[1:] |= ~(cents <= max_step_cents)
+    starts &= voiced
+    rows_at = np.flatnonzero(voiced)
+    picked = [estimate for estimate, is_voiced in zip(estimates, voiced) if is_voiced and estimate is not None]
+    pool = picked or [estimate for estimate in estimates if estimate is not None]  # no voiced frame: all rows
+    width = min(min((len(estimate) for estimate in pool), default=1), len(_FQ0_COLUMNS))
+    values = np.array([estimate[:width] for estimate in picked]) if picked else np.empty((0, width))
+    extra = {key: values[:, column] for column, key in ((1, "confidence"), (2, "score")) if column < width}
+    amp = values[:, 3] if width > 3 else np.zeros(rows_at.size)
+    tracks = validate(pd.DataFrame({
+        "track_id": (np.cumsum(starts) - 1)[rows_at].astype(np.int64), "time": time[rows_at],
+        "freq": values[:, 0], "amp": amp, **extra,
+    }), "tracks")
+    meta: dict[str, object] = {
+        "source": "sdif", "file": name, "matrix": _FQ0, "stream": stream, "streams": streams,
+        "frames": len(frames), "unvoiced": int(np.count_nonzero(~voiced)),
+        "columns": list(_FQ0_COLUMNS[:width]), "amp_in_file": width > 3,
+        "fq0_in_other_frames": _fq0_elsewhere(sdif), "max_step_cents": max_step_cents,
     }
     _meta_nvt(meta, sdif.nvt)
     tracks.attrs["meta"] = meta
