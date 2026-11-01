@@ -24,6 +24,7 @@ The toolbox is organized into the following main categories:
 - `/audiospylt` - the Python package
 - `/case_studies` - narrative notebooks with end-to-end analytic and creative workflows
 - `/data/tables` - small example tables (TSV) read by the notebooks
+- `/data/interop` - partial tracks from Partiels, AudioSculpt and Loris (JSON, CSV, SDIF) read by the notebooks
 - `/samples` - audio excerpts and a score page used in the case studies (sources and rights in `samples/README.md`)
 - `/tests` - test suite
 - `/tutorials_tech` - function-focused references for individual parameters and utilities
@@ -70,7 +71,7 @@ pip install -e ".[all]"
 ```
 
 The notebooks use paths relative to their own folder (Jupyter's default working directory). They read example
-data from `data/tables/` and `samples/` and write their outputs (`tsv/`, `mei/`, `rendered_audio/`) next to the
+data from `data/tables/`, `data/interop/` and `samples/` and write their outputs (`tsv/`, `mei/`, `rendered_audio/`) next to the
 notebook; these output folders are ignored by git. `tutorials_tech/audio_load_dft_single.ipynb` loads its example
 sound from a URL and needs network access.
 

@@ -14,7 +14,9 @@ from audiospylt.io.tables import read_table, write_table
 from audiospylt.model.schema import LegacyFormatWarning, SchemaError, validate
 
 
-DATA = Path(__file__).resolve().parents[1] / "data" / "tables"
+ROOT = Path(__file__).resolve().parents[1]
+DATA = ROOT / "tests" / "data" / "legacy_tables"
+EXAMPLES = ROOT / "data" / "tables"
 
 
 def _frame(kind):
@@ -282,6 +284,21 @@ LEGACY = [
 
 def test_legacy_fixture_inventory_is_complete():
     assert {path.name for path in DATA.glob("*.tsv")} == {row[0] for row in LEGACY}
+    assert {path.name for path in EXAMPLES.glob("*.tsv")} == {row[0] for row in LEGACY}
+
+
+@pytest.mark.parametrize("filename,kind,rows,decays,zero_length", LEGACY)
+def test_example_tables_are_v1_upgrades_of_the_legacy_fixtures(filename, kind, rows, decays, zero_length):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        example = read_table(EXAMPLES / filename)
+    assert caught == []
+    assert (EXAMPLES / filename).read_text().startswith(f"# audiospylt-table: {kind} v1\n")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", LegacyFormatWarning)
+        legacy = read_table(DATA / filename)
+    assert_frame_equal(example, legacy, check_exact=True)
+    assert example.attrs == legacy.attrs
 
 @pytest.mark.parametrize("version,expected", [
     ("2.2.3", {"float_precision": "round_trip"}),

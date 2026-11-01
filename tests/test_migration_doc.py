@@ -88,9 +88,8 @@ def test_python_examples_run_in_isolated_directory(source, tmp_path, monkeypatch
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", LegacyFormatWarning)
         exec(compile(source, str(DOC), "exec"), namespace)
-    assert all(w.category is LegacyFormatWarning for w in caught)
+    assert not caught
     if "morph.wav" in source:
-        assert len(caught) == 2
         assert not displayed
         output, sr = sf.read(tmp_path / "morph.wav")
         assert sr == 44100 and output.shape == (88200,)
@@ -98,7 +97,6 @@ def test_python_examples_run_in_isolated_directory(source, tmp_path, monkeypatch
         assert np.max(np.abs(output)) == pytest.approx(0.0587308078, abs=2e-7)
         assert {p.name for p in tmp_path.iterdir()} == {"samples", "data", "morph.wav"}
     else:
-        assert not caught
         assert len(displayed) == 2
         assert namespace["sr"] == 44100
         assert namespace["excerpt"].shape == (22050,)

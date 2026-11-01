@@ -93,13 +93,9 @@ both ends at the snapshots' levels.
 Run from the repository root. It writes three files to compare.
 
 ```python
-import warnings
-
 from audiospylt import read_table, synthesize, write_audio
 
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")  # the file uses 0.6 column names
-    events = read_table("data/tables/conga_multidft.tsv")
+events = read_table("data/tables/conga_multidft.tsv")
 
 for name, options in {
     "continuous": {},

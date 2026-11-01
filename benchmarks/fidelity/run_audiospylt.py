@@ -34,8 +34,8 @@ V1 = {
     "audiospylt-v1/matched": {**MATCHED, "zero_pad": 4, "min_db": -80.0},
     "audiospylt-v1/matched-nofade": {**MATCHED, "zero_pad": 4, "min_db": -80.0, "fade": 0.0},
 }
-# 0.6: the 4.1 matched analysis, then the tutorial render path (tutorials_tech/resynth.ipynb, as in G1); the
-# synthesis grid k stays 0.15 ms (6.67 kHz) at every rate
+# 0.6: the 4.1 matched analysis, then the 0.6 tutorial render path (`tutorials_tech/resynth.ipynb` before v1,
+# e7f1e67, as in G1); the synthesis grid k stays 0.15 ms (6.67 kHz) at every rate
 OLD = {**MATCHED, "window_type": "hann", "thresh_amp_low": 1e-4 / 4, "thresh_amp_high": 1.0, "k": 0.00015,
        "phase_mode": "chirp", "edge_fade_s": 0.0025}
 TRACK_FADE = 0.005  # as in G2

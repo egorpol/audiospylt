@@ -299,8 +299,10 @@ named there is `duplicates="primary"`.
 Run these from the repository root so `samples/` and `data/` resolve. Each block
 is independent. Figures need `audiospylt[plot]`, display `audiospylt[notebook]`
 and MEI rendering `audiospylt[notation]`; `pip install "audiospylt[all]"`
-installs all three. Loading the headerless 0.6 TSVs in the last example
-emits `LegacyFormatWarning`; values are preserved when their columns are renamed.
+installs all three. The tables in `data/tables/` use the v1 format. A 0.6
+table is upgraded with `write_table(read_table("old.tsv"), "new.tsv")`:
+`read_table` warns once (`LegacyFormatWarning`) and renames the columns; the
+values are kept.
 
 0.6 counterparts: `audio_utils.load_audio_sample_and_preview` and
 `audio_utils.trim_and_fade_and_render`.

@@ -1,4 +1,5 @@
-Frequency (Hz)	Amplitude
+# audiospylt-table: snapshot v1
+freq	amp
 31.25	0.0005687449103935572
 75.0	0.0008703650081436973
 127.5	0.0005403567422227674

@@ -48,6 +48,7 @@ dist/
 rendered_audio/
 tsv/
 mei/
+tutorials_tech/sdif/
 # ...but not the vendored MEI schema the tests validate against
 !tests/data/mei/
 _tmp_*.py
