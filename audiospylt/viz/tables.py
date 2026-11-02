@@ -170,18 +170,127 @@ def _tracks_polylines(table: pd.DataFrame):
         )
 
 
-def _vertex_hover(time, freq, amp_plot, *, db: bool) -> str:
-    pitch = ""
-    from audiospylt.viz._common import pitch_hover_label, format_amplitude
-    pitch = pitch_hover_label(freq)
-    parts = [
-        f"time: {time:.4g} s",
-        f"frequency: {freq:.2f} Hz",
-        f"amplitude: {format_amplitude(amp_plot, db=db)}" + (" dB" if db else ""),
+def _vertex_hovers(times, freqs, amps_plot, *, db: bool) -> list[str]:
+    """Hover text per vertex: time, frequency, plotted amplitude and pitch."""
+    from audiospylt.viz._common import format_amplitude, pitch_hover_labels
+
+    unit = " dB" if db else ""
+    texts = []
+    for time, freq, amp_plot, pitch in zip(times, freqs, amps_plot, pitch_hover_labels(freqs)):
+        parts = [
+            f"time: {float(time):.4g} s",
+            f"frequency: {float(freq):.2f} Hz",
+            f"amplitude: {format_amplitude(amp_plot, db=db)}{unit}",
+        ]
+        if pitch:
+            parts.append(f"pitch: {pitch}")
+        texts.append("<br>".join(parts) + "<extra></extra>")
+    return texts
+
+
+def _none_separated(paths, texts):
+    """x, y (and z) lists with None between paths; texts are per vertex, in order."""
+    columns: list[list] = [[] for _ in range(len(paths[0]) if paths else 0)]
+    out_texts: list[str | None] = []
+    k = 0
+    for path in paths:
+        n = len(path[0])
+        for column, values in zip(columns, path):
+            column.extend(np.asarray(values, dtype=np.float64).tolist())
+            column.append(None)
+        out_texts.extend(texts[k:k + n])
+        out_texts.append(None)
+        k += n
+    return columns, out_texts
+
+
+# A row ramps time, frequency and linear amplitude linearly, as ``synthesize``
+# renders it. On a log frequency axis or a dB amplitude axis that ramp is a
+# curve, so a straight line between the row's ends would misdraw it; vertices
+# at equal steps of cents and of dB draw the curve instead.
+_DRAW_CENTS = 100.0
+_DRAW_DB = 3.0
+_DRAW_MAX_STEPS = 256
+
+
+def _ramp_fractions(v0: float, v1: float, lo: float, hi: float, step_ratio: float):
+    """Fractions in (0, 1) where a linear ramp v0 -> v1 crosses a geometric grid on [lo, hi]."""
+    steps = min(_DRAW_MAX_STEPS, int(np.ceil(np.log(hi / lo) / np.log(step_ratio) - 1e-9)))
+    if steps < 2:
+        return None
+    targets = np.geomspace(lo, hi, steps + 1)[1:-1]
+    return (targets - v0) / (v1 - v0)
+
+
+def _path_fractions(f0, a0, f1, a1, *, freq_log: bool, db: bool, floor_amp: float):
+    """Sorted fractions in [0, 1] at which to draw one row, or None for its two ends."""
+    parts = []
+    if freq_log and f0 != f1 and f0 > 0 and f1 > 0:
+        lo, hi = sorted((f0, f1))
+        part = _ramp_fractions(f0, f1, lo, hi, 2.0 ** (_DRAW_CENTS / 1200.0))
+        if part is not None:
+            parts.append(part)
+    if db and a0 != a1:
+        lo, hi = max(min(a0, a1), floor_amp), max(a0, a1)
+        if hi > lo:
+            part = _ramp_fractions(a0, a1, lo, hi, 10.0 ** (_DRAW_DB / 20.0))
+            if part is not None:
+                parts.append(part)
+            if min(a0, a1) < floor_amp:
+                # Where the ramp meets the floor; it runs along the floor after.
+                parts.append(np.array([(floor_amp - a0) / (a1 - a0)]))
+    if not parts:
+        return None
+    return np.unique(np.clip(np.concatenate([[0.0, 1.0], *parts]), 0.0, 1.0))
+
+
+def _drawn_path(times, freqs, amps, *, freq_log: bool, db: bool, floor_amp: float = 0.0):
+    """Vertices drawing a polyline of linear rows on the plot's axes.
+
+    Returns the inputs unchanged when no segment bends on these axes (linear
+    frequency and amplitude axes never bend one).
+    """
+    times = np.asarray(times, dtype=np.float64)
+    freqs = np.asarray(freqs, dtype=np.float64)
+    amps = np.asarray(amps, dtype=np.float64)
+    if len(times) < 2 or not (freq_log or db):
+        return times, freqs, amps
+    out_t, out_f, out_a = [times[:1]], [freqs[:1]], [amps[:1]]
+    bent = False
+    for i in range(len(times) - 1):
+        u = _path_fractions(
+            freqs[i], amps[i], freqs[i + 1], amps[i + 1],
+            freq_log=freq_log, db=db, floor_amp=floor_amp,
+        )
+        if u is None:
+            out_t.append(times[i + 1:i + 2])
+            out_f.append(freqs[i + 1:i + 2])
+            out_a.append(amps[i + 1:i + 2])
+            continue
+        bent = True
+        u = u[1:]
+        out_t.append(times[i] + (times[i + 1] - times[i]) * u)
+        out_f.append(freqs[i] + (freqs[i + 1] - freqs[i]) * u)
+        out_a.append(amps[i] + (amps[i + 1] - amps[i]) * u)
+        # Exact end values, not t0 + (t1 - t0) * 1.0.
+        out_t[-1][-1], out_f[-1][-1], out_a[-1][-1] = times[i + 1], freqs[i + 1], amps[i + 1]
+    if not bent:
+        return times, freqs, amps
+    return np.concatenate(out_t), np.concatenate(out_f), np.concatenate(out_a)
+
+
+def _segment_lines(segments, *, db: bool, floor_db: float, freq_log: bool):
+    """None-separated x, y and hover text for segment tuples."""
+    paths = [
+        _drawn_path((t0, t1), (f0, f1), (a0, a1), freq_log=freq_log, db=False)
+        for t0, f0, a0, t1, f1, a1 in segments
     ]
-    if pitch:
-        parts.append(f"pitch: {pitch}")
-    return "<br>".join(parts) + "<extra></extra>"
+    if not paths:
+        return [], [], []
+    times, freqs, amps = (np.concatenate(column) for column in zip(*paths))
+    texts = _vertex_hovers(times, freqs, to_plot_amplitude(amps, db=db, floor_db=floor_db), db=db)
+    (xs, ys), out_texts = _none_separated([path[:2] for path in paths], texts)
+    return xs, ys, out_texts
 
 
 def _bin_index(level: float, l_max: float, range_db: float) -> int:
@@ -193,6 +302,7 @@ def _bin_index(level: float, l_max: float, range_db: float) -> int:
 
 def _opacity_segment_traces(
     segments, *, colour, label, legendgroup, db, floor_db, range_db, l_max,
+    freq_log=False,
 ):
     """One None-separated trace per non-empty opacity bin for segment lists."""
     levels = [_segment_level_db(a0, a1, floor_db) for _, _, a0, _, _, a1 in segments]
@@ -206,17 +316,7 @@ def _opacity_segment_traces(
     for k, bucket in enumerate(bins):
         if not bucket:
             continue
-        xs, ys, texts = [], [], []
-        for t0, f0, a0, t1, f1, a1 in bucket:
-            p0 = float(to_plot_amplitude(a0, db=db, floor_db=floor_db))
-            p1 = float(to_plot_amplitude(a1, db=db, floor_db=floor_db))
-            xs.extend([t0, t1, None])
-            ys.extend([f0, f1, None])
-            texts.extend([
-                _vertex_hover(t0, f0, p0, db=db),
-                _vertex_hover(t1, f1, p1, db=db),
-                None,
-            ])
+        xs, ys, texts = _segment_lines(bucket, db=db, floor_db=floor_db, freq_log=freq_log)
         traces.append(go.Scatter(
             x=xs, y=ys, mode="lines",
             name=label, legendgroup=legendgroup, showlegend=first_legend,
@@ -236,21 +336,10 @@ def _opacity_segment_traces(
 
 def _events_line_traces(
     segments, *, colour, label, legendgroup, amp, db, floor_db, range_db, l_max,
+    freq_log=False,
 ):
     if amp is None:
-        xs: list[float | None] = []
-        ys: list[float | None] = []
-        texts: list[str | None] = []
-        for t0, f0, a0, t1, f1, a1 in segments:
-            p0 = float(to_plot_amplitude(a0, db=db, floor_db=floor_db))
-            p1 = float(to_plot_amplitude(a1, db=db, floor_db=floor_db))
-            xs.extend([t0, t1, None])
-            ys.extend([f0, f1, None])
-            texts.extend([
-                _vertex_hover(t0, f0, p0, db=db),
-                _vertex_hover(t1, f1, p1, db=db),
-                None,
-            ])
+        xs, ys, texts = _segment_lines(segments, db=db, floor_db=floor_db, freq_log=freq_log)
         return [go.Scatter(
             x=xs, y=ys, mode="lines",
             name=label, legendgroup=legendgroup, showlegend=True,
@@ -261,28 +350,28 @@ def _events_line_traces(
         )]
     return _opacity_segment_traces(
         segments, colour=colour, label=label, legendgroup=legendgroup,
-        db=db, floor_db=floor_db, range_db=range_db, l_max=l_max,
+        db=db, floor_db=floor_db, range_db=range_db, l_max=l_max, freq_log=freq_log,
     )
 
 
 def _tracks_line_traces(
     polylines, *, colour, label, legendgroup, amp, db, floor_db, range_db, l_max,
+    freq_log=False,
 ):
     if amp is None:
+        paths = [
+            _drawn_path(times, freqs, amps, freq_log=freq_log, db=False)
+            for times, freqs, amps in polylines
+        ]
         xs: list[float | None] = []
         ys: list[float | None] = []
         texts: list[str | None] = []
-        for times, freqs, amps in polylines:
-            plot_amp = to_plot_amplitude(amps, db=db, floor_db=floor_db)
-            for i in range(len(times)):
-                xs.append(float(times[i]))
-                ys.append(float(freqs[i]))
-                texts.append(_vertex_hover(
-                    float(times[i]), float(freqs[i]), float(plot_amp[i]), db=db,
-                ))
-            xs.append(None)
-            ys.append(None)
-            texts.append(None)
+        if paths:
+            times, freqs, amps = (np.concatenate(column) for column in zip(*paths))
+            hover = _vertex_hovers(
+                times, freqs, to_plot_amplitude(amps, db=db, floor_db=floor_db), db=db,
+            )
+            (xs, ys), texts = _none_separated([path[:2] for path in paths], hover)
         return [go.Scatter(
             x=xs, y=ys, mode="lines",
             name=label, legendgroup=legendgroup, showlegend=True,
@@ -299,7 +388,7 @@ def _tracks_line_traces(
             ))
     return _opacity_segment_traces(
         segments, colour=colour, label=label, legendgroup=legendgroup,
-        db=db, floor_db=floor_db, range_db=range_db, l_max=l_max,
+        db=db, floor_db=floor_db, range_db=range_db, l_max=l_max, freq_log=freq_log,
     )
 
 
@@ -350,8 +439,7 @@ def _marker_traces(
             name=label, legendgroup=legendgroup, showlegend=showlegend and not traces,
             marker=dict(size=_MARKER_SIZE, color=colour), opacity=opacity,
             hovertemplate="%{text}",
-            text=[_vertex_hover(t, f, float(p), db=db)
-                  for t, f, p in zip(times, freqs, plot_amp)],
+            text=_vertex_hovers(times, freqs, plot_amp, db=db),
         ))
     if showlegend and not traces:
         traces.append(go.Scatter(
@@ -414,7 +502,8 @@ def _line_traces_for_table(
                     stacklevel=3,
                 )
             segments = kept
-        traces = _events_line_traces(segments, **style) if "lines" in mode else []
+        traces = (_events_line_traces(segments, freq_log=freq_scale == "log", **style)
+                  if "lines" in mode else [])
         points = _event_points(segments) if "markers" in mode else []
     else:
         polylines = list(_tracks_polylines(table))
@@ -434,7 +523,8 @@ def _line_traces_for_table(
                     stacklevel=3,
                 )
             polylines = filtered
-        traces = _tracks_line_traces(polylines, **style) if "lines" in mode else []
+        traces = (_tracks_line_traces(polylines, freq_log=freq_scale == "log", **style)
+                  if "lines" in mode else [])
         points = _track_points(polylines, every="markers" in mode)
 
     if points or not traces:
@@ -471,7 +561,11 @@ def plot_events(
         as a 4 px dot (events: each row end, shared ends once). In 'lines'
         mode, one-point tracks, which a line cannot show, are drawn as dots.
     amp : {'opacity', None}
-    db, floor_db, range_db, freq_scale, theme, title
+    db, floor_db, range_db, theme, title
+    freq_scale : {'linear', 'log'}, default 'linear'
+        On a log axis each row is drawn along its linear-Hz path (a curve),
+        as ``synthesize`` renders it; rows with a frequency <= 0 are left out
+        with a warning.
 
     Returns
     -------
@@ -519,28 +613,138 @@ def plot_events(
     return fig
 
 
+_HEIGHT_3D = 520
+_ASPECT_3D = {"x": 1.6, "y": 1.0, "z": 0.6}
+_CAMERA_3D = {"eye": {"x": -1.2, "y": -1.75, "z": 0.75}, "center": {"x": -0.16, "y": 0.11, "z": -0.12}}
+_SHADOW_OPACITY = 0.25
+
+
+def _nice_ticks(lo: float, hi: float, count: int = 6) -> list[float]:
+    """Round tick values (1, 2 or 5 times a power of ten apart) inside [lo, hi]."""
+    raw = (hi - lo) / count
+    magnitude = 10.0 ** np.floor(np.log10(raw))
+    step = next(m * magnitude for m in (1.0, 2.0, 5.0, 10.0) if m * magnitude >= raw)
+    # Integer multiples of the step, so a tick at zero is exactly 0.
+    first, last = int(np.ceil(lo / step - 1e-9)), int(np.floor(hi / step + 1e-9))
+    return [float(f"{k * step:.12g}") for k in range(first, last + 1)]
+
+
+def _hz_label(value: float) -> str:
+    return f"{value / 1000:g}k" if value >= 1000 else f"{value:g}"
+
+
+def _log_freq_ticks(lo: float, hi: float) -> list[float]:
+    """1-2-5 (or 1-9 on a narrow range) ticks per decade inside [lo, hi] Hz."""
+    for mantissas in ((1, 2, 5), tuple(range(1, 10))):
+        ticks = [
+            float(m * 10.0 ** k)
+            for k in range(int(np.floor(np.log10(lo))), int(np.ceil(np.log10(hi))) + 1)
+            for m in mantissas
+            if lo <= m * 10.0 ** k <= hi
+        ]
+        if len(ticks) >= 3:
+            return ticks
+    return ticks
+
+
+def _paths_3d(frame, kind, *, freq_log):
+    """(times, freqs, amps) per events row or track; frequencies <= 0 left out on a log axis."""
+    dropped = 0
+    if kind == "events":
+        paths = [
+            (np.array([t0, t1]), np.array([f0, f1]), np.array([a0, a1]))
+            for t0, f0, a0, t1, f1, a1 in _events_segments(frame)
+        ]
+        if freq_log:
+            kept = [path for path in paths if (path[1] > 0).all()]
+            dropped = len(paths) - len(kept)
+            paths = kept
+    else:
+        paths = list(_tracks_polylines(frame))
+        if freq_log:
+            dropped = sum(int((path[1] <= 0).sum()) for path in paths)
+            paths = [
+                (times[freqs > 0], freqs[freqs > 0], amps[freqs > 0])
+                for times, freqs, amps in paths if (freqs > 0).any()
+            ]
+    if freq_log and dropped:
+        import warnings
+        warnings.warn(
+            f"{dropped} row(s) with frequency <= 0 left out on a log axis",
+            UserWarning,
+            stacklevel=3,
+        )
+    return paths
+
+
+def _scene_axes_3d(times, freqs, *, z_range, freq_log, db):
+    """Scene axis dicts: tight time and frequency ranges, z ticks above the floor."""
+    zaxis: dict[str, object] = {"title": amplitude_axis_label(db=db), "range": list(z_range)}
+    z_lo, z_hi = z_range
+    # The floor value is left unlabelled so that it never sits on another axis's end label.
+    zaxis["tickvals"] = [v for v in _nice_ticks(z_lo, z_hi) if v > z_lo + 0.04 * (z_hi - z_lo)]
+    xaxis: dict[str, object] = {"title": "time (s)"}
+    yaxis: dict[str, object] = {"title": "frequency (Hz)", "type": "log" if freq_log else "linear"}
+    if not len(times):
+        return xaxis, yaxis, zaxis
+    t_lo, t_hi = float(np.min(times)), float(np.max(times))
+    if t_hi > t_lo:
+        xaxis["range"] = [t_lo, t_hi]
+    f_lo, f_hi = float(np.min(freqs)), float(np.max(freqs))
+    if freq_log:
+        lo, hi = np.log10(f_lo), np.log10(f_hi)
+        pad = 0.03 * (hi - lo) if hi > lo else 0.05
+        yaxis["range"] = [float(lo - pad), float(hi + pad)]
+        ticks = _log_freq_ticks(10.0 ** (lo - pad), 10.0 ** (hi + pad))
+        if ticks:
+            yaxis["tickvals"] = ticks
+            yaxis["ticktext"] = [_hz_label(v) for v in ticks]
+    else:
+        pad = 0.03 * (f_hi - f_lo) if f_hi > f_lo else max(0.05 * f_hi, 1.0)
+        # Start above 0 Hz when the data do, so no "0" tick joins time's at the corner.
+        lo = f_lo - pad if f_lo - pad > 0 else 0.5 * f_lo
+        yaxis["range"] = [float(lo), float(f_hi + pad)]
+    return xaxis, yaxis, zaxis
+
+
 def plot_events_3d(
     *tables: pd.DataFrame,
     labels: Sequence[str] | None = None,
-    db: bool = False,
+    db: bool = True,
     floor_db: float = -120.0,
+    range_db: float = 80.0,
+    freq_scale: str = "linear",
+    shadow: bool = True,
     theme: str = "light",
     title: str | None = None,
 ) -> go.Figure:
     """Return a 3-D Plotly figure of events/tracks (time, frequency, amplitude).
 
+    Time runs left to right, frequency into depth, amplitude up. Each events
+    row is drawn along the path ``synthesize`` renders: time, frequency and
+    linear amplitude ramp linearly, so on a dB or log axis the row is a curve.
+    The figure is 520 px high; change it with ``fig.update_layout(height=...)``.
     Never shows, prints, or writes files; inputs are unchanged.
 
     Parameters
     ----------
     *tables : DataFrame
-        Events and tracks may be mixed; one 3-px line trace per table.
+        Events and tracks may be mixed; one line trace per table. One-point
+        tracks, which a line cannot show, are drawn as dots.
     labels : sequence or None
         Default ``table 1``, ``table 2``, …
-    db : bool, default False
-        Plot amplitude in dB (floored at ``floor_db``); linear amplitude uses
-        a z axis starting at 0.
+    db : bool, default True
+        Amplitude in dB re full scale. The axis spans ``range_db`` below the
+        loudest level drawn (not below ``floor_db``); quieter values lie on its
+        floor. ``db=False`` plots linear amplitude from 0.
     floor_db : float, default -120.0
+    range_db : float, default 80.0
+        Used with ``db=True`` only; must be > 0.
+    freq_scale : {'linear', 'log'}, default 'linear'
+        On a log axis, rows with a frequency <= 0 are left out with a warning.
+    shadow : bool, default True
+        Draw a faint copy of each line on the floor of the box: the
+        time-frequency view of ``plot_events``.
     theme : {'light', 'dark'}, default 'light'
     title : str or None
 
@@ -556,47 +760,93 @@ def plot_events_3d(
     if not tables:
         raise ValueError("plot_events_3d requires at least one table")
     theme = _theme_name(theme)
+    freq_log = _freq_scale(freq_scale) == "log"
+    floor_db = _finite_scalar(floor_db, "floor_db")
+    range_db = _finite_scalar(range_db, "range_db")
+    if range_db <= 0:
+        raise ValueError(f"range_db must be > 0; got {range_db!r}")
     check_series_count(len(tables), what="tables")
     names = _labels(labels, len(tables))
-    fig = go.Figure()
-    z_min = 0.0 if not db else None
-    for index, (table, name) in enumerate(zip(tables, names)):
+    resolved = []
+    for table in tables:
         frame, kind = _table(table, None)
         if kind not in ("events", "tracks"):
             raise _kind_error(kind, "plot_events_3d", "plot_snapshot")
+        resolved.append(_paths_3d(frame, kind, freq_log=freq_log))
+
+    amps = [path[2] for paths in resolved for path in paths]
+    a_max = float(max((np.max(a) for a in amps), default=0.0))
+    if db:
+        l_max = float(amplitude_to_db(a_max, floor_db=floor_db))
+        z_floor = max(floor_db, l_max - range_db)
+        # A silent or empty table still gets a range_db-tall axis.
+        z_range = (z_floor, (l_max if l_max > z_floor else z_floor + range_db) + 0.03 * range_db)
+        floor_amp = 10.0 ** (z_floor / 20.0)
+    else:
+        z_floor = 0.0
+        z_range = (0.0, 1.03 * a_max if a_max > 0 else 1.0)
+        floor_amp = 0.0
+
+    fig = go.Figure()
+    all_t: list[np.ndarray] = []
+    all_f: list[np.ndarray] = []
+    for index, (paths, name) in enumerate(zip(resolved, names)):
         colour = colorway_colour(theme, index)
+        drawn = []
+        dots: list[tuple[float, float, float]] = []
+        for times, freqs, amps_ in paths:
+            all_t.append(times)
+            all_f.append(freqs)
+            if len(times) == 1:
+                level = float(to_plot_amplitude(amps_[0], db=db, floor_db=floor_db))
+                dots.append((float(times[0]), float(freqs[0]), max(level, z_floor)))
+                continue
+            times, freqs, amps_ = _drawn_path(
+                times, freqs, amps_, freq_log=freq_log, db=db, floor_amp=floor_amp,
+            )
+            levels = np.maximum(to_plot_amplitude(amps_, db=db, floor_db=floor_db), z_floor)
+            drawn.append((times, freqs, levels))
         xs: list[float | None] = []
         ys: list[float | None] = []
         zs: list[float | None] = []
-        if kind == "events":
-            for t0, f0, a0, t1, f1, a1 in _events_segments(frame):
-                p0 = float(to_plot_amplitude(a0, db=db, floor_db=floor_db))
-                p1 = float(to_plot_amplitude(a1, db=db, floor_db=floor_db))
-                xs.extend([t0, t1, None])
-                ys.extend([f0, f1, None])
-                zs.extend([p0, p1, None])
-        else:
-            for times, freqs, amps in _tracks_polylines(frame):
-                plot_amp = to_plot_amplitude(amps, db=db, floor_db=floor_db)
-                for i in range(len(times)):
-                    xs.append(float(times[i]))
-                    ys.append(float(freqs[i]))
-                    zs.append(float(plot_amp[i]))
-                xs.append(None)
-                ys.append(None)
-                zs.append(None)
+        texts: list[str | None] = []
+        if drawn:
+            hover = _vertex_hovers(*(np.concatenate(column) for column in zip(*drawn)), db=db)
+            (xs, ys, zs), texts = _none_separated(drawn, hover)
         fig.add_trace(go.Scatter3d(
             x=xs, y=ys, z=zs, mode="lines",
-            name=name,
+            name=name, legendgroup=name, showlegend=True,
             line=dict(width=3, color=colour),
+            hovertemplate="%{text}", text=texts,
         ))
+        if dots:
+            dt, df, dz = (list(column) for column in zip(*dots))
+            fig.add_trace(go.Scatter3d(
+                x=dt, y=df, z=dz, mode="markers",
+                name=name, legendgroup=name, showlegend=False,
+                marker=dict(size=_MARKER_SIZE, color=colour),
+                hovertemplate="%{text}",
+                text=_vertex_hovers(dt, df, dz, db=db),
+            ))
+        if shadow and len(xs):
+            fig.add_trace(go.Scatter3d(
+                x=xs, y=ys, z=[None if z is None else z_range[0] for z in zs], mode="lines",
+                name=name, legendgroup=name, showlegend=False, hoverinfo="skip",
+                line=dict(width=2, color=colour), opacity=_SHADOW_OPACITY,
+            ))
     apply_layout(fig, theme=theme, title=title, n_series=len(tables))
-    scene: dict[str, object] = dict(
-        xaxis_title="time (s)",
-        yaxis_title="frequency (Hz)",
-        zaxis_title=amplitude_axis_label(db=db),
+    times_all = np.concatenate(all_t) if all_t else np.empty(0)
+    freqs_all = np.concatenate(all_f) if all_f else np.empty(0)
+    xaxis, yaxis, zaxis = _scene_axes_3d(
+        times_all, freqs_all, z_range=z_range, freq_log=freq_log, db=db,
     )
-    if z_min is not None:
-        scene["zaxis"] = dict(title=amplitude_axis_label(db=db), range=[0, None])
-    fig.update_layout(scene=scene)
+    fig.update_layout(
+        height=_HEIGHT_3D,
+        margin=dict(l=0, r=0, b=0, t=10 if title is None else 50),
+        legend=dict(x=0.01, y=0.99, xanchor="left", yanchor="top", tracegroupgap=0),
+        scene=dict(
+            xaxis=xaxis, yaxis=yaxis, zaxis=zaxis,
+            aspectmode="manual", aspectratio=dict(_ASPECT_3D), camera=_CAMERA_3D,
+        ),
+    )
     return fig

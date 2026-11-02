@@ -12,8 +12,8 @@ import pytest
 from audiospylt.analysis.spectrum import amplitude_to_db
 from audiospylt.io.tables import read_table
 from audiospylt.model.schema import validate
-from audiospylt.viz._common import theme_colors
-from audiospylt.viz.tables import plot_events, plot_events_3d, plot_snapshot
+from audiospylt.viz._common import pitch_hover_label, pitch_hover_labels, theme_colors
+from audiospylt.viz.tables import _nice_ticks, plot_events, plot_events_3d, plot_snapshot
 
 DATA = __import__("pathlib").Path(__file__).resolve().parents[1] / "data" / "tables"
 
@@ -179,6 +179,182 @@ def test_plot_events_3d_linear_z_from_zero():
     })
     fig = plot_events_3d(table, db=False)
     assert fig.layout.scene.zaxis.range[0] == 0
+
+
+def _vertices(trace):
+    return [(x, y, z) for x, y, z in zip(trace.x, trace.y, trace.z) if x is not None]
+
+
+def _db_of(amp, floor):
+    return max(float(amplitude_to_db(amp, floor_db=-120.0)), floor)
+
+
+def test_plot_events_3d_db_default_range_floor_and_layout():
+    table = events_table({
+        "time_start": [0.0, 0.0, 0.25], "time_stop": [1.0, 1.0, 0.75],
+        "freq_start": [440.0, 880.0, 63.0], "freq_stop": [440.0, 880.0, 63.0],
+        "amp_start": [0.5, 0.001, 1e-7], "amp_stop": [0.5, 0.001, 1e-7],
+    })
+    fig = plot_events_3d(table)
+    scene = fig.layout.scene
+    l_max = float(amplitude_to_db(0.5))
+    assert scene.zaxis.title.text == "amplitude (dB re full scale)"
+    assert scene.zaxis.range[0] == pytest.approx(l_max - 80.0)
+    assert scene.zaxis.range[1] == pytest.approx(l_max + 0.03 * 80.0)
+    # The floor value is not labelled: no tick shares the corner with another axis.
+    assert min(scene.zaxis.tickvals) > scene.zaxis.range[0]
+    # The -140 dB row lies on the floor, the others at their levels.
+    levels = sorted({round(z, 9) for _, _, z in _vertices(fig.data[0])})
+    assert levels == pytest.approx([l_max - 80.0, -60.0, l_max])
+    # Tight time range; frequency range starts above 0 Hz, never at a "0" tick.
+    assert list(scene.xaxis.range) == [0.0, 1.0]
+    assert 0 < scene.yaxis.range[0] < 63.0
+    assert scene.yaxis.range[1] > 880.0
+    assert scene.aspectmode == "manual"
+    assert scene.camera.eye.x < 0 and scene.camera.eye.y < 0
+    assert fig.layout.height == 520
+    assert fig.layout.margin.l == 0 and fig.layout.margin.b == 0
+    hover = fig.data[0].text[0]
+    assert hover.startswith("time: 0 s") and "pitch: A4" in hover and " dB" in hover
+
+
+def test_plot_events_3d_shadow_on_the_floor():
+    table = events_table({
+        "time_start": [0.0], "time_stop": [1.0],
+        "freq_start": [440.0], "freq_stop": [660.0],
+        "amp_start": [0.5], "amp_stop": [0.5],
+    })
+    a, b = table, table.assign(freq_start=220.0, freq_stop=220.0)
+    fig = plot_events_3d(a, b, labels=["a", "b"])
+    lines = [t for t in fig.data if t.showlegend]
+    shadows = [t for t in fig.data if not t.showlegend]
+    assert [t.name for t in lines] == ["a", "b"]
+    assert [t.legendgroup for t in shadows] == ["a", "b"]
+    floor = fig.layout.scene.zaxis.range[0]
+    for line, shade in zip(lines, shadows):
+        assert shade.hoverinfo == "skip"
+        assert shade.opacity < 1
+        assert list(shade.x) == list(line.x) and list(shade.y) == list(line.y)
+        assert all(z == floor for z in shade.z if z is not None)
+    assert fig.layout.legend.xanchor == "left"
+    assert len(plot_events_3d(a, shadow=False).data) == 1
+    linear = plot_events_3d(a, db=False)
+    assert all(z == 0.0 for z in linear.data[1].z if z is not None)
+
+
+def test_plot_events_3d_draws_db_fades_along_the_synthesized_ramp():
+    fade = events_table({
+        "time_start": [0.0], "time_stop": [1.0],
+        "freq_start": [440.0], "freq_stop": [440.0],
+        "amp_start": [0.5], "amp_stop": [0.0],
+    })
+    fig = plot_events_3d(fade, shadow=False)
+    floor = fig.layout.scene.zaxis.range[0]
+    vertices = _vertices(fig.data[0])
+    assert len(vertices) > 20
+    assert vertices[0] == (0.0, 440.0, pytest.approx(float(amplitude_to_db(0.5))))
+    assert vertices[-1] == (1.0, 440.0, floor)
+    for t, _, z in vertices:
+        # Each vertex lies on the linear amplitude ramp synthesize renders.
+        assert z == pytest.approx(_db_of(0.5 * (1.0 - t), floor), abs=1e-9)
+    steps = np.diff([z for _, _, z in vertices])
+    assert (steps <= 1e-12).all() and (steps >= -3.0 - 1e-9).all()
+    # The ramp meets the floor once, then runs along it.
+    on_floor = [t for t, _, z in vertices if z == pytest.approx(floor)]
+    assert on_floor[0] == pytest.approx(1.0 - 10 ** (floor / 20) / 0.5)
+    # Linear amplitude draws a straight row: its two ends only.
+    assert len(_vertices(plot_events_3d(fade, db=False, shadow=False).data[0])) == 2
+
+
+def test_plot_events_3d_log_frequency_axis():
+    glide = events_table({
+        "time_start": [0.0, 0.0], "time_stop": [2.0, 2.0],
+        "freq_start": [220.0, 0.0], "freq_stop": [880.0, 100.0],
+        "amp_start": [0.5, 0.5], "amp_stop": [0.5, 0.5],
+    })
+    with pytest.warns(UserWarning, match="1 row.*frequency <= 0"):
+        fig = plot_events_3d(glide, freq_scale="log", shadow=False)
+    yaxis = fig.layout.scene.yaxis
+    assert yaxis.type == "log"
+    assert yaxis.range[0] < np.log10(220.0) and yaxis.range[1] > np.log10(880.0)
+    assert list(yaxis.tickvals) == [300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0]
+    assert list(yaxis.ticktext) == ["300", "400", "500", "600", "700", "800", "900"]
+    vertices = _vertices(fig.data[0])
+    assert len(vertices) >= 25  # 2400 cents in 100-cent steps
+    for t, f, _ in vertices:
+        assert f == pytest.approx(220.0 + 330.0 * t)  # the linear-Hz path, a curve on the axis
+    wide = events_table({
+        "time_start": [0.0], "time_stop": [1.0],
+        "freq_start": [40.0], "freq_stop": [12000.0],
+        "amp_start": [0.5], "amp_stop": [0.5],
+    })
+    ticks = plot_events_3d(wide, freq_scale="log").layout.scene.yaxis
+    assert list(ticks.ticktext) == ["50", "100", "200", "500", "1k", "2k", "5k", "10k"]
+    with pytest.raises(ValueError, match="freq_scale"):
+        plot_events_3d(wide, freq_scale="mel")
+    with pytest.raises(ValueError, match="range_db"):
+        plot_events_3d(wide, range_db=0)
+
+
+def test_plot_events_3d_edge_tables_and_ticks():
+    silent = events_table({
+        "time_start": [0.0], "time_stop": [1.0],
+        "freq_start": [440.0], "freq_stop": [440.0],
+        "amp_start": [0.0], "amp_stop": [0.0],
+    })
+    zaxis = plot_events_3d(silent).layout.scene.zaxis
+    assert zaxis.range[0] == -120.0
+    assert zaxis.range[1] - zaxis.range[0] == pytest.approx(80.0 * 1.03)
+    tiny = silent.assign(amp_start=3e-14, amp_stop=1e-14)
+    assert list(plot_events_3d(tiny, db=False).layout.scene.zaxis.tickvals) == [1e-14, 2e-14, 3e-14]
+    # Ticks are integer multiples of the step: a tick at zero is exactly 0.
+    assert _nice_ticks(-0.31, 0.42) == [-0.2, 0.0, 0.2, 0.4]
+    assert _nice_ticks(-80.0, 2.4) == [-80.0, -60.0, -40.0, -20.0, 0.0]
+
+
+def test_plot_events_3d_one_point_tracks_as_dots():
+    tracks = tracks_table({
+        "track_id": [1, 1, 2], "time": [0.0, 0.5, 0.2],
+        "freq": [200.0, 210.0, 300.0], "amp": [0.01, 0.01, 1.0],
+    })
+    fig = plot_events_3d(tracks)
+    dots = [t for t in fig.data if t.mode == "markers"]
+    assert len(dots) == 1 and dots[0].legendgroup == "table 1" and not dots[0].showlegend
+    assert list(zip(dots[0].x, dots[0].y, dots[0].z)) == [(0.2, 300.0, 0.0)]
+    assert [(t, f) for t, f, _ in _vertices(fig.data[0])] == [(0.0, 200.0), (0.5, 210.0)]
+
+
+def test_pitch_hover_labels_match_the_single_value_label():
+    freqs = np.concatenate([
+        [0.0, -5.0, np.nan, np.inf, 1e-300, 1e300, 440.0, 466.1637615, 27.5],
+        np.geomspace(20.0, 20000.0, 500),
+    ])
+    assert pitch_hover_labels(freqs) == [pitch_hover_label(f) for f in freqs]
+    assert pitch_hover_labels([]) == []
+
+
+def test_plot_events_log_axis_draws_rows_along_their_hz_path():
+    glide = events_table({
+        "time_start": [0.0], "time_stop": [2.0],
+        "freq_start": [220.0], "freq_stop": [880.0],
+        "amp_start": [0.5], "amp_stop": [0.05],
+    })
+    for amp in (None, "opacity"):
+        fig = plot_events(glide, amp=amp, freq_scale="log")
+        points = [(x, y) for x, y in zip(fig.data[0].x, fig.data[0].y) if x is not None]
+        assert len(points) >= 25
+        assert points[0] == (0.0, 220.0) and points[-1] == (2.0, 880.0)
+        for t, f in points:
+            assert f == pytest.approx(220.0 + 330.0 * t)
+        assert len(fig.data[0].text) == len(fig.data[0].x)
+        # Linear axes keep the two row ends.
+        assert list(plot_events(glide, amp=amp).data[0].x) == [0.0, 2.0, None]
+    tracks = tracks_table({
+        "track_id": [1, 1, 1], "time": [0.0, 1.0, 1.01],
+        "freq": [220.0, 880.0, 881.0], "amp": [0.5, 0.5, 0.5],
+    })
+    ys = [y for y in plot_events(tracks, amp=None, freq_scale="log").data[0].y if y is not None]
+    assert len(ys) >= 26 and ys[-2:] == [880.0, 881.0]
 
 
 def test_snapshot_stems_linear_baseline_and_hover_pitch(capsys, monkeypatch):

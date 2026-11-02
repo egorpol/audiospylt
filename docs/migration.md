@@ -226,7 +226,7 @@ Display-only sizes, colours, titles, axis padding and range settings move to ret
 | 0.6 | v1 | notes |
 | --- | --- | --- |
 | `multiplotter.plot_combined` | `viz.tables.plot_events` (snapshots: `viz.tables.plot_snapshot`) | 0.6 expects event columns (`time_start/stop`, `freq_start/stop`). Upgrade then use `plot_events`; for snapshots choose the separate snapshot function. Pass tables, not file lists; call `read_table` first. |
-| `multiplotter.plot_combined_3d` | `viz.tables.plot_events_3d` | Upgrade events first. `axis_order` / `flip` have no v1 switches: time, frequency and amplitude are fixed on x, y and z. Pass tables instead of file lists. |
+| `multiplotter.plot_combined_3d` | `viz.tables.plot_events_3d` | Upgrade events first. `axis_order` / `flip` have no v1 switches: time, frequency and amplitude are fixed on x, y and z. Amplitude is in dB by default; `db=False` plots linear amplitude as 0.6 did. Pass tables instead of file lists. |
 | `multiplotter.plot_scatter` | `viz.tables.plot_snapshot` (events, tracks: `viz.tables.plot_events`) | 0.6 expects snapshot columns (`Frequency (Hz)`, `Amplitude`). Upgrade then use `plot_snapshot`; events and tracks use the separate event function. |
 | `multiplotter.plot_scatter_binned` | None | None. The frequency/amplitude bin sizes and density aggregation have no v1 equivalent. |
 | `multiplotter.plot_equalizer_bars` | None | None; closest: `viz.tables.plot_snapshot`. A snapshot stem plot does not reproduce `agg` / frequency-bin aggregation. |

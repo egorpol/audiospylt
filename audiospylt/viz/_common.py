@@ -241,6 +241,21 @@ def pitch_hover_label(freq: float) -> str:
     return f"{str(row.step).upper()}{accidental}{int(row.octave)} {cents_label(row.residual)} c"
 
 
+def pitch_hover_labels(freqs) -> list[str]:
+    """``pitch_hover_label`` for many frequencies with a single ``pitch_table`` call."""
+    freqs = np.asarray(freqs, dtype=np.float64).reshape(-1)
+    labels = [""] * freqs.size
+    valid = np.isfinite(freqs) & (freqs > 0)
+    if valid.any():
+        table = pitch_table(freqs[valid], resolution="semitone")
+        for pos, step, accid, octave, residual in zip(
+            np.flatnonzero(valid), table["step"], table["accid"], table["octave"], table["residual"],
+        ):
+            accidental = "♯" if accid == "s" else ""
+            labels[pos] = f"{str(step).upper()}{accidental}{int(octave)} {cents_label(residual)} c"
+    return labels
+
+
 def hover_amp_freq(
     freq: float, amp: float, *, db: bool, extra: str = "",
 ) -> str:
