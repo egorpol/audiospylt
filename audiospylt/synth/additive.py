@@ -59,17 +59,139 @@ def _track_ids(table: pd.DataFrame) -> np.ndarray | None:
     return np.array(ids, dtype=np.int64)
 
 
+def _bridge_zero_sample(
+    pred: np.ndarray,
+    n0: np.ndarray,
+    n1: np.ndarray,
+    t0: np.ndarray,
+    t1: np.ndarray,
+    f0: np.ndarray,
+    f1: np.ndarray,
+    a0: np.ndarray,
+    a1: np.ndarray,
+    track: np.ndarray | None,
+) -> tuple[set[int], set[int]]:
+    """Link covered rows across positive-length zero-sample chains; mutate ``pred``.
+
+    A bridge is p -> z1 -> ... -> zk -> s (k >= 1) with exact shared joins (time,
+    freq > 0, amp, track_id). ``link_cents`` does not apply. Zero-length rows
+    (``time_stop == time_start``) are neither members nor blockers: they stay
+    silent and unlinked, and a chain whose joins match around them still
+    bridges. A covered row may end one bridge and start another: covered ends
+    are excluded only by an existing predecessor (``taken_succ``), while
+    zero-sample members must be free on both sides. At each join the earliest
+    unused row index wins; a choice that dead-ends is not retried. Matching is
+    O(n log n) via per-key cursors over sorted start-key lists. Chains stay
+    inside one inter-sample gap (``n0`` of every zi and of s equals ``n1[p]``).
+    """
+    covered = n1 > n0
+    zero = (n1 <= n0) & (t1 > t0)
+    taken_prev: set[int] = set()
+    taken_succ: set[int] = set()
+    if not np.any(zero):
+        return taken_prev, taken_succ
+
+    def start_key(i: int) -> tuple:
+        tid = None if track is None else int(track[i])
+        return (t0[i], f0[i], a0[i], tid)
+
+    def stop_key(i: int) -> tuple:
+        tid = None if track is None else int(track[i])
+        return (t1[i], f1[i], a1[i], tid)
+
+    # Zero-sample and covered rows by start key, each list ascending by row index;
+    # separate lists keep a zeros-only search from rescanning covered rows.
+    by_start: tuple[dict[tuple, list[int]], dict[tuple, list[int]]] = ({}, {})
+    for i in np.flatnonzero((zero | covered) & (f0 > 0)):
+        by_start[int(zero[i])].setdefault(start_key(int(i)), []).append(int(i))
+    # Next index to inspect per (list, key); only advances over rows taken for good.
+    cursor: dict[tuple[int, tuple], int] = {}
+    dead_end: set[int] = set()
+
+    def first_free(is_zero: int, key: tuple, boundary: int, path_set: set[int], start_row: int) -> int | None:
+        rows = by_start[is_zero].get(key)
+        if rows is None:
+            return None
+        i = cursor.get((is_zero, key), 0)
+        while i < len(rows) and (rows[i] in taken_succ or (is_zero and rows[i] in taken_prev)):
+            i += 1
+        cursor[(is_zero, key)] = i
+        for j in range(i, len(rows)):
+            c = rows[j]
+            if c in taken_succ or (is_zero and c in taken_prev):
+                continue
+            if int(n0[c]) != boundary or c in path_set or c == start_row:
+                continue
+            return c
+        return None
+
+    def earliest(key: tuple, boundary: int, path_set: set[int], start_row: int, *, zeros_only: bool) -> int | None:
+        z = first_free(1, key, boundary, path_set, start_row)
+        if zeros_only:
+            return z
+        s = first_free(0, key, boundary, path_set, start_row)
+        if z is None or s is None:
+            return s if z is None else z
+        return min(z, s)
+
+    for raw_p in np.flatnonzero(covered & (f1 > 0)):
+        p = int(raw_p)
+        if p in taken_prev:
+            continue
+        boundary = int(n1[p])
+        first = earliest(stop_key(p), boundary, {p}, p, zeros_only=True)
+        if first is None:
+            continue
+        path = [p, first]
+        path_set = {p, first}
+        current = first
+        while True:
+            nxt = None if current in dead_end else earliest(stop_key(current), boundary, path_set, p, zeros_only=False)
+            if nxt is None:
+                # Every zero-sample member of a failed path is dead for good: its earliest
+                # continuation never changes (the rows after it are never taken).
+                dead_end.update(path[1:])
+                path = []
+                break
+            path.append(nxt)
+            path_set.add(nxt)
+            if covered[nxt]:
+                break
+            current = nxt
+        if len(path) < 3 or not covered[path[-1]] or not all(bool(zero[i]) for i in path[1:-1]):
+            continue
+        for idx in range(1, len(path)):
+            succ_i = int(path[idx])
+            pred_i = int(path[idx - 1])
+            pred[succ_i] = pred_i
+            taken_prev.add(pred_i)
+            taken_succ.add(succ_i)
+    return taken_prev, taken_succ
+
+
 def _link(
     n0: np.ndarray, n1: np.ndarray, freq_start: np.ndarray, freq_stop: np.ndarray,
     track: np.ndarray | None, link_cents: float | None,
+    time_start: np.ndarray, time_stop: np.ndarray, amp_start: np.ndarray, amp_stop: np.ndarray,
 ) -> np.ndarray:
-    """Return each event's predecessor row, or -1 for the first event of a voice."""
+    """Return each event's predecessor row, or -1 for the first event of a voice.
+
+    Exact zero-sample bridges (see ``synthesize``) are matched before the
+    nearest-cents assignment; they need the times and amplitudes, so every
+    caller passes them (no frequency-only fallback).
+    """
     pred = np.full(n0.size, -1, dtype=np.int64)
     covered = n1 > n0
+    taken_prev, taken_succ = _bridge_zero_sample(
+        pred, n0, n1, time_start, time_stop, freq_start, freq_stop, amp_start, amp_stop, track,
+    )
     # A link never crosses 0 Hz: predecessors must stop, successors start, above it.
     rows = np.flatnonzero(covered & (freq_stop > 0))
+    if taken_prev:
+        skip = np.fromiter(taken_prev, dtype=np.int64, count=len(taken_prev))
+        rows = rows[~np.isin(rows, skip)]
     by_end = rows[np.argsort(n1[rows], kind="stable")]
-    rows = np.flatnonzero(covered & (freq_start > 0))
+    rows = np.flatnonzero(covered & (freq_start > 0) & (pred < 0))
     by_start = rows[np.argsort(n0[rows], kind="stable")]
     ends, starts = n1[by_end], n0[by_start]
     for boundary in np.intersect1d(ends, starts):
@@ -81,8 +203,6 @@ def _link(
             allowed &= track[prev][:, None] == track[succ][None, :]
         i, j = np.nonzero(allowed)
         # Nearest frequency first; ties go to the earlier predecessor, then successor row.
-        taken_prev: set[int] = set()
-        taken_succ: set[int] = set()
         for k in np.lexsort((succ[j], prev[i], cents[i, j])):
             a, b = int(prev[i[k]]), int(succ[j[k]])
             if a not in taken_prev and b not in taken_succ:
@@ -162,7 +282,24 @@ def synthesize(
           stays phase-continuous across frequency changes. The first row of a
           voice starts at phase 0. When the two rows' times differ by less
           than a sample, the handover follows the predecessor's ramp to the
-          successor's ``time_start``.
+          successor's ``time_start``. A covered row p and a covered row s are
+          also one voice when a chain p -> z1 -> ... -> zk -> s (k >= 1) joins
+          them in which every zi has positive length (``time_stop >
+          time_start``) and covers no sample, and at every join of the chain
+          the values are shared exactly (float equality): ``time_stop ==`` next
+          ``time_start``, ``freq_stop ==`` next ``freq_start`` (and > 0; links
+          never cross 0 Hz), ``amp_stop ==`` next ``amp_start``, and equal
+          ``track_id`` when that column exists. ``link_cents`` does not limit a
+          bridge (its joins are 0 c steps; the net step over the chain may be
+          any size). s then starts with p's end phase plus the exact integral
+          of each zi's linear frequency over its own span, so the rendered
+          waveform equals the phase integral of the emitted rows (the zi still
+          render no samples). Only interior chains are bridged: a chain that
+          does not reach a covered row on both sides stays unlinked (silent),
+          so voice ends keep their fades. Zero-length rows
+          (``time_stop == time_start``) stay silent and are never linked.
+          Bridges are matched before the nearest-cents assignment at that
+          boundary; rows a bridge uses are not offered to it again.
         - ``'reset'``: every row starts at phase 0 (0.6 ``reset`` and
           ``chirp``, which compute the same thing).
         - ``'absolute'``: ``phi0 = 2*pi*freq_start*time_start``, as if the
@@ -170,10 +307,11 @@ def synthesize(
           Constant-frequency rows at the same frequency join seamlessly;
           frequency changes between rows leave phase jumps.
     link_cents : float or None, default 100.0
-        Largest frequency step, in cents, that ``'continuous'`` bridges.
-        None links regardless of frequency. Links never cross 0 Hz (a 0 Hz row
-        stays silent rather than holding an inherited phase as DC), and rows
-        that cover no sample are never linked.
+        Largest frequency step, in cents, that ``'continuous'`` bridges for
+        the nearest-cents assignment. None links regardless of frequency.
+        Links never cross 0 Hz (a 0 Hz row stays silent rather than holding an
+        inherited phase as DC). Exact zero-sample bridges (see ``phase``) are
+        not limited by ``link_cents``.
     link_ramp : float, default 0.005
         Length in seconds of the amplitude transition at a ``'continuous'``
         link where the amplitude steps (the predecessor's ``amp_stop`` differs
@@ -263,15 +401,17 @@ def synthesize(
         return output
 
     order = np.argsort(n0, kind="stable")
+    # Bridge members share n0 with their covered successor; hand over by time too.
+    hand_order = np.lexsort((t0, n0))
     pred = np.full(len(table), -1, dtype=np.int64)
     if phase == "continuous":
-        pred = _link(n0, n1, f0, f1, _track_ids(table), link_cents)
+        pred = _link(n0, n1, f0, f1, _track_ids(table), link_cents, t0, t1, a0, a1)
     # Phases are tracked in cycles (mod 1) so long voices keep their precision.
     start_cycles = np.zeros(len(table))
     if phase == "absolute":
         start_cycles = np.mod(f0 * t0, 1.0)
     voice_start = t0.copy()
-    for row in order:
+    for row in hand_order:
         p = pred[row]
         if p >= 0:
             # Hand over at this row's own start time: rows that meet on one sample from
@@ -283,7 +423,7 @@ def synthesize(
     voice_stop = t1.copy()
     succ = np.full(len(table), -1, dtype=np.int64)
     succ[pred[pred >= 0]] = np.flatnonzero(pred >= 0)
-    for row in order[::-1]:
+    for row in hand_order[::-1]:
         if succ[row] >= 0:
             voice_stop[row] = voice_stop[succ[row]]
     # Amplitude steps at links: (centre, half length, left edge amp, right edge amp),

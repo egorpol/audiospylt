@@ -88,6 +88,34 @@ arrive at one partial beat slowly against each other, and that end is louder
 than the snapshot. `duplicates="primary"` (the default for `transport`) keeps
 both ends at the snapshots' levels.
 
+By default every glide is linear in Hz and in amplitude, one row per pair.
+`freq_curve` and `amp_curve` bend it with the Csound `transeg` / SuperCollider
+`Env` curve w(x) = expm1(c x) / expm1(c): 0 is linear, c > 0 moves late (slow
+start, fast arrival) and c < 0 early, for rising and falling glides alike.
+`freq_space="pitch"` applies `freq_curve` to log frequency, so
+`freq_space="pitch"` alone glides at constant cents per second. A curved pair
+becomes consecutive linear rows on the curve, the fewest within `max_cents`
+(1 cent, and -60 dB re the pair's peak for amplitude): speech1 → conga3 with
+`transport` (41 pairs) takes 425 rows for the plain pitch-space glide and 929
+for `freq_curve=4, amp_curve=4` in Hz. Render them with `phase="continuous"`
+(the default), which joins each row to the next and bridges any short segments
+that fall between two sample instants so the voice stays one phase-continuous
+glide. Against an exact rendering of the curve (`equal`, both curves 4 in Hz,
+2 s), the rows score 0.9 dB log-spectral distance with it, 40 dB with
+`"reset"` and 42 dB with `"absolute"`, which restart the phase at every join.
+`events_to_mei` notates every row as a note, and `plot_events` draws the curve.
+`stretch` with per-cue factors (one factor per ascending distinct start cue)
+sees every segment start of a curved glide as a cue.
+
+```python
+import audiospylt as asp
+
+speech = asp.read_table("data/tables/speech1.tsv")
+conga = asp.read_table("data/tables/conga3.tsv")
+events = asp.morph(speech, conga, 2.0, "transport", freq_space="pitch", freq_curve=4, amp_curve=-2)
+audio = asp.synthesize(events, 44100)
+```
+
 ## Example
 
 Run from the repository root. It writes three files to compare.

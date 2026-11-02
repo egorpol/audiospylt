@@ -22,8 +22,9 @@ one that needs the network; see `python scripts/run_notebooks.py --help`).
    `samples/cello_arco_d_sul_c_01.wav`.
 7. `symbolic_mei` — `snapshot_to_mei` and `events_to_mei` on tables under
    `data/tables/`, with SVG pages, cents labels and a coloured time ruler.
-8. `2df_merge` — pair and morph `speech1` into `conga3` with equal, power,
-   sigmoid and transport maps, including `duplicates` and non-default warps.
+8. `2df_merge` — listen to `speech1` and `conga3` as held frames, then pair and
+   morph one into the other with equal, power, sigmoid and transport maps (each
+   one played), including `duplicates`, non-default warps and curved glides.
 9. `pyin_f0` — `pyin` (hop 512 vs 256) and `f0_to_tracks` on the cello arco
    sample; refine vs raw pYIN; sonify the contour.
 10. `interop_partiels_sdif` — `read_partiels`, `read_sdif`, `read_chord_seq` and

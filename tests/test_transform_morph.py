@@ -1,4 +1,4 @@
-"""0.6 pairing characterization, transport plans, full/primary duplicates and D13 levels."""
+"""0.6 pairing characterization, transport plans, full/primary duplicates, D13 levels and curved glides."""
 
 import warnings
 
@@ -9,7 +9,8 @@ import pytest
 from audiospylt import df_transforms as legacy
 from audiospylt.model.schema import SchemaError, TABLE_CONTRACTS, validate
 from audiospylt.synth.additive import synthesize
-from audiospylt.transform.morph import METHODS, morph, pair, parameter_range
+from audiospylt.synth.additive import _link, _sample_index
+from audiospylt.transform.morph import METHODS, _glide_plan, morph, pair, parameter_range
 
 
 pytestmark = pytest.mark.filterwarnings(
@@ -114,7 +115,8 @@ def test_d13_gains_energy_order_and_unsorted(method, kwargs, reverse):
     np.testing.assert_array_equal(events[["amp_start", "amp_stop"]], ordered[["amp_start", "amp_stop"]])
     pd.testing.assert_frame_equal(events, sorted_events)
     assert events.attrs == {"audiospylt_table": "events",
-                            "morph": {**plan.attrs["morph"], "duplicates": "primary"}}
+                            "morph": {**plan.attrs["morph"], "duplicates": "primary", "freq_space": "hz",
+                                      "freq_curve": 0.0, "amp_curve": 0.0, "max_cents": 1.0}}
     np.testing.assert_array_equal(events.time_start, 1.2)
     np.testing.assert_array_equal(events.time_stop, 1.2 + 2.3)
 
@@ -236,7 +238,8 @@ def test_full_duplicates_keep_every_row_at_full_amplitude(method, kwargs, revers
         pd.MultiIndex.from_frame(full[["freq_start", "freq_stop"]])]
     for identity, flag in (("src", "primary_start"), ("dst", "primary_stop")):
         assert ordered.groupby(identity, sort=False)[flag].first().all()
-    assert full.attrs["morph"] == {**plan.attrs["morph"], "duplicates": "full"}
+    assert full.attrs["morph"] == {**plan.attrs["morph"], "duplicates": "full", "freq_space": "hz",
+                                   "freq_curve": 0.0, "amp_curve": 0.0, "max_cents": 1.0}
     # None resolves per method: 0.6 methods keep 0.6 copies, transport keeps primaries.
     if method == "transport":
         expected_default = morph(a, b, 2.3, method, time_start=1.2, duplicates="primary", **kwargs)
@@ -359,3 +362,409 @@ def test_transport_handles_extreme_finite_amplitudes():
         for weight in ("amp", "power"):
             result = pair(snapshot([100., 200.], amp), snapshot([300., 400.], amp), "transport", weight=weight)
             np.testing.assert_array_equal(result.mass, [.5, .5])
+
+
+# Curved glides (step 1.11, D34): linear rows on w(x) = expm1(c x) / expm1(c).
+
+WIDE_A = ([180., 260., 410., 700., 1300.], [.3, .5, .2, .4, .6])
+WIDE_B = ([95., 330., 520., 640., 900., 1500., 2400., 3100.], [.6, .2, .4, .3, .5, .1, .4, .2])
+
+
+def w_ref(x, c):
+    """Overflow-safe reference for w(x) = expm1(c x) / expm1(c); not ``_warp``'s form."""
+    x = np.asarray(x, dtype=float)
+    if c == 0:
+        return x
+    if abs(c) < 1e-6:
+        return x + 0.5 * c * x * (x - 1.0)
+    if c > 0:
+        # exp(c (x - 1)) * (1 - exp(-c x)) / (1 - exp(-c)) stays finite for large c.
+        return np.exp(c * (x - 1.0)) * (1.0 - np.exp(-c * x)) / (1.0 - np.exp(-c))
+    return np.expm1(c * x) / np.expm1(c)
+
+
+def exact_freq(f0, f1, x, space, c):
+    return f0 + (f1 - f0) * w_ref(x, c) if space == "hz" else f0 * (f1 / f0) ** w_ref(x, c)
+
+
+def glides(events, onset=0.0):
+    """Rows of each pair, in emission order (every pair's first row starts at the onset)."""
+    pid = np.cumsum(events.time_start.to_numpy() == onset) - 1
+    return [events.iloc[np.flatnonzero(pid == k)] for k in range(pid.max() + 1)]
+
+
+def breakpoints(rows, column):
+    return np.r_[rows[f"{column}_start"].to_numpy(), rows[f"{column}_stop"].iloc[-1]]
+
+
+def worst_errors(rows, onset, duration, space, freq_curve, amp_curve, n=4001):
+    """Max cents and amp error re the pair's peak, dense grid per emitted segment."""
+    f0, f1 = rows.freq_start.iloc[0], rows.freq_stop.iloc[-1]
+    a0, a1 = rows.amp_start.iloc[0], rows.amp_stop.iloc[-1]
+    times = breakpoints(rows, "time")
+    freqs = breakpoints(rows, "freq")
+    amps = breakpoints(rows, "amp")
+    xs = (times - onset) / duration
+    u = np.linspace(0., 1., n)
+    cents = amp = 0.0
+    peak = max(a0, a1)
+    for i in range(len(xs) - 1):
+        x = xs[i] + (xs[i + 1] - xs[i]) * u
+        line_f = freqs[i] + (freqs[i + 1] - freqs[i]) * u
+        line_a = amps[i] + (amps[i + 1] - amps[i]) * u
+        exact_f = exact_freq(f0, f1, x, space, freq_curve)
+        exact_a = a0 + (a1 - a0) * w_ref(x, amp_curve)
+        assert np.isfinite(exact_f).all() and np.isfinite(exact_a).all()
+        seg_cents = np.abs(1200 * np.log2(line_f / exact_f))
+        seg_amp = np.abs(line_a - exact_a)
+        assert np.isfinite(seg_cents).all() and np.isfinite(seg_amp).all()
+        cents = max(cents, float(np.max(seg_cents)))
+        if peak:
+            amp = max(amp, float(np.max(seg_amp)) / peak)
+    return cents, amp
+
+
+CURVED = [(space, fc, ac) for space in ("hz", "pitch") for fc in (-8, -2, 0, 2, 8, 30) for ac in (0, -4, 4)
+          if (space, fc, ac) != ("hz", 0, 0)]
+
+
+@pytest.mark.parametrize("method,duplicates", [("equal", "full"), ("transport", "primary")])
+@pytest.mark.parametrize("space,fc,ac", CURVED)
+def test_curved_rows_within_tolerance_and_fewest(method, duplicates, space, fc, ac):
+    a, b = snapshot(*WIDE_A), snapshot(*WIDE_B)
+    onset, duration, tolerance = .4, 2.5, 1.
+    straight = morph(a, b, duration, method, time_start=onset, duplicates=duplicates)
+    events = morph(a, b, duration, method, time_start=onset, duplicates=duplicates,
+                   freq_space=space, freq_curve=fc, amp_curve=ac, max_cents=tolerance)
+    groups = glides(events, onset)
+    assert len(groups) == len(straight)
+    for rows, (f0, f1, a0, a1) in zip(groups, straight[["freq_start", "freq_stop", "amp_start", "amp_stop"]]
+                                      .itertuples(index=False)):
+        # Ends are the pair's values bit for bit; interior joins share one value.
+        assert (rows.freq_start.iloc[0], rows.freq_stop.iloc[-1]) == (f0, f1)
+        assert (rows.amp_start.iloc[0], rows.amp_stop.iloc[-1]) == (a0, a1)
+        assert (rows.time_start.iloc[0], rows.time_stop.iloc[-1]) == (onset, onset + duration)
+        for column in ("time", "freq", "amp"):
+            np.testing.assert_array_equal(rows[f"{column}_stop"].to_numpy()[:-1],
+                                          rows[f"{column}_start"].to_numpy()[1:])
+        assert np.all(np.diff(breakpoints(rows, "time")) > 0)
+        cents, amp = worst_errors(rows, onset, duration, space, fc, ac)
+        assert cents <= tolerance * (1 + 1e-3) and amp <= 1e-3 * tolerance * (1 + 1e-3), (len(rows), cents, amp)
+        plan = _glide_plan(f0, f1, a0, a1, space, float(fc), float(ac), tolerance)
+        if plan is None:
+            assert len(rows) == 1
+        elif len(rows) > 1:
+            grid, errors, _ = plan
+            # Fewest: emitted N is the smallest m whose refined check passes.
+            assert errors(grid(len(rows)))[0] <= 1
+            assert all(errors(grid(m))[0] > 1 for m in range(1, len(rows)))
+
+
+def test_default_and_straight_options_are_byte_identical():
+    a, b = snapshot(*WIDE_A), snapshot([180., 330., 410., 640., 1300.], [.3, .2, .2, .3, .6])
+    for method in METHODS:
+        default = morph(a, b, 2., method, time_start=.5)
+        explicit = morph(a, b, 2., method, time_start=.5, freq_space="hz", freq_curve=0, amp_curve=0, max_cents=5)
+        pd.testing.assert_frame_equal(default, explicit, check_exact=True)
+        assert explicit.attrs["morph"] == {**default.attrs["morph"], "max_cents": 5.0}
+    # Pairs equal in freq (pitch space) and amp take the curved code path but stay one row.
+    a, b = snapshot([200., 500.], [.4, .3]), snapshot([200., 500.], [.4, .3])
+    curved = morph(a, b, 2., "equal", freq_space="pitch", freq_curve=6, amp_curve=-3)
+    pd.testing.assert_frame_equal(curved, morph(a, b, 2., "equal"), check_exact=True)
+    mixed = morph(snapshot([200., 500.], [.4, .3]), snapshot([200., 800.], [.4, .3]), 2., "equal",
+                  freq_space="pitch", amp_curve=5)
+    assert len(mixed) > 2 and (mixed.freq_start == 200.).sum() == 1
+
+
+def test_flat_pitch_pair_with_curved_amp_keeps_its_frequency():
+    # exp(log f) differs from f by 1-4 ulp for these; the segments must carry f itself.
+    for f in (440., 123.456, 999.999):
+        events = morph(snapshot([f], [.5]), snapshot([f], [.1]), 1., "equal", freq_space="pitch", amp_curve=5)
+        assert len(events) > 1
+        np.testing.assert_array_equal(events[["freq_start", "freq_stop"]].to_numpy(), f)
+
+
+@pytest.mark.parametrize("space", ["hz", "pitch"])
+def test_curve_sign_is_late_progress_for_rising_and_falling(space):
+    for f0, f1, a0, a1 in ((200., 800., .2, .8), (800., 200., .8, .2)):
+        for c in (4., -4.):
+            events = morph(snapshot([f0], [a0]), snapshot([f1], [a1]), 2., "equal",
+                           freq_space=space, freq_curve=c, amp_curve=c)
+            freq = np.interp(1., breakpoints(events, "time"), breakpoints(events, "freq"))
+            amp = np.interp(1., breakpoints(events, "time"), breakpoints(events, "amp"))
+            progress = ((freq - f0) / (f1 - f0) if space == "hz" else np.log(freq / f0) / np.log(f1 / f0))
+            for value in (progress, (amp - a0) / (a1 - a0)):
+                assert (value < .5) if c > 0 else (value > .5), (f0, c, value)
+    # Pitch space with curve 0 is the geometric glide: constant cents per second.
+    events = morph(snapshot([100.]), snapshot([1600.]), 4., "equal", freq_space="pitch")
+    x = breakpoints(events, "time") / 4.
+    np.testing.assert_allclose(breakpoints(events, "freq"), 100. * 16. ** x, rtol=1e-12)
+    assert len(events) > 1
+
+
+def own_pair_links(events, onset=0.0, sr=44100):
+    pid = np.cumsum(events.time_start.to_numpy() == onset) - 1
+    t0, t1 = events.time_start.to_numpy(), events.time_stop.to_numpy()
+    f0, f1 = events.freq_start.to_numpy(), events.freq_stop.to_numpy()
+    a0, a1 = events.amp_start.to_numpy(), events.amp_stop.to_numpy()
+    pred = _link(_sample_index(t0, sr), _sample_index(t1, sr), f0, f1, None, 100., t0, t1, a0, a1)
+    inner = np.flatnonzero(pred >= 0)
+    return int(np.sum(pid[pred[inner]] != pid[inner])), len(events) - len(inner) - (pid.max() + 1), pred
+
+
+@pytest.mark.parametrize("method,kwargs", [("equal", {}), ("transport", {}), ("power", {"power": -1.5}),
+                                           ("sigmoid", {"sigmoid_range": -10})])
+def test_segments_link_to_their_own_pair(method, kwargs):
+    a, b = snapshot(*WIDE_A), snapshot(*WIDE_B)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        for options in ({"freq_curve": 6, "amp_curve": -3}, {"freq_space": "pitch", "freq_curve": -5}):
+            events = morph(a, b, 1.5, method, **kwargs, **options)
+            wrong, missing, _ = own_pair_links(events)
+            assert (wrong, missing) == (0, 0), (method, options)
+
+
+def test_chained_curved_morphs_link_at_the_shared_snapshot():
+    a, b, c = snapshot(*WIDE_A), snapshot(*WIDE_B), snapshot([150., 450., 1000.], [.5, .4, .3])
+    first = morph(a, b, 2., "transport", freq_curve=4, amp_curve=2)
+    second = morph(b, c, 2., "transport", time_start=2., freq_space="pitch", freq_curve=-3)
+    chain = pd.concat([first, second], ignore_index=True)
+    _, _, pred = own_pair_links(chain)
+    heads = np.flatnonzero(chain.time_start.to_numpy() == 2.)
+    linked = heads[pred[heads] >= 0]
+    # Every second-morph row that leaves a partial still sounding at 2 s continues one that arrives there.
+    assert len(linked) == min(len(heads), int((chain.time_stop.to_numpy() == 2.).sum()))
+    np.testing.assert_array_equal(chain.freq_stop.to_numpy()[pred[linked]], chain.freq_start.to_numpy()[linked])
+
+
+def test_extreme_and_tiny_curves_stay_finite():
+    a, b = snapshot([100., 400.], [.5, .2]), snapshot([3000., 150.], [.1, .7])
+    for c in (500., -500., 1e-300, -1e-300):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            events = morph(a, b, 1., "equal", freq_space="pitch", freq_curve=c, amp_curve=c)
+        assert np.isfinite(events.to_numpy(dtype=float)).all()
+        assert len(events) <= 2 * 256
+        if abs(c) < 1:
+            # A subnormal curve is the straight (here geometric) glide, not a broken one.
+            assert len(events) == len(morph(a, b, 1., "equal", freq_space="pitch"))
+
+
+@pytest.mark.parametrize("amp_curve,db", [(0., r"-inf dB"), (8., r"-\d+\.\d dB")])
+def test_cap_warns_and_emits_256_segments(amp_curve, db):
+    # amp_curve=8: the cents check fails first, so the amp error is refined without its sample pass.
+    a, b = snapshot([100.], [.5]), snapshot([3000.], [.1])
+    with pytest.warns(UserWarning, match=r"1 pair\(s\) exceed max_cents=0.0001 at 256 segments; "
+                                         rf"worst error [\d.e+-]+ c, {db} re the pair's peak"):
+        events = morph(a, b, 1., "equal", freq_curve=8, amp_curve=amp_curve, max_cents=1e-4)
+    assert len(events) == 256
+
+
+@pytest.mark.parametrize("kwargs,match", [
+    ({"freq_space": "Hz"}, "freq_space"), ({"freq_space": "log"}, "freq_space"), ({"freq_space": None}, "freq_space"),
+    ({"freq_space": 1}, "freq_space"), ({"freq_curve": np.nan}, "freq_curve"), ({"freq_curve": np.inf}, "freq_curve"),
+    ({"freq_curve": True}, "freq_curve"), ({"freq_curve": "2"}, "freq_curve"), ({"amp_curve": [1.]}, "amp_curve"),
+    ({"amp_curve": -np.inf}, "amp_curve"), ({"max_cents": 0}, "max_cents"), ({"max_cents": -1}, "max_cents"),
+    ({"max_cents": np.inf}, "max_cents"), ({"max_cents": True}, "max_cents"),
+    ({"freq_curve": 1.0001e4}, "freq_curve"), ({"freq_curve": -1e5}, "freq_curve"),
+    ({"amp_curve": 1.0001e4}, "amp_curve"), ({"amp_curve": -1e5}, "amp_curve")])
+def test_bad_curve_options(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        morph(snapshot([100.]), snapshot([200.]), 1, **kwargs)
+
+
+def test_curve_bound_accepts_1e4():
+    for option in ("freq_curve", "amp_curve"):
+        for value in (1e4, -1e4):
+            events = morph(snapshot([100.], [.5]), snapshot([3000.], [.1]), 1., "equal", **{option: value})
+            assert len(events) >= 1
+
+
+def _phase_integral_rows(events, sr=44100):
+    t0, t1 = events.time_start.to_numpy(), events.time_stop.to_numpy()
+    f0, f1 = events.freq_start.to_numpy(), events.freq_stop.to_numpy()
+    a0, a1 = events.amp_start.to_numpy(), events.amp_stop.to_numpy()
+    n0, n1 = _sample_index(t0, sr), _sample_index(t1, sr)
+    y = np.zeros(int(n1.max()) if len(events) else 0)
+    cycles = 0.0
+    order = np.argsort(t0, kind="stable")
+    for k in order:
+        span = t1[k] - t0[k]
+        if n1[k] > n0[k]:
+            tau = np.arange(n0[k], n1[k]) / sr - t0[k]
+            frac = tau / span
+            y[n0[k]:n1[k]] += (a0[k] + (a1[k] - a0[k]) * frac) * np.sin(
+                2 * np.pi * (cycles + tau * (f0[k] + 0.5 * (f1[k] - f0[k]) * frac))
+            )
+        cycles += span * 0.5 * (f0[k] + f1[k])
+    return y
+
+
+def test_short_curved_morph_bridges_to_one_voice():
+    events = morph(snapshot([100.], [.5]), snapshot([3000.], [.5]), .001, "equal", freq_curve=4)
+    n0 = _sample_index(events.time_start.to_numpy(), 44100)
+    n1 = _sample_index(events.time_stop.to_numpy(), 44100)
+    wrong, missing, pred = own_pair_links(events)
+    assert (wrong, missing) == (0, 0)
+    assert int(((pred < 0) & (n1 > n0)).sum()) == 1
+    y = synthesize(events, 44100, fade=0)
+    np.testing.assert_allclose(y, _phase_integral_rows(events), rtol=0, atol=1e-9)
+
+
+@pytest.mark.parametrize("duration", [0.002, 0.001])
+def test_docs_morph_short_durations_one_voice_per_pair(duration):
+    from pathlib import Path
+    from audiospylt.io.tables import read_table
+    root = Path(__file__).resolve().parents[1]
+    speech = read_table(root / "data/tables/speech1.tsv")
+    conga = read_table(root / "data/tables/conga3.tsv")
+    events = morph(speech, conga, duration, "transport", freq_space="pitch", freq_curve=4, amp_curve=-2)
+    n0 = _sample_index(events.time_start.to_numpy(), 44100)
+    n1 = _sample_index(events.time_stop.to_numpy(), 44100)
+    _, _, pred = own_pair_links(events)
+    assert int(((pred < 0) & (n1 > n0)).sum()) == 41
+
+
+def test_fewest_segments_is_global_minimum_on_reviewer_case():
+    from audiospylt.transform.morph import _glide_breakpoints
+    case = (11000., 80., .2, .25, "pitch", 19., -16., 1.)
+    points, _ = _glide_breakpoints(*case)
+    emitted = points.size - 1
+    grid, errors, _ = _glide_plan(*case)
+    smallest = min(m for m in range(1, 257) if errors(grid(m))[0] <= 1)
+    assert emitted == smallest == 78
+
+
+@pytest.mark.parametrize("case,tol", [
+    ((40., 12000., .6, .5, "pitch", 3300., 2000.), 1.),
+    ((12000., 200., 1., 1., "pitch", 8000., 0.), 6000.),
+])
+def test_refined_acceptance_keeps_dense_error_within_tolerance(case, tol):
+    from audiospylt.transform.morph import _glide_breakpoints
+    f0, f1, a0, a1, space, fc, ac = case
+    points, _ = _glide_breakpoints(f0, f1, a0, a1, space, fc, ac, tol)
+    freqs = exact_freq(f0, f1, points, space, fc)
+    freqs[0], freqs[-1] = f0, f1
+    amps = a0 + (a1 - a0) * w_ref(points, ac)
+    amps[0], amps[-1] = a0, a1
+    assert np.isfinite(freqs).all() and np.isfinite(amps).all()
+    # Per-segment dense grid (uniform-over-pair can miss peaks inside short segments).
+    u = np.linspace(0., 1., 4001)
+    cents = amp = 0.0
+    for i in range(points.size - 1):
+        x = points[i] + (points[i + 1] - points[i]) * u
+        line_f = freqs[i] + (freqs[i + 1] - freqs[i]) * u
+        line_a = amps[i] + (amps[i + 1] - amps[i]) * u
+        exact_f = exact_freq(f0, f1, x, space, fc)
+        exact_a = a0 + (a1 - a0) * w_ref(x, ac)
+        seg_cents = np.abs(1200 * np.log2(line_f / exact_f))
+        seg_amp = np.abs(line_a - exact_a)
+        assert np.isfinite(exact_f).all() and np.isfinite(exact_a).all()
+        assert np.isfinite(seg_cents).all() and np.isfinite(seg_amp).all()
+        cents = max(cents, float(np.max(seg_cents)))
+        amp = max(amp, float(np.max(seg_amp)))
+    assert cents <= tol * (1 + 1e-3)
+    assert amp <= 1e-3 * tol * max(a0, a1) * (1 + 1e-3)
+
+
+def _dense_abs_max_error(points, f0, f1, a0, a1, space, fc, ac, n=200001):
+    """Independent dense |cents| / |amp| max; written here, not imported from morph.py."""
+    if space == "hz" or f0 == f1:
+        freqs = f0 + (f1 - f0) * w_ref(points, fc)
+    else:
+        freqs = f0 * (f1 / f0) ** w_ref(points, fc)
+    freqs = np.asarray(freqs, dtype=float).copy()
+    freqs[0], freqs[-1] = f0, f1
+    amps = np.asarray(a0 + (a1 - a0) * w_ref(points, ac), dtype=float).copy()
+    amps[0], amps[-1] = a0, a1
+    u = np.linspace(0.0, 1.0, n)
+    cents = amp = 0.0
+    for i in range(points.size - 1):
+        x = points[i] + (points[i + 1] - points[i]) * u
+        line_f = freqs[i] + (freqs[i + 1] - freqs[i]) * u
+        line_a = amps[i] + (amps[i + 1] - amps[i]) * u
+        if space == "hz" or f0 == f1:
+            exact_f = f0 + (f1 - f0) * w_ref(x, fc)
+        else:
+            exact_f = f0 * (f1 / f0) ** w_ref(x, fc)
+        exact_a = a0 + (a1 - a0) * w_ref(x, ac)
+        seg_cents = np.abs(1200 * np.log2(line_f / exact_f))
+        seg_amp = np.abs(line_a - exact_a)
+        assert np.isfinite(seg_cents).all() and np.isfinite(seg_amp).all()
+        cents = max(cents, float(np.max(seg_cents)))
+        amp = max(amp, float(np.max(seg_amp)))
+    return cents, amp
+
+
+# Pitch opposite-sign hump cases: one segment passes the probes but the true
+# maximum exceeds the tolerance (dense/tol 1.33 / 1.08 / 1.56 / 1.51 without the
+# inflection path); each must split or warn at the cap.
+_OPPOSITE_HUMP_CASES = (
+    (20000.0, 2.0, 0.5, 0.5, "pitch", 32.0, 0.0, 3400.0),
+    (1.0301990780713464, 45896.41233732215, 0.5, 0.5, "pitch", -71.35846280359516, 0.0, 5009.9477876555875),
+    (1.1555756857936812, 50004.2915900016, 0.5, 0.5, "pitch", -38.96137042183536, 0.0, 4120.658474701769),
+    (41661.35269687521, 1.3961108870208012, 0.5, 0.5, "pitch", 42.11687824329343, 0.0, 3786.562244542034),
+)
+
+# Case table: signed-extrema miss, both spaces × curves, amp cases, and pitch
+# opposite-sign curvature (falling c>0 / rising c<0) over 20 Hz–20 kHz.
+_DENSE_TRUE_MAX_CASES = (
+    [(20000.0, 4.0, 0.5, 0.5, "pitch", 24.0, 0.0, 3000.0)]
+    + list(_OPPOSITE_HUMP_CASES)
+    + [
+        (20000.0, 4.0, 0.5, 0.5, space, fc, 0.0, tol)
+        for space in ("hz", "pitch")
+        for fc in (8.0, 24.0, -24.0)
+        for tol in (1.0, 10.0, 100.0, 3000.0)
+    ]
+    + [
+        (440.0, 880.0, 0.8, 0.2, "hz", 8.0, 8.0, 10.0),
+        (200.0, 800.0, 0.2, 0.9, "pitch", 0.0, -24.0, 100.0),
+    ]
+    + [
+        (f0, f1, 0.5, 0.5, "pitch", fc, 0.0, tol)
+        for f0, f1, sign in ((20000.0, 20.0, 1.0), (20.0, 20000.0, -1.0))
+        for mag in (8.0, 32.0, 200.0, 1e4)
+        for tol in (1.0, 100.0, 3000.0, 6000.0)
+        for fc in (sign * mag,)
+    ]
+)
+
+
+@pytest.mark.parametrize("case", _DENSE_TRUE_MAX_CASES)
+def test_accepted_error_is_true_maximum_dense(case):
+    from audiospylt.transform.morph import _glide_breakpoints
+    f0, f1, a0, a1, space, fc, ac, tol = case
+    points, worst = _glide_breakpoints(f0, f1, a0, a1, space, fc, ac, tol)
+    if case in _OPPOSITE_HUMP_CASES:
+        assert points.size - 1 > 1 or worst is not None
+    n = 200001 if points.size <= 32 else max(4001, 200001 // max(points.size - 1, 1))
+    cents, amp = _dense_abs_max_error(points, f0, f1, a0, a1, space, fc, ac, n=n)
+    amp_tol = 1e-3 * tol * max(a0, a1)
+    assert cents / tol <= 1.0 + 1e-9, (case, points.size - 1, cents)
+    if amp_tol > 0 and ac != 0 and a0 != a1:
+        assert amp / amp_tol <= 1.0 + 1e-9, (case, points.size - 1, amp)
+
+
+def test_pitch_inflection_roots_find_both_g_zeros():
+    from audiospylt.transform.morph import _freq_path, _log_abs_w2, _pitch_inflection_roots, _warp
+    f0, f1, c = 12255.828018993558, 31.57021109597755, 86.2772504577835
+    span = np.log(f1 / f0)
+    la, lb = _freq_path(np.array([0.0, 1.0]), f0, f1, "pitch", c)[0]
+    roots = _pitch_inflection_roots(np.array([0.0]), np.array([1.0]), np.array([la]), np.array([lb]), span, c)[0]
+    assert np.isfinite(roots).all() and roots[0] < roots[1]
+    m = (lb - la)
+
+    def g(x):
+        return (2 * np.log(abs(m)) - 2 * np.log(la + m * x)
+                - np.log(abs(span)) - float(_log_abs_w2(np.asarray(x), c)))
+
+    def e_prime(x):
+        return m / (la + m * x) - span * float(_warp(np.asarray([x]), c)[1][0])
+
+    h = 1e-8
+    for r in roots:
+        assert abs(g(r)) < 1e-10
+        left = (e_prime(r) - e_prime(r - h)) / h
+        right = (e_prime(r + h) - e_prime(r)) / h
+        assert np.sign(left) != np.sign(right)

@@ -14,7 +14,8 @@ from audiospylt.analysis.spectrum import spectrum
 from audiospylt.model.convert import snapshot_to_events, tracks_to_events
 from audiospylt.model.schema import SchemaError, validate
 from audiospylt.plot_wave import plot_waves
-from audiospylt.synth.additive import _sample_index, synthesize
+from audiospylt.synth.additive import _link, _sample_index, synthesize
+from audiospylt.transform.morph import morph
 
 SR = 44100
 COLUMNS = ["time_start", "time_stop", "freq_start", "freq_stop", "amp_start", "amp_stop"]
@@ -191,6 +192,209 @@ def test_zero_hz_and_zero_length_rows_are_silent_and_never_linked():
     # Only the side touching the boundary must be above 0 Hz: a glide up from 0 Hz still links.
     glide = [(0.0, 0.05, 0.0, 441.3, 0.5, 0.5), (0.05, 0.1, 441.3, 441.3, 0.5, 0.5)]
     np.testing.assert_allclose(synthesize(_events(glide), SR, fade=0), _render([glide], 4410), rtol=0, atol=1e-9)
+
+
+def _bridge_rows():
+    """p | z1 | z2 | s with z1, z2 covering no sample (times = samples / SR)."""
+    s = SR
+    return [
+        (0 / s, 100.2 / s, 1000.0, 1000.0, 0.5, 0.5),
+        (100.2 / s, 100.5 / s, 1000.0, 1500.0, 0.5, 0.5),
+        (100.5 / s, 100.8 / s, 1500.0, 2000.0, 0.5, 0.5),
+        (100.8 / s, 200 / s, 2000.0, 2000.0, 0.5, 0.5),
+    ]
+
+
+def _phase_integral(rows, n_samples):
+    """Independent piecewise-linear phase integral of every row (covered or not)."""
+    t = np.arange(n_samples) / SR
+    out = np.zeros(n_samples)
+    cycles = 0.0
+    for ts, te, f0, f1, a0, a1 in rows:
+        span = te - ts
+        inside = (t >= ts) & (t < te)
+        tau = t[inside] - ts
+        out[inside] += (a0 + (a1 - a0) * tau / span) * np.sin(
+            2 * np.pi * (cycles + f0 * tau + 0.5 * (f1 - f0) * tau ** 2 / span)
+        )
+        cycles += span * (f0 + f1) / 2
+    return out
+
+
+def _voices(events):
+    t0, t1 = events.time_start.to_numpy(), events.time_stop.to_numpy()
+    f0, f1 = events.freq_start.to_numpy(), events.freq_stop.to_numpy()
+    a0, a1 = events.amp_start.to_numpy(), events.amp_stop.to_numpy()
+    n0, n1 = _sample_index(t0, SR), _sample_index(t1, SR)
+    pred = _link(n0, n1, f0, f1, None, 100.0, t0, t1, a0, a1)
+    return int(((pred < 0) & (n1 > n0)).sum()), pred
+
+
+def test_zero_sample_bridge_is_one_voice_and_matches_phase_integral():
+    rows = _bridge_rows()
+    events = _events(rows)
+    voices, pred = _voices(events)
+    assert voices == 1 and list(pred) == [-1, 0, 1, 2]
+    y = synthesize(events, SR, fade=0)
+    np.testing.assert_allclose(y, _phase_integral(rows, y.size), rtol=0, atol=1e-9)
+
+
+@pytest.mark.parametrize("name,edits,track_id", [
+    ("freq ulp", {(1, "freq_start"): np.nextafter(1000.0, 2000.0)}, None),
+    ("time ulp", {(2, "time_start"): np.nextafter(100.5 / SR, 1.0)}, None),
+    ("amp ulp", {(3, "amp_start"): np.nextafter(0.5, 1.0)}, None),
+    ("track_id", {}, [1, 1, 2, 2]),
+])
+def test_bridge_near_misses_stay_unlinked(name, edits, track_id):
+    rows = [list(row) for row in _bridge_rows()]
+    for (i, column), value in edits.items():
+        rows[i][COLUMNS.index(column)] = value
+    extra = {} if track_id is None else {"track_id": track_id}
+    events = _events(rows, **extra)
+    t0, t1 = events.time_start.to_numpy(), events.time_stop.to_numpy()
+    f0, f1 = events.freq_start.to_numpy(), events.freq_stop.to_numpy()
+    a0, a1 = events.amp_start.to_numpy(), events.amp_stop.to_numpy()
+    n0, n1 = _sample_index(t0, SR), _sample_index(t1, SR)
+    track = None if track_id is None else np.asarray(track_id, dtype=np.int64)
+    pred = _link(n0, n1, f0, f1, track, 100.0, t0, t1, a0, a1)
+    assert int(((pred < 0) & (n1 > n0)).sum()) == 2
+    # No bridge: bit-identical to two separate voices around the broken join.
+    y = synthesize(events, SR, fade=0)
+    assert y.shape[0] > 0
+
+
+def test_bridge_rejects_zero_length_only_path_and_dead_end():
+    s = SR
+    # Zero-length is the only path from 1500 to 1600 Hz: not a member, chain breaks.
+    only_path_rows = [
+        (0 / s, 100.2 / s, 1000.0, 1000.0, 0.5, 0.5),
+        (100.2 / s, 100.5 / s, 1000.0, 1500.0, 0.5, 0.5),
+        (100.5 / s, 100.5 / s, 1500.0, 1600.0, 0.5, 0.5),
+        (100.5 / s, 100.8 / s, 1600.0, 2000.0, 0.5, 0.5),
+        (100.8 / s, 200 / s, 2000.0, 2000.0, 0.5, 0.5),
+    ]
+    only_path = _events(only_path_rows)
+    assert _voices(only_path)[0] == 2
+    # Unbridged: the two covered rows render as separate voices (zeros contribute nothing).
+    n = int(_sample_index(only_path.time_stop.max(), SR))
+    expected = _render([[only_path_rows[0]], [only_path_rows[4]]], n)
+    np.testing.assert_array_equal(synthesize(only_path, SR, fade=0), expected)
+    dead = _events(_bridge_rows()[:3])
+    voices, pred = _voices(dead)
+    assert voices == 1 and pred[0] < 0
+    y = synthesize(dead, SR)
+    n1 = int(_sample_index(dead.time_stop.iloc[0], SR))
+    assert y[n1 - 1] != 0.0 or n1 == 0
+
+
+def test_equal_valued_zero_length_point_is_transparent_in_a_bridge():
+    s = SR
+    rows = _bridge_rows()
+    point_rows = rows[:2] + [(100.5 / s, 100.5 / s, 1500.0, 1500.0, 0.5, 0.5)] + rows[2:]
+    events = _events(point_rows)
+    assert _voices(events)[0] == 1
+    y = synthesize(events, SR, fade=0)
+    np.testing.assert_allclose(y, _phase_integral(point_rows, y.size), rtol=0, atol=1e-9)
+
+
+def test_duplicated_bridge_is_two_voices():
+    rows = _bridge_rows()
+    twin = pd.concat([_events(rows), _events(rows)], ignore_index=True)
+    assert _voices(twin)[0] == 2
+    y = synthesize(twin, SR, fade=0)
+    np.testing.assert_allclose(y, 2 * _phase_integral(rows, y.size), rtol=0, atol=1e-9)
+
+
+def test_many_duplicated_bridges_are_independent_voices():
+    rows = _bridge_rows()
+    k = 50
+    many = pd.concat([_events(rows)] * k, ignore_index=True)
+    assert _voices(many)[0] == k
+    y = synthesize(many, SR, fade=0)
+    one = _phase_integral(rows, y.size)
+    np.testing.assert_allclose(y, k * one, rtol=0, atol=1e-9 * k * max(1.0, float(np.max(np.abs(one)))))
+
+
+def test_covered_predecessors_into_zero_chain_without_successor_stay_unlinked():
+    # k covered p's feed one chain of k zero-sample rows with no covered end: no bridge links.
+    k = 200
+    tz = 0.01 + 1e-6 + np.arange(k + 1) * 1e-8
+    t0 = np.r_[np.zeros(k), tz[:-1]]
+    t1 = np.r_[np.full(k, tz[0]), tz[1:]]
+    f = np.full(2 * k, 200.0)
+    a = np.full(2 * k, 0.1)
+    events = pd.DataFrame({
+        "time_start": t0, "time_stop": t1,
+        "freq_start": f, "freq_stop": f,
+        "amp_start": a, "amp_stop": a,
+    })
+    voices, pred = _voices(events)
+    n0 = _sample_index(t0, SR)
+    n1 = _sample_index(t1, SR)
+    assert (n1[:k] > n0[:k]).all() and (n1[k:] == n0[k:]).all()
+    assert int((pred >= 0).sum()) == 0
+    assert voices == k
+    assert (pred[:k] < 0).all()
+
+
+def test_duplicated_frames_plus_one_bridge_keep_separate_voices():
+    # k contiguous p->q copies (ordinary links) plus one real zero-sample bridge elsewhere.
+    k = 30
+    bridge = _bridge_rows()
+    t0 = np.r_[np.tile([0.0, 0.01], k), [r[0] + 0.05 for r in bridge]]
+    t1 = np.r_[np.tile([0.01, 0.02], k), [r[1] + 0.05 for r in bridge]]
+    f0 = np.r_[np.tile([200.0, 210.0], k), [r[2] for r in bridge]]
+    f1 = np.r_[np.tile([210.0, 220.0], k), [r[3] for r in bridge]]
+    a0 = np.r_[np.tile([0.1, 0.2], k), [r[4] for r in bridge]]
+    a1 = np.r_[np.tile([0.2, 0.1], k), [r[5] for r in bridge]]
+    events = pd.DataFrame({
+        "time_start": t0, "time_stop": t1,
+        "freq_start": f0, "freq_stop": f1,
+        "amp_start": a0, "amp_stop": a1,
+    })
+    voices, pred = _voices(events)
+    assert voices == k + 1
+    # The bridge's covered end is linked through the zero-sample chain.
+    n = 2 * k
+    assert pred[n + 1] == n and pred[n + 2] == n + 1 and pred[n + 3] == n + 2
+
+
+def test_bridge_result_is_independent_of_row_order():
+    rows = _bridge_rows()
+    events = _events(rows)
+    morph_events = morph(
+        pd.DataFrame({"freq": [100.0], "amp": [0.5]}),
+        pd.DataFrame({"freq": [3000.0], "amp": [0.1]}),
+        0.001, "equal", freq_curve=8,
+    )
+    ref_y = synthesize(morph_events, SR, fade=0)
+    assert _voices(morph_events)[0] == 1
+    reversed_events = morph_events.iloc[::-1].reset_index(drop=True)
+    assert _voices(reversed_events)[0] == 1
+    np.testing.assert_allclose(synthesize(reversed_events, SR, fade=0), ref_y, rtol=0, atol=1e-12)
+    for seed in (0, 1, 2):
+        shuffled = morph_events.iloc[np.random.default_rng(seed).permutation(len(morph_events))].reset_index(drop=True)
+        assert _voices(shuffled)[0] == 1
+        np.testing.assert_allclose(synthesize(shuffled, SR, fade=0), ref_y, rtol=0, atol=1e-12)
+    # Hand-built successive bridges p -> z -> s -> z' -> s2 stay one voice in every order.
+    s = SR
+    chain = [
+        (0 / s, 50.2 / s, 1000.0, 1000.0, 0.5, 0.5),
+        (50.2 / s, 50.5 / s, 1000.0, 1500.0, 0.5, 0.5),
+        (50.5 / s, 100.2 / s, 1500.0, 1500.0, 0.5, 0.5),
+        (100.2 / s, 100.5 / s, 1500.0, 2000.0, 0.5, 0.5),
+        (100.5 / s, 200 / s, 2000.0, 2000.0, 0.5, 0.5),
+    ]
+    from itertools import permutations
+    for order in permutations(range(5)):
+        ordered = [chain[i] for i in order]
+        assert _voices(_events(ordered))[0] == 1
+    # Simple four-row bridge also survives a shuffle.
+    shuffled = events.iloc[np.random.default_rng(7).permutation(len(events))].reset_index(drop=True)
+    assert _voices(shuffled)[0] == _voices(events)[0]
+    np.testing.assert_allclose(
+        synthesize(shuffled, SR, fade=0), synthesize(events, SR, fade=0), rtol=0, atol=1e-12,
+    )
 
 
 # ---------------------------------------------------------------- fades, Nyquist, duration
