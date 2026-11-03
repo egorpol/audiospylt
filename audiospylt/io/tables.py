@@ -234,6 +234,11 @@ def read_table(
     # CR/LF in the last cell; interior empty records remain visible to _columns.
     payload = payload.rstrip("\r\n")
     columns = _columns(payload)
+    selected = (kind if kind is not None else
+                infer_kind(pd.DataFrame(columns=columns).rename(columns=_LEGACY_NAMES)))
+    integer_names = {column.name for column in
+                     TABLE_CONTRACTS[selected].required + TABLE_CONTRACTS[selected].optional
+                     if column.dtype in ("int64", "Int64")} if selected in TABLE_CONTRACTS else set()
     options: dict[str, object] = dict(_FLOAT_OPTIONS)
     if versioned:
         options.update({"keep_default_na": False, "na_values": [""]})
@@ -241,7 +246,7 @@ def read_table(
     # and decimal/exponent IDs would round via binary64. Preserve those tokens.
     options["converters"] = {
         name: (lambda cell: _number(cell, integer=True))
-        for name in ("track_id", "bin") if name in columns
+        for name in columns if name in integer_names
     }
     try:
         frame = pd.read_csv(
@@ -249,7 +254,6 @@ def read_table(
         )
     except (ValueError, pd.errors.ParserError) as error:
         raise SchemaError(f"Malformed TSV: {error}") from error
-    selected = kind if kind is not None else infer_kind(frame.rename(columns=_LEGACY_NAMES))
     float_names = {column.name for column in
                    TABLE_CONTRACTS[selected].required + TABLE_CONTRACTS[selected].optional
                    if column.dtype == "float64"} if selected in TABLE_CONTRACTS else set()

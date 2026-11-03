@@ -2,8 +2,8 @@
 
 This is the public interchange contract for AudioSpylt and sibling tools such as
 FFTimbre. A table is a collection of rows of one declared kind: `snapshot`,
-`events`, or `tracks`. The major version in the file is the **format version**,
-independent of the installed AudioSpylt package version. Writers emit `v1`;
+`peaks`, `events`, or `tracks`. The major version in the file is the **format
+version**, independent of the installed AudioSpylt package version. Writers emit `v1`;
 readers must reject every other version and report the version they found. New
 incompatible interpretations require a new format major version.
 
@@ -32,7 +32,7 @@ ending; a line containing spaces or tabs is not an empty line. The structure is:
 
 The first physical line is mandatory and is exactly
 `# audiospylt-table: <kind> v<major>`: single ASCII spaces, no indentation,
-trailing whitespace, or additional tokens. `<kind>` is one of the three
+trailing whitespace, or additional tokens. `<kind>` is one of the four
 case-sensitive tokens above. For this version, `<major>` is exactly `1` (neither
 `01` nor `1.0`). Unknown kind tokens and malformed type lines are errors.
 
@@ -91,6 +91,22 @@ Peaks from a single analysis frame:
 - `bin`: non-negative integer analysis-bin index, or unknown.
 - `prominence`: non-negative peak prominence, or unknown; this format assigns
   no additional analysis-specific scaling convention to it.
+
+A snapshot is one instant. An extra `time` column may hold at most one distinct
+value. For temporal tables, select one frame with `peaks[peaks.frame == i]` or
+use `tracks_at(tracks, t)`. A table's attrs tag does not impose this rule.
+
+### `peaks`
+
+Spectral peaks from many analysis frames, one row per peak per frame:
+
+- Required: `frame`, `time`, `freq`, `amp`.
+- Optional: `phase`, `bin`, `prominence`, as in `snapshot`.
+- `frame` is a non-negative signed 64-bit integer, with no missing values.
+- `time` is in seconds, `freq` in Hz, and `amp` is linear amplitude. All three
+  are non-negative.
+- All rows of one frame share one time. A larger frame number has a strictly
+  larger time. Row order is free. Frames without peaks have no rows.
 
 ### `events`
 
@@ -155,12 +171,12 @@ an empty cell; its NaN payload/sign is not part of the interchange contract.
 Readers may also recognize textual NaN in optional numeric cells as unknown;
 writers always emit the empty representation.
 
-`track_id` and `bin` must be integer-valued. Integer-valued decimal/exponent
+`track_id`, `frame`, and `bin` must be integer-valued. Integer-valued decimal/exponent
 representations such as `2.0` or `2e0` are accepted, but writers emit decimal
 integers without a fractional part. Parse these columns without routing through
-binary64, which would round IDs above `2**53`. Both columns must fit signed
-int64; `bin` additionally requires `0 <= bin <= 9223372036854775807` because its
-in-memory representation is pandas nullable `Int64`.
+binary64, which would round IDs above `2**53`. All three columns must fit signed
+int64; `frame` and `bin` must also be non-negative. In memory, `frame` uses
+int64 and `bin` uses pandas nullable `Int64`.
 
 Extras are untyped extension columns. Their labels, relative order, and cell
 contents are passed through by validation; their values do not satisfy or
@@ -189,9 +205,9 @@ from audiospylt.io.tables import read_table, write_table
 
 Tables in memory are plain pandas DataFrames. `validate(df, kind)` returns a
 copy in canonical column order, with a fresh zero-based RangeIndex, float64
-float columns, int64 `track_id`, and nullable `Int64` `bin`. It preserves extras
-and unrelated attrs, and sets `df.attrs["audiospylt_table"]` on the result to the
-validated kind. Numeric in-memory cells must be numbers (not numeric strings
+float columns, int64 `track_id` and `frame`, and nullable `Int64` `bin`. It preserves
+extras and unrelated attrs, and sets `df.attrs["audiospylt_table"]` on the result
+to the validated kind. Numeric in-memory cells must be numbers (not numeric strings
 or booleans). Integral floats in integer columns are accepted. Validation raises
 one `SchemaError(ValueError)` listing every detected problem across usable
 columns, including counts and first offending zero-based row positions. A
@@ -199,11 +215,13 @@ duplicate label is an error; its duplicated column cannot be value-validated
 unambiguously. Validation neither sorts rows nor mutates the input. Numeric
 NumPy/pandas dtypes, including nullable numeric dtypes, use vectorised checks;
 object columns retain scalar checks to preserve exact numbers and reject
-booleans among mixed values. Within-track time checks are also vectorised.
+booleans among mixed values. Within-track and frame/time relationship checks
+are also vectorised.
 
-`infer_kind(df)` uses required column sets, ignoring attrs. Complete `tracks`
-columns take precedence over `snapshot` because tracks contain `freq` and
-`amp`; `track_id` plus `time` distinguish them. Independent matches (for example
+`infer_kind(df)` uses required column sets, ignoring attrs. Inference precedence
+is `tracks` > `peaks` > `snapshot`.
+Complete tracks also win when `frame` is present. `track_id` distinguishes
+tracks; `frame` distinguishes peaks. Independent matches (for example
 complete `events` and `snapshot` columns together) or no complete match raise
 `SchemaError`.
 
@@ -301,4 +319,14 @@ An empty tracks table without metadata or optional columns:
 ```tsv
 # audiospylt-table: tracks v1
 track_id	time	freq	amp
+```
+
+Two frames of spectral peaks:
+
+```tsv
+# audiospylt-table: peaks v1
+frame	time	freq	amp	bin	prominence
+0	0.0	440.0	0.5	82	40.0
+0	0.0	880.0	0.25	163	30.0
+1	0.01	442.0	0.4	82	38.0
 ```

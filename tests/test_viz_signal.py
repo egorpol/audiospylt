@@ -338,3 +338,55 @@ def test_spectrogram_z_equals_floored_db_and_pooling_values():
             rtol=1e-5,
         )
         assert fig_p.data[0].x[i] == pytest.approx(spec.times[start:stop].mean())
+
+
+@pytest.mark.parametrize("db", [True, False])
+def test_peaks_overlay_one_marker_trace_per_table(db):
+    from audiospylt.analysis.tracking import spectrogram_peaks
+    from audiospylt.viz.tables import plot_events, plot_events_3d, plot_snapshot
+
+    audio, sr = _sine()
+    spec = spectrogram(audio, sr, frame_length=256, hop=128)
+    peaks = spectrogram_peaks(spec, prominence_db=20)
+    before = peaks.copy(deep=True)
+    fig = plot_spectrogram(spec, overlay=[peaks, peaks], overlay_mode="markers", db=db,
+                           overlay_labels=["one", "two"])
+    assert len(fig.data) == 3
+    for trace, name in zip(fig.data[1:], ["one", "two"]):
+        assert trace.mode == "markers" and trace.name == name
+        np.testing.assert_array_equal(trace.x, peaks.time)
+        np.testing.assert_array_equal(trace.y, peaks.freq)
+        assert "time:" in trace.text[0] and "frequency:" in trace.text[0]
+        assert (" dB" in trace.text[0]) == db
+    pd.testing.assert_frame_equal(peaks, before)
+    for mode in ("lines", "lines+markers", ["markers", "lines"]):
+        with pytest.raises(ValueError, match="peaks overlay_mode must be 'markers'"):
+            plot_spectrogram(spec, overlay=[peaks, peaks], overlay_mode=mode)
+    for call in (plot_snapshot, plot_events, plot_events_3d,
+                 lambda df: plot_spectrum(spec.frame(0), peaks=df)):
+        with pytest.raises(ValueError, match=r"plot_spectrogram\(overlay=\.\.\.\)"):
+            call(peaks)
+    empty = plot_spectrogram(spec, overlay=peaks.iloc[:0], overlay_mode="markers")
+    assert len(empty.data) == 2
+
+
+def test_peaks_and_mixed_overlay_modes_default_per_kind():
+    from audiospylt.model.schema import validate
+
+    audio, sr = _sine()
+    spec = spectrogram(audio, sr, frame_length=256, hop=128)
+    peaks = validate(pd.DataFrame({"frame": [0, 1], "time": spec.times[:2],
+                                   "freq": [440., 441.], "amp": [.5, .4]}), "peaks")
+    tracks = validate(peaks.drop(columns="frame").assign(track_id=0), "tracks")
+    single = plot_spectrogram(spec, overlay=peaks)
+    assert len(single.data) == 2
+    assert single.data[1].mode == "markers"
+    np.testing.assert_array_equal(single.data[1].x, peaks.time)
+    np.testing.assert_array_equal(single.data[1].y, peaks.freq)
+    mixed = plot_spectrogram(spec, overlay=[peaks, tracks])
+    assert len(mixed.data) == 3
+    assert mixed.data[1].mode == "markers"
+    assert mixed.data[2].mode == "lines"
+    for mode in ("lines", "lines+markers"):
+        with pytest.raises(ValueError, match="overlay_mode='markers' or the default None"):
+            plot_spectrogram(spec, overlay=peaks, overlay_mode=mode)

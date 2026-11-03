@@ -64,6 +64,13 @@ TABLE_CONTRACTS: Mapping[str, TableContract] = MappingProxyType({
         (ColumnContract("phase"), ColumnContract("bin", "Int64", True),
          ColumnContract("prominence", nonnegative=True)),
     ),
+    "peaks": TableContract(
+        "peaks",
+        (ColumnContract("frame", "int64", True), ColumnContract("time", nonnegative=True),
+         ColumnContract("freq", nonnegative=True), ColumnContract("amp", nonnegative=True)),
+        (ColumnContract("phase"), ColumnContract("bin", "Int64", True),
+         ColumnContract("prominence", nonnegative=True)),
+    ),
     "events": TableContract(
         "events",
         tuple(ColumnContract(name, nonnegative=True) for name in (
@@ -88,7 +95,7 @@ _INT64_MAX = 2**63 - 1
 
 def _contract(kind: str) -> TableContract:
     if not isinstance(kind, str) or kind not in TABLE_CONTRACTS:
-        raise SchemaError(f"Unknown table kind {kind!r}; expected snapshot, events, or tracks")
+        raise SchemaError(f"Unknown table kind {kind!r}; expected snapshot, peaks, events, or tracks")
     return TABLE_CONTRACTS[kind]
 
 
@@ -236,6 +243,8 @@ def validate(df: pd.DataFrame, kind: str) -> pd.DataFrame:
     checked: dict[str, np.ndarray] = {}
     normalized: dict[str, pd.Series] = {}
     track_ids: np.ndarray | None = None
+    frame_ids: np.ndarray | None = None
+    valid_frames: np.ndarray | None = None
     valid_ids: np.ndarray | None = None
     columns = contract.required + contract.optional
     for column in columns:
@@ -249,6 +258,9 @@ def validate(df: pd.DataFrame, kind: str) -> pd.DataFrame:
             # Integer columns always come back as an IntegerArray, never an ndarray.
             track_ids = data.to_numpy(dtype=np.int64, na_value=0)  # type: ignore[union-attr]
             valid_ids = valid
+        if name == "frame":
+            frame_ids = data.to_numpy(dtype=np.int64, na_value=0)  # type: ignore[union-attr]
+            valid_frames = valid
         if len(problems) == before:
             normalized[name] = pd.Series(data, dtype=column.dtype)
 
@@ -265,6 +277,24 @@ def validate(df: pd.DataFrame, kind: str) -> pd.DataFrame:
         bad_time[positions] = time[positions] <= previous
         _problem(problems, "time", "must be strictly increasing within each track in row order",
                  bad_time)
+    if (kind == "peaks" and frame_ids is not None and valid_frames is not None
+            and "time" in checked):
+        time = checked["time"]
+        positions = np.flatnonzero(valid_frames & (frame_ids >= 0) & np.isfinite(time))
+        times = pd.Series(time[positions], copy=False)
+        grouped = times.groupby(frame_ids[positions], sort=True)
+        bounds = grouped.agg(["min", "max"])
+        bad_time = np.zeros(len(df), dtype=bool)
+        bad_time[positions] = grouped.transform("min") != grouped.transform("max")
+        _problem(problems, "time", "must be the same for all rows of one frame", bad_time)
+        unordered = bounds["min"] <= bounds["max"].shift()
+        bad_time[positions] = np.isin(frame_ids[positions], bounds.index[unordered])
+        _problem(problems, "time", "must be strictly increasing with frame number", bad_time)
+    if kind == "snapshot" and "time" in df.columns and "time" not in duplicates:
+        if df["time"].nunique(dropna=False) > 1:
+            _problem(problems, "time", "a snapshot is one instant; select one frame of a peaks "
+                     "table (peaks[peaks.frame == i]) or use tracks_at(tracks, t)",
+                     ~df["time"].isin(df["time"].iloc[:1]).to_numpy())
     if problems:
         raise SchemaError("Invalid table:\n- " + "\n- ".join(problems))
 
@@ -288,7 +318,7 @@ def infer_kind(df: pd.DataFrame) -> str:
     Returns
     -------
     str
-        Contract token. Complete tracks take precedence over snapshot columns.
+        Contract token. Precedence is tracks, then peaks, then snapshot.
 
     Raises
     ------
@@ -303,8 +333,11 @@ def infer_kind(df: pd.DataFrame) -> str:
     names = set(df.columns)
     matches = [kind for kind, contract in TABLE_CONTRACTS.items()
                if {column.name for column in contract.required} <= names]
-    if "tracks" in matches:
-        matches.remove("snapshot")
+    for preferred in ("tracks", "peaks"):
+        if preferred in matches:
+            matches = [kind for kind in matches
+                       if kind not in ("tracks", "peaks", "snapshot") or kind == preferred]
+            break
     if len(matches) != 1:
         state = f"ambiguous ({', '.join(matches)})" if matches else "unknown"
         raise SchemaError(f"Cannot infer table kind: {state}; columns {list(df.columns)!r}")

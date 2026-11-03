@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 from scipy import signal
@@ -84,8 +86,52 @@ def find_peaks(
     ValueError
         Nonfinite thresholds, invalid bounds/signs, or invalid amplitudes.
     """
+    settings = _peak_settings(
+        spec.sr, min_db=min_db, rel_db=rel_db, fmin=fmin, fmax=fmax,
+        min_distance_hz=min_distance_hz, prominence_db=prominence_db,
+        interpolate=interpolate, floor_db=floor_db,
+    )
+    freq, amp, bins, prominence = _frame_peaks(spec.amp, spec.bin_hz, settings)
+    result = validate(pd.DataFrame({
+        "freq": freq,
+        "amp": amp,
+        "bin": pd.array(bins, dtype="Int64"),
+        "prominence": prominence,
+    }), "snapshot")
+    result.attrs["meta"] = {
+        "sr": spec.sr, "frame_length": spec.frame_length, "n_fft": spec.n_fft,
+        "window": str(spec.window), "interpolation": "qifft-db" if interpolate else "none",
+    }
+    return result
+
+
+@dataclass(frozen=True)
+class _PeakSettings:
+    min_db: float | None
+    rel_db: float | None
+    fmin: float
+    fmax: float
+    min_distance_hz: float | None
+    prominence_db: float | None
+    interpolate: bool
+    floor_db: float
+
+
+def _peak_settings(
+    sr: int,
+    *,
+    min_db: float | None,
+    rel_db: float | None,
+    fmin: float,
+    fmax: float | None,
+    min_distance_hz: float | None,
+    prominence_db: float | None,
+    interpolate: bool,
+    floor_db: float,
+) -> _PeakSettings:
+    """Resolve and check the shared peak-picker options once."""
     fmin = _finite_scalar(fmin, "fmin")
-    fmax = spec.sr / 2 if fmax is None else _finite_scalar(fmax, "fmax")
+    fmax = sr / 2 if fmax is None else _finite_scalar(fmax, "fmax")
     if fmin < 0 or fmax <= fmin:
         raise ValueError("frequency bounds must satisfy 0 <= fmin < fmax")
     if min_db is not None:
@@ -103,22 +149,34 @@ def find_peaks(
         if min_distance_hz <= 0:
             raise ValueError("min_distance_hz must be > 0")
 
-    db = amplitude_to_db(spec.amp, floor_db=floor_db)
+    floor_db = _finite_scalar(floor_db, "floor_db")
+    return _PeakSettings(min_db, rel_db, fmin, fmax, min_distance_hz,
+                         prominence_db, interpolate, floor_db)
+
+
+def _frame_peaks(
+    amplitudes: np.ndarray, bin_hz: float, settings: _PeakSettings,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Pick one frame as arrays, without table construction or validation."""
+    fmin, fmax = settings.fmin, settings.fmax
+    min_db, rel_db = settings.min_db, settings.rel_db
+    prominence_db, min_distance_hz = settings.prominence_db, settings.min_distance_hz
+    db = amplitude_to_db(amplitudes, floor_db=settings.floor_db)
     bins = signal.find_peaks(db)[0]
     prominence = signal.peak_prominences(db, bins)[0]
     peak_db = db[bins]
-    if interpolate:
+    if settings.interpolate:
         a, b, c = db[bins - 1], peak_db, db[bins + 1]
         den = a - 2 * b + c
         p = np.zeros_like(b)
         np.divide(0.5 * (a - c), den, out=p, where=den < 0)
         p = np.clip(p, -0.5, 0.5)
-        freq = (bins + p) * spec.bin_hz
+        freq = (bins + p) * bin_hz
         peak_db = b - 0.25 * (a - c) * p
         amp = db_to_amplitude(peak_db)
     else:
-        freq = bins * spec.bin_hz
-        amp = spec.amp[bins]
+        freq = bins * bin_hz
+        amp = amplitudes[bins]
 
     survivors = np.flatnonzero((freq >= fmin) & (freq <= fmax))
     if min_db is not None:
@@ -135,14 +193,4 @@ def find_peaks(
                 kept.append(candidate)
         survivors = np.asarray(kept, dtype=np.int64)
     survivors = survivors[np.argsort(freq[survivors])]
-    result = validate(pd.DataFrame({
-        "freq": freq[survivors],
-        "amp": amp[survivors],
-        "bin": pd.array(bins[survivors], dtype="Int64"),
-        "prominence": prominence[survivors],
-    }), "snapshot")
-    result.attrs["meta"] = {
-        "sr": spec.sr, "frame_length": spec.frame_length, "n_fft": spec.n_fft,
-        "window": str(spec.window), "interpolation": "qifft-db" if interpolate else "none",
-    }
-    return result
+    return freq[survivors], amp[survivors], bins[survivors], prominence[survivors]

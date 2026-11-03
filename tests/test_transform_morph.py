@@ -58,7 +58,7 @@ def test_pair_matches_legacy_row_for_row(sizes, method, kwargs):
     assert result.primary_start.dtype == result.primary_stop.dtype == np.dtype("bool")
     np.testing.assert_array_equal(result.mass, np.full(max(sizes), 1 / max(sizes)))
     assert "audiospylt_table" not in result.attrs
-    assert set(TABLE_CONTRACTS) == {"snapshot", "events", "tracks"}
+    assert set(TABLE_CONTRACTS) == {"snapshot", "peaks", "events", "tracks"}
     for actual, original in zip((a, b), before):
         pd.testing.assert_frame_equal(actual, original)
 

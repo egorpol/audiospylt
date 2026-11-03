@@ -204,7 +204,7 @@ def test_invalid_cuts(times):
         split_events(canonical(cases.events()), times)
 
 
-@pytest.mark.parametrize("kind", ["snapshot", "events", "tracks"])
+@pytest.mark.parametrize("kind", ["snapshot", "peaks", "events", "tracks"])
 def test_empty_tables(kind):
     from audiospylt.model.schema import TABLE_CONTRACTS
     empty = validate(pd.DataFrame(columns=[c.name for c in TABLE_CONTRACTS[kind].required]), kind)
@@ -224,3 +224,21 @@ def test_mixed_and_multidimensional_factors():
             stretch(table, value)
     with pytest.raises(ValueError, match="combined pitch"):
         transpose(table, cents=1e308)
+
+
+def test_peaks_transpose_and_stretch_preserve_frames_and_row_order():
+    peaks = validate(pd.DataFrame({"frame": [3, 1, 3], "time": [4., 2., 4.],
+                                   "freq": [400., 100., 500.], "amp": [.2, .3, .4],
+                                   "bin": pd.array([2, None, 5], dtype="Int64")}), "peaks")
+    before = peaks.copy(deep=True)
+    pitched, stretched = transpose(peaks, 2), stretch(peaks, 3)
+    np.testing.assert_array_equal(pitched.freq, peaks.freq * 2)
+    np.testing.assert_array_equal(stretched.time, [8., 2., 8.])
+    for result in (pitched, stretched):
+        pd.testing.assert_series_equal(result.frame, peaks.frame)
+        pd.testing.assert_series_equal(result.bin, peaks.bin)
+        assert result.attrs == peaks.attrs
+    pd.testing.assert_frame_equal(peaks, before)
+    with pytest.raises(ValueError, match="sequences are only supported for events"):
+        stretch(peaks, [2, 3])
+    stretch(peaks.iloc[:0], 2)

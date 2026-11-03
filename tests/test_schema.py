@@ -32,6 +32,8 @@ pytestmark = pytest.mark.filterwarnings(
 def _frame(kind):
     values = {
         "snapshot": {"freq": [0.0, 440.0], "amp": [1.0, 0.5]},
+        "peaks": {"frame": [0, 1], "time": [0.0, 1.0],
+                  "freq": [0.0, 440.0], "amp": [1.0, 0.5]},
         "events": {"time_start": [0.0, 1.0], "time_stop": [0.0, 2.0],
                    "freq_start": [0.0, 440.0], "freq_stop": [0.0, 400.0],
                    "amp_start": [0.0, 1.0], "amp_stop": [0.0, 0.1]},
@@ -66,7 +68,7 @@ def test_package_skeleton_and_absolute_imports():
 
 
 def test_contracts_are_frozen_and_mapping_is_immutable():
-    assert set(TABLE_CONTRACTS) == {"snapshot", "events", "tracks"}
+    assert set(TABLE_CONTRACTS) == {"snapshot", "peaks", "events", "tracks"}
     with pytest.raises(TypeError):
         TABLE_CONTRACTS["new"] = TABLE_CONTRACTS["snapshot"]
     with pytest.raises(FrozenInstanceError):
@@ -172,7 +174,7 @@ def test_duplicate_labels_rejected(column):
         validate(frame, "snapshot")
 
 
-@pytest.mark.parametrize("kind,column", [("snapshot", "bin"), ("tracks", "track_id")])
+@pytest.mark.parametrize("kind,column", [("snapshot", "bin"), ("peaks", "frame"), ("peaks", "bin"), ("tracks", "track_id")])
 @pytest.mark.parametrize("bad,rule", [
     (0.5, "integer-valued"), (2**63, "within int64 range"), (-(2**63) - 1, "within int64 range"),
 ])
@@ -410,3 +412,57 @@ def test_extended_float_ids_keep_precision_before_integer_cast():
     native = validate(frame, "tracks")
     assert native.track_id.tolist() == [-(2**63), 2**63 - 1, 2**53 + 1]
     assert_frame_equal(native, validate(frame.astype(object), "tracks"), check_exact=True)
+
+
+def test_peaks_relationships_any_row_order_and_inference_precedence():
+    frame = pd.DataFrame({"frame": [2, 0, 2, 0], "time": [1., 0., 1., 0.],
+                          "freq": [400., 100., 300., 200.], "amp": [1.] * 4})
+    result = validate(frame, "peaks")
+    np.testing.assert_array_equal(result.frame, frame.frame)
+    assert infer_kind(frame) == "peaks"
+    assert infer_kind(frame.assign(track_id=[0, 1, 2, 3])) == "tracks"
+    # Adjacent frame numbers above binary64's exact integer range stay distinct.
+    huge = frame.iloc[:2].assign(frame=[2**53 + 1, 2**53], time=[1., 0.])
+    validate(huge, "peaks")
+    for times, rule, rows in [([1., 0., 2., 0.], "the same for all rows", "[0, 2]"),
+                              ([0., 1., 0., 1.], "strictly increasing with frame", "[0, 2]"),
+                              ([0., 0., 0., 0.], "strictly increasing with frame", "[0, 2]")]:
+        invalid = frame.assign(time=times)
+        invalid.index = [10, 20, 30, 40]
+        with pytest.raises(SchemaError) as caught:
+            validate(invalid, "peaks")
+        assert f"time: must be {rule}" in str(caught.value)
+        assert f"row positions {rows}" in str(caught.value)
+
+
+@pytest.mark.parametrize("kind", ["tracks", "peaks"])
+def test_snapshot_one_instant_applies_to_every_consumer(kind):
+    from audiospylt.analysis.f0 import harmonic_f0
+    from audiospylt.model.convert import snapshot_to_events, tracks_at
+    from audiospylt.notation.mei import snapshot_to_mei
+    from audiospylt.transform.morph import morph
+
+    temporal = _frame(kind).assign(freq=[440., 880.])
+    temporal = validate(temporal, kind)
+    snapshot = validate(temporal.iloc[:1], "snapshot")
+    routes = [lambda df: validate(df, "snapshot"),
+              lambda df: snapshot_to_events(df, 0, 1),
+              lambda df: harmonic_f0(df, fmin=200, fmax=500), snapshot_to_mei,
+              lambda df: morph(df, snapshot, 1), lambda df: morph(snapshot, df, 1)]
+    for consume in routes:
+        with pytest.raises(SchemaError) as caught:
+            consume(temporal)
+        message = str(caught.value)
+        assert "a snapshot is one instant" in message
+        assert "peaks[peaks.frame == i]" in message
+        assert "tracks_at(tracks, t)" in message
+    # Attrs survive pandas slicing: only the time values control acceptance.
+    assert validate(temporal[["freq", "amp"]], "snapshot").shape == (2, 2)
+    validate(temporal.assign(time=0.), "snapshot")
+    validate(temporal.iloc[:0], "snapshot")
+    if kind == "peaks":
+        validate(temporal[temporal.frame == 0], "snapshot")
+    else:
+        validate(tracks_at(temporal, 0), "snapshot")
+    for consume in routes:
+        consume(temporal.assign(time=0.))

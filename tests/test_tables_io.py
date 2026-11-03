@@ -26,6 +26,10 @@ def _frame(kind):
                               "phase": [-0.0, np.nan, -np.pi, np.nextafter(0.0, 1.0)],
                               "bin": pd.Series([0, pd.NA, 2**63 - 1, 2**53 + 1], dtype="Int64"),
                               "prominence": [np.nan, 0, 1e-300, 1]})
+    elif kind == "peaks":
+        frame = _frame("snapshot").drop(columns=["note", "extra_float"])
+        frame["frame"] = pd.Series([0, 2**53 + 1, 2**63 - 2, 2**63 - 1], dtype="int64")
+        frame["time"] = [0, 1e-300, 0.1 + 0.2, 71.42857142857142]
     elif kind == "events":
         frame = pd.DataFrame({"time_start": [0, 1e-300, 0.1 + 0.2, 1],
                               "time_stop": [0, 1, np.nextafter(1.0, 2.0), 71.42857142857142],
@@ -41,7 +45,7 @@ def _frame(kind):
     return validate(frame, kind)
 
 
-@pytest.mark.parametrize("kind", ["snapshot", "events", "tracks"])
+@pytest.mark.parametrize("kind", ["snapshot", "peaks", "events", "tracks"])
 @pytest.mark.parametrize("empty", [False, True])
 def test_exact_roundtrip_all_kinds_optional_extras_metadata_empty(kind, empty, tmp_path):
     frame = _frame(kind)
@@ -469,3 +473,48 @@ def test_mixed_lf_and_crlf_record_endings():
                                 "freq\tamp\r\n1\t2\n\r\n\n"))
     assert result.attrs["meta"] == {"first": "keep  ", "second": "value"}
     assert result.loc[0, "freq"] == 1.0
+
+
+def test_peaks_type_header_and_decimal_frame_tokens(tmp_path):
+    frame = _frame("peaks")
+    path = tmp_path / "peaks.tsv"
+    write_table(frame, path)
+    assert path.read_text().startswith("# audiospylt-table: peaks v1\n")
+    result = read_table(path)
+    assert str(result.frame.dtype) == "int64"
+    assert str(result.bin.dtype) == "Int64"
+    assert result.frame.tolist() == frame.frame.tolist()
+    # Decimal/exponent integer tokens must avoid a binary64 intermediate.
+    result = read_table(StringIO("# audiospylt-table: peaks v1\nframe\ttime\tfreq\tamp\n"
+                                 "9007199254740993.0\t0\t440\t1\n"
+                                 "9223372036854775807e0\t1\t440\t1\n"))
+    assert result.frame.tolist() == [2**53 + 1, 2**63 - 1]
+
+
+def test_tracks_at_snapshot_roundtrip_preserves_extra_integer_track_id(tmp_path):
+    from audiospylt.model.convert import tracks_at
+
+    tracks = validate(pd.DataFrame({"track_id": [3, 8, 3, 8], "time": [0., 0., 1., 1.],
+                                    "freq": [440., 880., 442., 882.], "amp": [.5] * 4}), "tracks")
+    snapshot = tracks_at(tracks, .5)
+    path = tmp_path / "at.tsv"
+    write_table(snapshot, path)
+    result = read_table(path)
+    assert str(result.track_id.dtype) == "int64"
+    assert_frame_equal(result, snapshot, check_exact=True)
+
+
+@pytest.mark.parametrize("versioned", [False, True])
+@pytest.mark.parametrize("column,values,dtype", [
+    ("frame", [0, 1, 2, 3], "int64"),
+    ("frame", [.25, 1.5, 2.75, 3.125], "float64"),
+    ("bin", [2, 4, 6, 8], "int64"),
+])
+def test_events_integer_named_extras_parse_natively(column, values, dtype, versioned, tmp_path):
+    events = _frame("events").assign(**{column: values})
+    path = tmp_path / "events.tsv"
+    write_table(events, path)
+    source = path if versioned else StringIO(path.read_bytes().decode("utf-8").split("\n", 1)[1])
+    result = read_table(source)
+    assert str(result[column].dtype) == dtype
+    assert_frame_equal(result, events, check_exact=True)

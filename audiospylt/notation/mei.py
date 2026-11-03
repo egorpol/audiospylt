@@ -39,6 +39,9 @@ def _label(measure, staff_no, note_id, place, text, kind, vgrp=None):
 
 
 def _prepare(table, kind, resolution, spelling, labels, decimals, clef, a4):
+    if kind not in ("snapshot", "events"):
+        raise ValueError("notation needs a snapshot or events; select peaks[peaks.frame == i] "
+                         "and use snapshot_to_mei, or use tracks_at(tracks, t)")
     table = validate(table, kind)
     if table.empty:
         raise ValueError(f"{kind} must not be empty")

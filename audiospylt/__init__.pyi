@@ -32,6 +32,9 @@ from .analysis.f0 import F0Contour as F0Contour
 from .analysis.f0 import pyin as pyin
 from .analysis.f0 import HarmonicF0 as HarmonicF0
 from .analysis.f0 import harmonic_f0 as harmonic_f0
+from .analysis.tracking import spectrogram_peaks as spectrogram_peaks
+from .analysis.tracking import link_peaks as link_peaks
+from .analysis.tracking import track_partials as track_partials
 from .model.schema import SchemaError as SchemaError
 from .model.schema import LegacyFormatWarning as LegacyFormatWarning
 from .model.schema import validate as validate
@@ -84,6 +87,9 @@ __all__ = [
     "pyin",
     "HarmonicF0",
     "harmonic_f0",
+    "spectrogram_peaks",
+    "link_peaks",
+    "track_partials",
     "SchemaError",
     "LegacyFormatWarning",
     "validate",

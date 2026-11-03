@@ -72,7 +72,7 @@ def transpose(
     Parameters
     ----------
     table : pandas.DataFrame
-        Snapshot, events, or tracks table. Extra columns and attrs are kept.
+        Snapshot, peaks, events, or tracks table. Extra columns and attrs are kept.
     factor, cents : float or sequence of float
         Positive finite multiplier and finite pitch offset. Events also accept
         one value per distinct time_start, in ascending cue order.
@@ -112,7 +112,15 @@ def transpose(
     fmin, fmax = bounds
     if fmin is not None and fmax is not None and fmin > fmax:
         raise ValueError("fmin must be <= fmax")
-    cues = np.unique(result.time_start) if kind == "events" else None
+    if kind == "events":
+        cues = np.unique(result.time_start)
+        columns = ["freq_start", "freq_stop"]
+    elif kind in ("snapshot", "peaks", "tracks"):
+        cues = None
+        columns = ["freq"]
+    else:
+        raise ValueError(f"transpose cannot scale kind {kind!r}; use a snapshot, peaks, "
+                         "events, or tracks table")
     count = len(cues) if cues is not None else 1
     factors = _factors(factor, "factor", kind, count, positive=True)
     offsets = _factors(cents, "cents", kind, count, positive=False)
@@ -122,7 +130,6 @@ def transpose(
         raise ValueError("combined pitch factors must be finite and > 0")
     row_factor = (multipliers[np.searchsorted(cues, result.time_start)]
                   if cues is not None else multipliers[0])
-    columns = ["freq_start", "freq_stop"] if kind == "events" else ["freq"]
     with np.errstate(over="ignore"):
         for column in columns:
             result[column] = result[column] * row_factor
@@ -152,11 +159,11 @@ def stretch(table: pd.DataFrame, factor: ArrayLike, *, kind: str | None = None) 
     Parameters
     ----------
     table : pandas.DataFrame
-        Events or tracks table, with extra columns and attrs preserved.
+        Peaks, events, or tracks table, with extra columns and attrs preserved.
     factor : float or sequence of float
         Finite and > 0. Events accept one factor per ascending distinct start
         cue: each gap uses the preceding cue's factor, each duration its own.
-        Tracks accept a scalar, anchored at the earliest time in the table.
+        Peaks and tracks accept a scalar, anchored at the earliest time in the table.
     kind : str or None
         Explicit kind; otherwise use a registered attrs hint, then infer_kind.
 
@@ -175,12 +182,12 @@ def stretch(table: pd.DataFrame, factor: ArrayLike, *, kind: str | None = None) 
     result, kind = _table(table, kind)
     if kind == "snapshot":
         raise ValueError("snapshot has no time axis to stretch")
-    if kind == "tracks":
+    if kind in ("peaks", "tracks"):
         scale = _factors(factor, "factor", kind, 1, positive=True)[0]
         if len(result):
             t0 = result.time.min()
             result["time"] = t0 + (result.time - t0) * scale
-    else:
+    elif kind == "events":
         cues = np.unique(result.time_start)
         factors = _factors(factor, "factor", kind, len(cues), positive=True)
         new_cues = cues.copy()

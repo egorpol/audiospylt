@@ -35,6 +35,8 @@ _MARKER_SIZE = 4
 
 
 def _kind_error(kind: str, function: str, can: str) -> ValueError:
+    if kind == "peaks":
+        return ValueError(f"{function} cannot draw kind 'peaks'; use plot_spectrogram(overlay=...)")
     if kind == "snapshot":
         return ValueError(
             f"{function} cannot draw kind 'snapshot' where time is needed; "
@@ -452,6 +454,8 @@ def _marker_traces(
 
 def _drawn_levels(frame, kind, mode, floor_db):
     """dB levels of what ``mode`` draws: segments for lines, points for dots."""
+    if kind not in ("events", "tracks"):
+        raise _kind_error(kind, "plot_events", "plot_snapshot")
     if kind == "events":
         segments = list(_events_segments(frame))
         points = _event_points(segments) if "markers" in mode else []
@@ -472,7 +476,7 @@ def _line_traces_for_table(
     table, kind, *, colour, label, theme, amp, db, floor_db, range_db,
     freq_scale, legendgroup, l_max, mode="lines",
 ):
-    """Build Scatter line and dot traces for one events or tracks table.
+    """Build Scatter traces for peaks markers, events, or tracks.
 
     Dots mark every point when ``mode`` has markers; in 'lines' mode they mark
     only one-point tracks, which a line cannot show.
@@ -483,6 +487,17 @@ def _line_traces_for_table(
         colour=colour, label=label, legendgroup=legendgroup, amp=amp, db=db,
         floor_db=floor_db, range_db=range_db, l_max=l_max,
     )
+
+    if kind == "peaks":
+        if mode != "markers":
+            raise ValueError("peaks overlay_mode must be 'markers'; "
+                             "use overlay_mode='markers' or the default None")
+        freqs, times, amps = filter_positive_freq(
+            table.freq, table.time, table.amp, scale=freq_scale, warn_rows=True,
+        )
+        return _marker_traces(list(zip(times, freqs, amps)), showlegend=True, **style)
+    if kind not in ("events", "tracks"):
+        raise _kind_error(kind, "plot_spectrogram", "plot_snapshot")
 
     if kind == "events":
         segments = list(_events_segments(table))
@@ -649,6 +664,8 @@ def _log_freq_ticks(lo: float, hi: float) -> list[float]:
 
 def _paths_3d(frame, kind, *, freq_log):
     """(times, freqs, amps) per events row or track; frequencies <= 0 left out on a log axis."""
+    if kind not in ("events", "tracks"):
+        raise _kind_error(kind, "plot_events_3d", "plot_snapshot")
     dropped = 0
     if kind == "events":
         paths = [

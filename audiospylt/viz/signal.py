@@ -230,6 +230,7 @@ def plot_spectrum(
         if kind != "snapshot":
             raise ValueError(
                 f"peaks must be a snapshot; got kind {kind!r}"
+                + ("; use plot_spectrogram(overlay=...)" if kind == "peaks" else "")
             )
         n_series = 2
         pf = table["freq"].to_numpy(dtype=np.float64)
@@ -339,7 +340,7 @@ def plot_spectrogram(
     max_frames: int | None = 2000,
     overlay: pd.DataFrame | Sequence[pd.DataFrame] | None = None,
     overlay_labels: Sequence[str] | None = None,
-    overlay_mode: str | Sequence[str] = "lines",
+    overlay_mode: str | Sequence[str] | None = None,
     audio: ArrayLike | None = None,
     colorscale: str | list[list] | None = None,
     theme: str = "light",
@@ -362,11 +363,13 @@ def plot_spectrogram(
     max_frames : int or None
         Display-only max-pool budget (``>= 1`` or None).
     overlay : table, list of tables, or None
-        Events or tracks (snapshot raises, naming ``snapshot_to_events``).
+        Peaks, events or tracks (snapshot raises, naming ``snapshot_to_events``).
     overlay_labels : sequence or None
-    overlay_mode : {'lines', 'markers', 'lines+markers'} or sequence, default 'lines'
-        One mode for all overlays, or one per overlay, as ``mode`` in
-        ``plot_events``; one-point tracks are dots in 'lines' mode too.
+    overlay_mode : {'lines', 'markers', 'lines+markers'}, sequence, or None
+        None (default) uses 'markers' for peaks and 'lines' for events and
+        tracks. Peaks tables require 'markers'. With mixed overlay kinds,
+        give one explicit mode per table. One-point tracks are dots in
+        'lines' mode too.
     audio : array-like or None
         Optional waveform under the heatmap (shared x, heights 0.75 / 0.25).
     colorscale : Plotly colorscale or None
@@ -435,14 +438,20 @@ def plot_spectrogram(
                     "overlay kind 'snapshot' needs time; use "
                     "model.convert.snapshot_to_events"
                 )
-            if kind not in ("events", "tracks"):
+            if kind not in ("peaks", "events", "tracks"):
                 raise ValueError(
                     f"plot_spectrogram overlay cannot draw kind {kind!r}; "
                     f"use plot_events"
                 )
             overlays.append((table, kind))
     labels = _labels(overlay_labels, len(overlays)) if overlays else []
+    if overlay_mode is None:
+        overlay_mode = ["markers" if kind == "peaks" else "lines" for _, kind in overlays]
     modes = _modes(overlay_mode, len(overlays), name="overlay_mode")
+    for (_, kind), mode in zip(overlays, modes):
+        if kind == "peaks" and mode != "markers":
+            raise ValueError("peaks overlay_mode must be 'markers'; "
+                             "use overlay_mode='markers' or the default None")
 
     with_audio = audio is not None
     wave = None
