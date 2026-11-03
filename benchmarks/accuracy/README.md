@@ -11,7 +11,7 @@ The external tools are not part of AudioSpylt's dependencies or CI. Results from
 
 ## Signals
 
-`suite.py` writes 13 files: 44.1 kHz, float32 mono, 2 s, 10 ms raised-cosine fades, peak ≤ 0.9. Starting phases
+`suite.py` writes 21 files: 44.1 kHz, float32 mono, 2 s, 10 ms raised-cosine fades, peak ≤ 0.9. Starting phases
 come from a fixed seed per file. The truth is analytic (`truth.py`), so the true frequency and amplitude of every
 partial can be evaluated at any time. Amplitudes are sine peak amplitudes re full scale.
 
@@ -22,6 +22,14 @@ partial can be evaluated at any time. Amplitudes are sine peak amplitudes re ful
 | vibrato | `vib_50`, `vib_100` | 8 harmonics, f0 440 Hz ± 50 c and ± 100 c at 5.5 Hz |
 | close pair | `pair_5`, `pair_10`, `pair_20`, `pair_40` | 440 Hz + (440 + Δ) Hz, Δ = 5, 10, 20, 40 Hz, amps 0.4 each |
 | noise | `noise_20`, `noise_10`, `noise_0` | 12 harmonics of 220 Hz (amps 0.1/k) + white noise at 20, 10, 0 dB SNR re the total partial power |
+| crossing | `cross_fast`, `cross_slow` | two exponential sweeps crossing at 1 s, with fixed partial identities |
+| onset/offset | `stagger_harm`, `stagger_inharm` | staggered starts and ends of 6 harmonics or 5 inharmonic sines |
+| dropout | `drop_30`, `drop_80` | 6 harmonics with staggered 30 or 80 ms dropouts |
+| tremolo | `trem_20`, `trem_40` | 8 harmonics with in-phase 6 Hz tremolo, troughs at −20 or −40 dB |
+
+The separate dev suite has perturbed signals from every family. It is for tuning the tracker. The published
+suite never tunes anything. `suite.py OUT --dev` writes only `OUT/dev/suite/`; `OUT/dev` can also be scored as
+an ordinary `OUT` when raw rows there list dev names in `meta["signals"]`.
 
 ## Rows and parameters
 
@@ -32,6 +40,8 @@ points.
 | --- | --- | --- |
 | `audiospylt-v1/default` | AudioSpylt 1.0.0.dev0 (this repository) | `spectrogram` defaults: frame 2048, hop 512, Hann, `zero_pad=1`, centred frames; `find_peaks(min_db=-60)` per frame (QIFFT on dB) |
 | `audiospylt-v1/matched` | AudioSpylt 1.0.0.dev0 | frame 2048, hop 256, Hann, `zero_pad=4` (8192-point FFT); `find_peaks(min_db=-80)` |
+| `audiospylt-v1/tracked` | AudioSpylt 1.0.0.dev0 | `track_partials(x, sr)` defaults, recorded from the signature in `meta.json` |
+| `audiospylt-v1/tracked-bh` | AudioSpylt 1.0.0.dev0 | the same with `window="blackmanharris"` |
 | `audiospylt-0.6/matched` | AudioSpylt 0.6 API (`dft_analysis.analyze_signal`, kept as a deprecated shim) | frame 2048, hop 256, Hann, frame k centred at k·hop (half a frame of zeros at both ends); `thresh_amp_low=2.5e-5` (−80 dBFS on 0.6's scale, see below), `thresh_amp_high=1` |
 | `loris/default` | Loris via loristrck 1.7.2 | `resolution` = 0.9 × the file's lowest true frequency (the rule of thumb in the loristrck docs); everything else at its defaults (window size derived from the resolution, hop = 1/window size, amplitude floor −90 dB) |
 | `loris/matched` | loristrck 1.7.2 | `resolution` 43.07 Hz, `windowsize` 86.13 Hz (main-lobe width of a 2048-sample Hann), `hoptime` 256/44100 s, `ampfloor` −80 |
@@ -44,9 +54,9 @@ points.
 
 Notes on the rows:
 
-- AudioSpylt v1 has no partial tracker. Its rows contain every spectral peak above `min_db` in every frame, so
-  side lobes and noise peaks show up as extra points ("far %") and as false detections. A tracker would prune most
-  of them.
+- AudioSpylt v1's default and matched rows are untracked per-frame peaks. They contain every spectral peak
+  above `min_db`, so side lobes and noise peaks show up as extra points ("far %") and as false detections.
+  The tracked rows use `track_partials`.
 - `sms-tools/matched` and `audiospylt-v1/matched` run the same analysis: `np.hanning(2049)` is a periodic Hann
   of 2048 samples followed by one zero, and both use an 8192-point FFT, hop 256, centred frames and parabolic
   interpolation on dB. Their error statistics are therefore identical. sms-tools reports fewer points because
@@ -72,11 +82,16 @@ default −80 is −74 dBFS. Two offsets stay in the error because they are what
 
 ## Scoring (`evaluate.py`)
 
-The first and last 0.1 s of each file are skipped. The tolerance for a true partial is min(50 c, half the gap to
-its nearest neighbouring partial), so tolerances never overlap.
+The first and last 0.1 s of each file are skipped. Each partial has a fixed identity, including through a
+crossing. Its state is present, absent, or neutral within ±50 ms of an onset, offset or dropout edge. Gates
+use 5 ms raised-cosine edges; file fades are separate. Tremolo troughs stay present. At each time, the tolerance
+is min(50 c, half the gap to the nearest non-absent neighbour). Absent partials constrain nothing. Tolerances
+never overlap, and shrink to zero at a crossing.
 
 **Accuracy** compares every found point with the true partials at the point's own time; nothing is resampled.
 
+- A point within tolerance of a neutral partial is excluded from the accuracy count, before the amplitude
+  gate. An absent partial cannot attract a point.
 - Points that share a time (one frame) pair one-to-one, loudest first. Each point takes the nearest true partial
   if that partial lies within tolerance and no louder point of the frame has taken it.
 - A point pairs only if its amplitude is at most 20 dB below the true amplitude (`GATE_DB`). Without this gate,
@@ -91,25 +106,53 @@ its nearest neighbouring partial), so tolerances never overlap.
   values held at its ends. An untracked frame peak covers its own frame ± hop/2.
 - At each grid time, true partials and covering points pair one-to-one, closest in cents first, within the
   tolerance and the amplitude gate.
-- Recall is the share of true partials that pair. False detections are unpaired points at or above −60 dBFS,
-  given per grid frame.
+- Pairing includes present and neutral partials. A neutral pair counts as neither a hit nor a false point.
+  Absent partials cannot pair. Recall is the share of present (partial, grid time) cells that pair.
+  False detections are unpaired points at or above −60 dBFS, given per grid frame.
 - The hop is the nominal hop for frame rows and sms-tools. For Loris and PM2 it is the median time step within
   tracks (`meta.json` of each row).
+
+Tracking uses present pairs only. A segment is a maximal run of consecutive present grid times for one
+partial. Tracks / segment counts distinct paired track IDs, averaged over segments with a pair. Switch % is
+the share of tracks with at least two paired grid times whose pairs cover more than one partial.
+
+Onset and offset errors use the first or last raw point of the track paired nearest the corresponding end of
+the adjacent present segment. That pair must be within 0.1 s of the segment end, or the transition is missed.
+Raw endpoints include points outside the guard. Dropout edges do not count as onsets or offsets. A dropout is
+determinable when both adjacent segment ends have such a pair, and bridged when their track IDs agree.
+Family scores pool segments, tracks, transition errors and dropouts across files. Frame rows have no track
+metrics. Metrics without applicable transitions are NaN, including their counts.
 
 ### Columns of `results/summary.md`
 
 | column | meaning |
 | --- | --- |
-| points | found points inside the guard with freq > 0 and amp > 0 |
+| points | found points inside the guard with freq > 0 and amp > 0, excluding neutral matches |
 | paired %, dup %, far % | shares of those points (sum to 100) |
 | \|Δf\| p50, p95 (c) | median and 95th percentile of the absolute frequency error of paired points |
 | ΔA median (dB) | median signed amplitude error of paired points (bias) |
 | \|ΔA\| p95 (dB) | 95th percentile of the absolute amplitude error |
-| recall % | paired true partials / all true partials on the 10 ms grid |
+| recall % | paired present cells / all present cells on the 10 ms grid |
 | false / frame | unpaired covering points at or above −60 dBFS per grid frame |
 
-`per_signal.csv` and `per_family.csv` hold the same metrics per file and per family, plus the signed median
-frequency error (`freq_bias_c`). `repeats.csv` holds the mean, min and max over the PM2 inharmonic runs.
+The appended Tracking section has a table per family with tracked rows. Columns that are all “–” are omitted.
+
+| tracking column | meaning |
+| --- | --- |
+| tracks / segment | distinct track IDs per paired present segment |
+| switch % | share of tracks paired at two or more grid times that cover multiple partials |
+| onset med (ms), onset \|err\| p95 (ms) | median signed onset error and 95th percentile absolute error |
+| onset missed | onsets without a qualifying pair at the adjacent segment start |
+| offset med (ms), offset \|err\| p95 (ms), offset missed | the corresponding offset statistics |
+| bridged %, bridge undet. | share of determinable dropouts with the same track on both sides, and undeterminable count |
+
+`per_signal.csv` and `per_family.csv` hold the accuracy and detection metrics per file and per family, plus the
+signed median frequency error (`freq_bias_c`). They append `segments`, `tracks_per_segment`, `switch_tracks`,
+`switch_frac`, `onset_n`, `onset_missed`, `onset_med_ms`, `onset_abs_p95_ms`, `offset_n`, `offset_missed`,
+`offset_med_ms`, `offset_abs_p95_ms`, `bridge_n`, `bridge_undet`, `bridged_frac`, in that order. `segments` counts
+segments with a pair; `switch_tracks` counts eligible tracks; `onset_n` and `offset_n` count transitions with a
+found track; `bridge_n` counts determinable dropouts. `repeats.csv` keeps its existing columns and appends the
+mean, min and max of the track metrics after `runs`. Repeat rows in the summary show means.
 
 ## Headline results
 
@@ -177,6 +220,21 @@ $A benchmarks/accuracy/run_partiels.py $OUT TEMPLATE_DIR [PARTIELS]   # ~3 min, 
 $A benchmarks/accuracy/evaluate.py $OUT benchmarks/accuracy/results   # ~1 min with the PM2 rows
 ```
 
+For a reproducible development search:
+
+```sh
+$A benchmarks/accuracy/suite.py $OUT --dev
+$A benchmarks/accuracy/tune_tracker.py $OUT DEV_RESULTS
+```
+
+The tuner reads only `OUT/dev/suite/`. It fixes Hann, frame 2048, hop 256, zero padding 4, centred frames,
+`min_db=-80` and `max_cents=50`. It tests prominence None, 10, 15, 20, 25, 30 dB; minimum duration 0.02, 0.05,
+0.1 s; and maximum gap 0, 1, 2, 4 frames (72 settings). It reuses one spectrogram per file, one peak table per
+prominence and one linking pass per prominence and gap. Duration filtering happens after linking. Family
+metrics pool samples; macro metrics average the families, skipping NaNs. `tuning.csv` records every family
+and macro row. `tuning.md` lists the Pareto set for maximum recall, minimum false / frame and minimum tracks /
+segment, plus the provisional default (20 dB, 0.05 s, 0 frames) if it lies outside the set.
+
 Every runner writes `OUT/raw/<row>/<signal>.csv` (columns time, freq, amp, track; track −1 for untracked frame
 peaks) and `OUT/raw/<row>/meta.json` (parameters, version, hop). `evaluate.py` scores whatever rows are present,
 so the PM2 step can be skipped. On 2026-10-23, a run from fresh environments reproduced every non-PM2 value in
@@ -204,7 +262,8 @@ checks for both template files first.
 | file | role |
 | --- | --- |
 | `truth.py` | signal definitions, analytic truth, tolerance rule (numpy only, imported by every runner) |
-| `suite.py` | writes `OUT/suite/*.wav` and `truth.json` |
+| `suite.py` | writes `OUT/suite/*.wav` and `truth.json`, or the dev suite with `--dev` |
+| `tune_tracker.py` | development-only tracker search, writes `tuning.csv` and `tuning.md` |
 | `points.py` | the shared raw format (numpy only) |
 | `run_audiospylt.py`, `run_loris.py`, `run_sms.py`, `run_partiels.py` | one runner per tool |
 | `evaluate.py` | scoring, writes `results/` |

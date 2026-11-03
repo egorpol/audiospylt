@@ -67,6 +67,7 @@ and 279 at 48 kHz. Each sound is analysed and rendered at its own rate.
 | --- | --- | --- |
 | `audiospylt-v1/default` | AudioSpylt 1.0.0.dev0: `spectrogram` defaults (frame 2048, hop 512 samples at every rate, Hann, `zero_pad=1`, centred frames), `find_peaks(min_db=-60)` per frame | `synthesize` defaults: continuous phase, rows linked within `link_cents=100`, `link_ramp=0.005`, `fade=0.005` centred on voice ends |
 | `audiospylt-v1/matched` | matched frame and hop, Hann, `zero_pad=4`; `find_peaks(min_db=-80)` | as above |
+| `audiospylt-v1/tracked` | `track_partials` with matched frame and hop at the excerpt rate, all other arguments at their defaults | `synthesize(tracks_to_events(tracks))`, all defaults including fade |
 | `audiospylt-v1/matched-nofade` | as `matched` | as above with `fade=0` (kept to show the clicks) |
 | `audiospylt-0.6/matched` | 0.6 API (`dft_analysis.analyze_signal`, kept as a deprecated shim) per frame: matched frame and hop, Hann, frame k centred at k·hop, `thresh_amp_low=2.5e-5` (−80 dBFS on 0.6's scale), `thresh_amp_high=1` | the path of `tutorials_tech/resynth.ipynb`: `plot_waves(k=0.00015, phase_mode="chirp", edge_fade_s=0.0025)`, then `render_audio(fs_target_name="44.1kHz", alias_above_nyquist=True)`; see [How the 0.6 row runs](#how-the-06-row-runs-and-what-v1-changes) |
 | `loris/matched` | loristrck 1.7.2: `resolution` 43.07 Hz, `windowsize` 86.13 Hz, `hoptime` 5.805 ms, `ampfloor` −80 | `loristrck.synthesize(start=0, end=duration)` |
@@ -83,13 +84,14 @@ and 279 at 48 kHz. Each sound is analysed and rendered at its own rate.
 
 Notes on the rows:
 
-- AudioSpylt v1 has no partial tracker. Every peak above `min_db` in every frame becomes an event held over the
+- AudioSpylt v1's default and matched rows are untracked per-frame peaks. The tracked row uses
+  `track_partials`. In the untracked rows every peak above `min_db` becomes an event held over the
   frame centre ± hop/2, and `synthesize` joins events of consecutive frames into one phase-continuous voice
   when their frequencies are within 100 cents. The matched rows keep 283 events per frame on `bayle`, 14 on
   `de_natura_son` and 59 on the flute. For comparison, Loris keeps 245, 11 and 50 track points per frame,
   sms-tools 88, 14 and 55, PM2 inharmonic 10–12 on `bayle` (the mean of each of the five runs; at most 15 in
-  a frame) and PM2 harmonic 18 on the flute. A v1 row is a sum of all spectral peaks of every frame, closer to
-  an STFT resynthesis than to a compact model of the sound.
+  a frame) and PM2 harmonic 18 on the flute. An untracked v1 row is a sum of all spectral peaks of every frame,
+  closer to an STFT resynthesis than to a compact model of the sound.
 - With `fade=0`, an event that does not link starts and stops at full amplitude. On `de_natura_son`, the peaks
   of the 20–80 Hz rumble (bins 1–4 of a 2048-sample frame, 21.5 Hz each) move by more than 100 cents from
   frame to frame, so few of them link, and each one switches on and off every 5.8 ms. The result is broadband

@@ -3,18 +3,17 @@
 Usage: python evaluate.py OUT RESULTS   (numpy + pandas)
 Writes per_signal.csv, per_family.csv, repeats.csv (mean/min/max over repeat runs r1, r2, ...) and summary.md.
 
-Accuracy: every found point inside the guard is compared with the true partials at its own time. Points that
-share a time (one frame) pair one-to-one, loudest first: each takes the nearest true partial in cents if it lies
-within min(50 c, half the gap to a neighbouring partial) and no louder point of the frame took it. Frequency
-error in cents, amplitude error in dB re the true D4 amplitude. A point pairs only if its amplitude is at most
-20 dB below the true one (GATE_DB), so the side lobe of a missed partial is not a hit. Unpaired points are
-extra: "dup" when a louder point of the frame took the partial, "far" otherwise (no partial within tolerance,
-or the point is gated out).
-Detection, on a 10 ms grid: a track covers [first - hop/2, last + hop/2] and is interpolated linearly inside
-(values held at its ends); an untracked frame peak is a one-point track, so it covers its frame +- hop/2.
-At each grid time true and covering points pair one-to-one, closest in cents first, within the tolerance
-and the amplitude gate.
-Missed = unpaired true partials; false = unpaired points at or above -60 dBFS.
+Accuracy compares guarded points at their own times, loudest first within a frame, to the nearest
+non-absent fixed partial identity. Tolerance is min(50 cents, half the nearest non-absent gap) at that time.
+Points within a neutral partial's tolerance are excluded before the amplitude gate. Otherwise a match needs
+an amplitude within GATE_DB of truth; unpaired points are duplicates or far points as before.
+Detection uses a 10 ms grid. Tracks cover [first - hop/2, last + hop/2], linearly interpolated with held ends;
+frame peaks cover their frame +- hop/2. Greedy closest-cents pairing includes present and neutral partials,
+with tolerance and amplitude gates. Neutral pairs count as neither hits nor false points; absent partials
+cannot pair. Recall counts present cells only; false points must reach -60 dBFS. File fades are not transitions.
+Tracking uses only present pairs: distinct tracks per present segment, tracks that switch partial identity,
+onset/offset errors from raw track endpoints, and identity continuity across dropouts. Transition zones
+are neutral within 50 ms. Counts and samples pool across files before computing family statistics.
 """
 
 from __future__ import annotations
@@ -45,6 +44,26 @@ SUMMARY = {
 SPREAD = ("matched_frac", "freq_abs_p95_c", "amp_bias_db", "recall", "false_per_frame")
 
 
+# Appended CSV columns, in the specified order. Counts are NaN when inapplicable.
+TRACK_METRICS = (
+    "segments", "tracks_per_segment", "switch_tracks", "switch_frac",
+    "onset_n", "onset_missed", "onset_med_ms", "onset_abs_p95_ms",
+    "offset_n", "offset_missed", "offset_med_ms", "offset_abs_p95_ms",
+    "bridge_n", "bridge_undet", "bridged_frac",
+)
+TRACK_SUMMARY = {
+    "tracks_per_segment": ("tracks / segment", "num"), "switch_frac": ("switch %", "pct"),
+    "onset_med_ms": ("onset med (ms)", "num"), "onset_abs_p95_ms": (r"onset \|err\| p95 (ms)", "num"),
+    "onset_missed": ("onset missed", "int"), "offset_med_ms": ("offset med (ms)", "num"),
+    "offset_abs_p95_ms": (r"offset \|err\| p95 (ms)", "num"), "offset_missed": ("offset missed", "int"),
+    "bridged_frac": ("bridged %", "pct"), "bridge_undet": ("bridge undet.", "int"),
+}
+
+
+def signal_specs() -> dict:
+    return {**truth.SIGNALS, **truth.DEV_SIGNALS}
+
+
 def accuracy(pts: np.ndarray, name: str) -> dict:
     t, f, a = pts[:, 0], pts[:, 1], pts[:, 2]
     keep = (t >= truth.GUARD) & (t <= truth.DURATION - truth.GUARD) & (f > 0) & (a > 0)
@@ -54,11 +73,15 @@ def accuracy(pts: np.ndarray, name: str) -> dict:
     order = np.lexsort((-a[keep], t[keep]))
     t, f, a = t[keep][order], f[keep][order], a[keep][order]
     F, A = truth.partials(name, t)
+    state = truth.states(name, t)
+    tol = truth.tolerance_cents(F, state)
     cents = 1200 * np.log2(f[None, :] / F)
+    cents[state == 0] = np.inf
+    neutral = np.any((state == -1) & (np.abs(cents) <= tol), axis=0)
     col = np.arange(len(t))
     # tolerances never overlap (each <= half a gap), so the nearest partial is the only candidate
     k = np.argmin(np.abs(cents), axis=0)
-    near = np.abs(cents[k, col]) <= truth.tolerance_cents(F)[k, col]
+    near = (np.abs(cents[k, col]) <= tol[k, col]) & ~neutral
     if GATE_DB is not None:
         near &= a >= A[k, col] * 10 ** (GATE_DB / 20)
     _, first, group = np.unique(t, return_index=True, return_inverse=True)
@@ -71,13 +94,13 @@ def accuracy(pts: np.ndarray, name: str) -> dict:
         taken[group[sel], k[sel]] = True
         paired[sel] = True
     k, col = k[paired], col[paired]
-    return {"cents": cents[k, col], "db": 20 * np.log10(a[paired] / A[k, col]), "n": len(t),
-            "dup": int((near & ~paired).sum()), "far": int((~near).sum()), "zero_amp": zero_amp}
+    return {"cents": cents[k, col], "db": 20 * np.log10(a[paired] / A[k, col]), "n": int((~neutral).sum()),
+            "dup": int((near & ~paired).sum()), "far": int((~near & ~neutral).sum()), "zero_amp": zero_amp}
 
 
-def covering(pts: np.ndarray, grid: np.ndarray, hop: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """(grid index, freq, amp) of every point covering a grid time."""
-    gi, gf, ga = [], [], []
+def covering(pts: np.ndarray, grid: np.ndarray, hop: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """(grid index, freq, amp, source track id) of every covering point; -1 for peaks."""
+    gi, gf, ga, gt = [], [], [], []
     tracked = pts[pts[:, 3] >= 0]
     for _, idx in pd.Series(np.arange(len(tracked))).groupby(tracked[:, 3]):
         tr = tracked[idx.to_numpy()]
@@ -89,6 +112,7 @@ def covering(pts: np.ndarray, grid: np.ndarray, hop: float) -> tuple[np.ndarray,
             gi.append(np.arange(lo, hi))
             gf.append(np.interp(g, tr[:, 0], tr[:, 1]))
             ga.append(np.interp(g, tr[:, 0], tr[:, 2]))
+            gt.append(np.full(hi - lo, int(tr[0, 3]), dtype=int))
     peaks = pts[pts[:, 3] < 0]
     if len(peaks):
         frames = np.unique(peaks[:, 0])
@@ -103,17 +127,21 @@ def covering(pts: np.ndarray, grid: np.ndarray, hop: float) -> tuple[np.ndarray,
             gi.append(np.full(len(rows), i))
             gf.append(rows[:, 1])
             ga.append(rows[:, 2])
+            gt.append(np.full(len(rows), -1, dtype=int))
     if not gi:
-        return np.zeros(0, int), np.zeros(0), np.zeros(0)
-    return np.concatenate(gi), np.concatenate(gf), np.concatenate(ga)
+        return np.zeros(0, int), np.zeros(0), np.zeros(0), np.zeros(0, int)
+    return np.concatenate(gi), np.concatenate(gf), np.concatenate(ga), np.concatenate(gt)
 
 
-def detection(pts: np.ndarray, name: str, hop: float) -> dict[str, int]:
+def detection(pts: np.ndarray, name: str, hop: float) -> dict:
     grid = np.arange(truth.GUARD, truth.DURATION - truth.GUARD + 1e-9, GRID)
     F, A = truth.partials(name, grid)
-    tol = truth.tolerance_cents(F)
-    gi, gf, ga = covering(pts, grid, hop)
+    state = truth.states(name, grid)
+    tol = truth.tolerance_cents(F, state)
+    gi, gf, ga, gt = covering(pts, grid, hop)
+    pairs = []
     paired = false = 0
+    false_grid = np.zeros(len(grid), dtype=int)
     order = np.argsort(gi, kind="stable")
     bounds = np.searchsorted(gi[order], np.arange(len(grid) + 1))
     for i in range(len(grid)):
@@ -132,16 +160,101 @@ def detection(pts: np.ndarray, name: str, hop: float) -> dict[str, int]:
                 if free[k] and not used[m]:
                     free[k] = False
                     used[m] = True
-                    paired += 1
-        false += int(np.sum(~used & (20 * np.log10(np.maximum(a, 1e-300)) >= FALSE_DB)))
-    return {"true": F.shape[0] * len(grid), "paired": paired, "false": false, "frames": len(grid)}
+                    if state[k, i] == 1:
+                        paired += 1
+                        pairs.append((i, k, gt[sel[m]]))
+        false_grid[i] = int(np.sum(~used & (20 * np.log10(np.maximum(a, 1e-300)) >= FALSE_DB)))
+        false += int(false_grid[i])
+    return {"true": int((state == 1).sum()), "paired": paired, "false": false, "frames": len(grid),
+            "false_grid": false_grid, "pairs": np.asarray(pairs, dtype=int).reshape(-1, 3), "grid": grid, "state": state}
+
+
+def present_segments(state: np.ndarray) -> list[tuple[int, int]]:
+    """Inclusive grid bounds of maximal present runs for one fixed partial."""
+    edges = np.diff(np.r_[False, state == 1, False].astype(int))
+    return list(zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1) - 1))
+
+
+def tracking(pts: np.ndarray, name: str, det: dict) -> dict:
+    """Poolable tracking samples and transition totals, from present detection pairs only."""
+    pairs, grid, state = det["pairs"], det["grid"], det["state"]
+    segments = [present_segments(row) for row in state]
+    sizes, switches = [], []
+    tracked = pairs[pairs[:, 2] >= 0]
+    for k, runs in enumerate(segments):
+        for lo, hi in runs:
+            ids = tracked[(tracked[:, 1] == k) & (tracked[:, 0] >= lo) & (tracked[:, 0] <= hi), 2]
+            if len(ids):
+                sizes.append(len(np.unique(ids)))
+    for tid in np.unique(tracked[:, 2]):
+        tr = tracked[tracked[:, 2] == tid]
+        if len(np.unique(tr[:, 0])) >= 2:
+            switches.append(len(np.unique(tr[:, 1])) > 1)
+    raw_ends = {tid: (tr[:, 0].min(), tr[:, 0].max())
+                for tid in np.unique(pts[pts[:, 3] >= 0, 3]) if len(tr := pts[pts[:, 3] == tid])}
+
+    def edge_track(k, tau, after):
+        # Select the adjacent present segment, even when it contains no pairs.
+        runs = [run for run in segments[k] if (grid[run[0]] > tau if after else grid[run[1]] < tau)]
+        if not runs:
+            return None
+        lo, hi = runs[0] if after else runs[-1]
+        tr = tracked[(tracked[:, 1] == k) & (tracked[:, 0] >= lo) & (tracked[:, 0] <= hi)]
+        if not len(tr):
+            return None
+        edge = tr[np.argmin(tr[:, 0]) if after else np.argmax(tr[:, 0])]
+        if abs(grid[edge[0]] - grid[lo if after else hi]) > 0.1 + 1e-12:
+            return None
+        return int(edge[2])
+
+    spec = signal_specs()[name]
+    result = {"sizes": sizes, "switches": switches}
+    for key, after in (("on", True), ("off", False)):
+        times = spec.get(key, [])
+        errors = []
+        for k, tau in enumerate(times):
+            if 0 < tau < truth.DURATION:
+                tid = edge_track(k, tau, after)
+                if tid is not None:
+                    errors.append(raw_ends[tid][0 if after else 1] - tau)
+        result[key + "_errors"] = errors
+        result[key + "_total"] = sum(0 < tau < truth.DURATION for tau in times)
+    bridges = []
+    for k, (centre, width) in enumerate(spec.get("drop", [])):
+        before = edge_track(k, centre - width / 2, False)
+        after = edge_track(k, centre + width / 2, True)
+        if before is not None and after is not None:
+            bridges.append(before == after)
+    result.update(bridges=bridges, drop_total=len(spec.get("drop", [])))
+    return result
+
+
+def track_stats(samples: list[dict] | None) -> dict:
+    if samples is None:
+        return dict.fromkeys(TRACK_METRICS, np.nan)
+    sizes = [v for s in samples for v in s["sizes"]]
+    switches = [v for s in samples for v in s["switches"]]
+    out = {"segments": len(sizes), "tracks_per_segment": np.mean(sizes) if sizes else np.nan,
+           "switch_tracks": len(switches), "switch_frac": np.mean(switches) if switches else np.nan}
+    for key, label in (("on", "onset"), ("off", "offset")):
+        total = sum(s[key + "_total"] for s in samples)
+        errors = np.array([v for s in samples for v in s[key + "_errors"]]) * 1000
+        out.update({label + "_n": len(errors) if total else np.nan,
+                    label + "_missed": total - len(errors) if total else np.nan,
+                    label + "_med_ms": q(errors, 50), label + "_abs_p95_ms": q(np.abs(errors), 95)})
+    total = sum(s["drop_total"] for s in samples)
+    bridges = [v for s in samples for v in s["bridges"]]
+    out.update(bridge_n=len(bridges) if total else np.nan,
+               bridge_undet=total - len(bridges) if total else np.nan,
+               bridged_frac=np.mean(bridges) if bridges else np.nan)
+    return {m: out[m] for m in TRACK_METRICS}
 
 
 def q(v: np.ndarray, p: float) -> float:
     return float(np.percentile(v, p)) if len(v) else np.nan
 
 
-def stats(acc: list[dict], det: list[dict]) -> dict[str, float]:
+def stats(acc: list[dict], det: list[dict], tracks: list[dict] | None = None) -> dict[str, float]:
     c = np.concatenate([x["cents"] for x in acc])
     d = np.concatenate([x["db"] for x in acc])
     n = sum(x["n"] for x in acc)
@@ -154,6 +267,7 @@ def stats(acc: list[dict], det: list[dict]) -> dict[str, float]:
         "recall": sum(x["paired"] for x in det) / sum(x["true"] for x in det),
         "false_per_frame": sum(x["false"] for x in det) / sum(x["frames"] for x in det),
         "zero_amp_points": sum(x["zero_amp"] for x in acc),
+        **track_stats(tracks),
     }
 
 
@@ -163,7 +277,11 @@ def repeats(fam: pd.DataFrame) -> pd.DataFrame:
     g = rep.groupby(["row", "family"], sort=False)[list(SUMMARY)]
     out = pd.concat({"mean": g.mean(), "min": g.min(), "max": g.max()}, axis=1)
     out.columns = [f"{m}_{s}" for s, m in out.columns]
-    return out.reset_index().assign(runs=g.size().to_numpy())
+    out = out.reset_index().assign(runs=g.size().to_numpy())
+    gtrack = rep.groupby(["row", "family"], sort=False)[list(TRACK_METRICS)]
+    extra = pd.concat({"mean": gtrack.mean(), "min": gtrack.min(), "max": gtrack.max()}, axis=1)
+    extra.columns = [f"{m}_{s}" for s, m in extra.columns]
+    return pd.concat([out, extra.reset_index(drop=True)], axis=1)
 
 
 def cell(v: float, kind: str) -> str:
@@ -196,6 +314,25 @@ def summary(fam: pd.DataFrame, rep: pd.DataFrame) -> str:
     for _, r in rep.iterrows():
         spread = [f"{cell(r[m + '_min'], SUMMARY[m][1])} – {cell(r[m + '_max'], SUMMARY[m][1])}" for m in SPREAD]
         lines.append(f"| {r['row']} | {r['family']} | {r['runs']} | " + " | ".join(spread) + " |")
+    # Keep the entire accuracy and spread prefix byte-identical for cached rows.
+    lines += ["", "## Tracking", ""]
+    metrics = list(TRACK_METRICS)
+    means = rep[["row", "family", "runs"] + [f"{m}_mean" for m in metrics]]
+    means = means.rename(columns={f"{m}_mean": m for m in metrics})
+    tracks = pd.concat([fam[~fam["row"].str.contains(REPEAT)],
+                        means.assign(row=means["row"] + " (mean of " + means["runs"].astype(str) + ")")])
+    for family in dict.fromkeys(fam["family"]):
+        rows = tracks[(tracks["family"] == family) & tracks["segments"].notna()]
+        if rows.empty:
+            continue
+        cols = {m: spec for m, spec in TRACK_SUMMARY.items()
+                if any(cell(v, spec[1]) != "–" for v in rows[m])}
+        lines += [f"### {family}", "", "| " + " | ".join(["row", *[h for h, _ in cols.values()]]) + " |",
+                  "|---|" + "---:|" * len(cols)]
+        for _, r in rows.sort_values("row", kind="stable").iterrows():
+            values = [r["row"], *[cell(r[m], k) for m, (_, k) in cols.items()]]
+            lines.append("| " + " | ".join(values) + " |")
+        lines.append("")
     return "\n".join(lines) + "\n"
 
 
@@ -205,17 +342,24 @@ def main(out: pathlib.Path, results: pathlib.Path) -> None:
         folder = meta_file.parent
         row = folder.relative_to(out / "raw").as_posix()
         meta = json.loads(meta_file.read_text())
-        names = meta.get("signals", list(truth.SIGNALS))
+        names = meta.get("signals", [n for n in truth.SIGNALS if (folder / f"{n}.csv").exists()])
+        specs = signal_specs()
+        tracked = meta.get("kind") == "tracks"
+        track_samples = {}
         scored = {}
         for name in names:
             pts = points.read_points(folder, name)
             scored[name] = (accuracy(pts, name), detection(pts, name, meta["hop_s"]))
-            per_signal.append({"row": row, "signal": name, "family": truth.SIGNALS[name]["family"],
-                               **stats([scored[name][0]], [scored[name][1]])})
-        for family in dict.fromkeys(truth.SIGNALS[n]["family"] for n in names):
-            sel = [scored[n] for n in names if truth.SIGNALS[n]["family"] == family]
+            if tracked:
+                track_samples[name] = tracking(pts, name, scored[name][1])
+            per_signal.append({"row": row, "signal": name, "family": specs[name]["family"],
+                               **stats([scored[name][0]], [scored[name][1]], [track_samples[name]] if tracked else None)})
+        for family in dict.fromkeys(specs[n]["family"] for n in names):
+            sel = [scored[n] for n in names if specs[n]["family"] == family]
             per_family.append({"row": row, "family": family, "signals": len(sel),
-                               **stats([s[0] for s in sel], [s[1] for s in sel])})
+                               **stats([s[0] for s in sel], [s[1] for s in sel],
+                                       [track_samples[n] for n in names if specs[n]["family"] == family]
+                                       if tracked else None)})
         print(row, "scored", flush=True)
     results.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(per_signal).to_csv(results / "per_signal.csv", index=False, float_format="%.4g")
