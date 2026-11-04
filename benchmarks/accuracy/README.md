@@ -73,8 +73,9 @@ Notes on the rows:
   and 1.56 for `tracked-lp`, 89.5 and 108 at those gaps.
 - `sms-tools/matched` and `audiospylt-v1/matched` run the same analysis: `np.hanning(2049)` is a periodic Hann
   of 2048 samples followed by one zero, and both use an 8192-point FFT, hop 256, centred frames and parabolic
-  interpolation on dB. Their error statistics are therefore identical. sms-tools reports fewer points because
-  its tracking drops short and weak peaks.
+  interpolation on dB. Their error statistics agree to three decimals in 10 of the 12 families; on noise and
+  crossing the p95 frequency error differs by at most 0.13 c. sms-tools reports fewer points because its tracking
+  drops short and weak peaks, and each row is scored on the points it reports.
 - PM2 inharmonic output differs from run to run on the same file. Both PM2 inharmonic rows ran five times
   (`r1` … `r5`). `summary.md` shows the mean over the runs and the min–max spread. PM2 harmonic is
   deterministic and runs only on the 21 harmonic files (it needs an F0), so it has no close-pair, crossing,
@@ -336,8 +337,10 @@ settings with a [noise cost](#rows-and-parameters), not recommendations. Counts 
 | audiospylt-v1/tracked-lp-gap60 | lp | 60 | 0 / 12 of 12 | 12 / 0 of 12 |
 
 The two predictions fail in opposite ways. At gap 60, `"hold"` gets 7 of 9 turn-back tracks right with 0 swaps but
-swaps 7 of 8 crossing tracks, none right. `"lp"` gets 12 of 12 crossing tracks right but swaps all 12 turn-backs. In
-the merged hole the tracker has one peak for two partials, so a prediction states an assumption, not a measurement.
+swaps 7 of 8 matched crossing tracks, none right. `"lp"` gets 12 of 12 matched crossing tracks right but swaps all
+12 turn-backs. Only eligible tracks count, and a track that stops inside the zone is not eligible, so the
+denominators differ by row: read them as counts, not rates. In the merged hole the tracker has one peak for two
+partials, so a prediction states an assumption, not a measurement.
 
 Without a gap, 3 tracks reach across the zone and all 3 stay right. Loris and sms-tools match that in both
 families, except `sms-tools/matched` on crossings (3 right, 1 swap of 4). `pm2-inharmonic/matched` has 3 right of 3
