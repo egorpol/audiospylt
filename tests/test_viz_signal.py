@@ -223,6 +223,29 @@ def test_log_axis_range_is_log10_of_hz():
     )
 
 
+def test_plot_spectrogram_overlay_holds_time_axis_to_data():
+    audio, sr = _sine(n=8192)
+    S = spectrogram(audio, sr, frame_length=512, hop=128)
+    step = float(S.times[1] - S.times[0])
+    edges = [float(S.times[0]) - step / 2, float(S.times[-1]) + step / 2]
+    inside = pd.DataFrame({
+        "track_id": [0, 0, 1], "time": [0.02, 0.1, 0.05],
+        "freq": [440.0, 440.0, 880.0], "amp": [0.5, 0.5, 0.2],
+    })
+    for mode in ("markers", "lines"):
+        fig = plot_spectrogram(S, overlay=inside, overlay_mode=mode)
+        np.testing.assert_allclose(fig.layout.xaxis.range, edges)
+    np.testing.assert_allclose(
+        plot_spectrogram(S, overlay=inside, audio=audio).layout.xaxis.range, edges,
+    )
+
+    beyond = inside.assign(time=[0.02, edges[1] + 0.5, 0.05])
+    fig = plot_spectrogram(S, overlay=beyond, overlay_mode="markers")
+    np.testing.assert_allclose(fig.layout.xaxis.range, [edges[0], edges[1] + 0.5])
+
+    assert plot_spectrogram(S).layout.xaxis.range is None
+
+
 def test_spectrogram_customdata_hz_vs_mel_and_json_size():
     from audiospylt.analysis.spectrogram import Spectrogram
 

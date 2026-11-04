@@ -605,4 +605,15 @@ def plot_spectrogram(
     else:
         fig.update_xaxes(title_text="time (s)")
         fig.update_yaxes(**{k: v for k, v in yaxis_kwargs.items() if v is not None})
+    if overlays and times.size > 1:
+        # Plotly pads autorange by about 5 % for any trace with markers, and one-point
+        # tracks draw markers even in 'lines' mode. Hold the axis to the data instead.
+        lo = times[0] - (times[1] - times[0]) / 2
+        hi = times[-1] + (times[-1] - times[-2]) / 2
+        spans = [np.asarray(trace.x, dtype=np.float64) for trace in fig.data[1:]]
+        drawn = np.concatenate(spans) if spans else np.empty(0)
+        drawn = drawn[np.isfinite(drawn)]
+        if drawn.size:
+            lo, hi = min(lo, np.min(drawn)), max(hi, np.max(drawn))
+        fig.update_xaxes(range=[float(lo), float(hi)])
     return fig
