@@ -1,6 +1,6 @@
 # Technical tutorials
 
-Eleven notebooks on the AudioSpylt v1 API. Open them in Jupyter or VS Code from
+Twelve notebooks on the AudioSpylt v1 API. Open them in Jupyter or VS Code from
 this folder (paths are relative to the notebook). Install with
 `pip install "audiospylt[all]"` (`pyin` needs the `[librosa]` extra).
 
@@ -32,3 +32,6 @@ one that needs the network; see `python scripts/run_notebooks.py --help`).
 11. `tracks_chords_mei` — `tracks_at` and `tracks_to_chords` (`merge_cents`,
     `min_db`) on `data/interop/saariaho_flute_pm2.sdif`, then MEI next to
     `samples/saariaho_sheet.png`.
+12. `partial_tracking` — `spectrogram_peaks`, `link_peaks` and `track_partials`:
+    test-tone failures, noise and gaps, then the Saariaho flute next to PM2,
+    with settings, point agreement and resynthesis.
