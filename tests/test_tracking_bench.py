@@ -343,3 +343,39 @@ def test_neutral_detection_keeps_amplitude_gate(bench):
     assert acc["n"] == acc["far"] == acc["dup"] == 0
     assert det["paired"] == 0
     assert det["false"] == 1
+
+
+def test_tuner_default_matches_track_partials(bench):
+    import inspect
+    _, _, tuner = bench
+    params = inspect.signature(asp.track_partials).parameters
+    assert tuner.DEFAULT == (
+        params["prominence_db"].default,
+        params["min_duration"].default,
+        params["max_gap"].default,
+    )
+
+
+def test_tuner_max_cents_reaches_link_peaks(bench, tmp_path, monkeypatch):
+    import soundfile as sf
+    _, tr, tuner = bench
+    seen: list[float] = []
+    real = tuner.asp.link_peaks
+
+    def spy(peaks, **kwargs):
+        seen.append(kwargs["max_cents"])
+        return real(peaks, **kwargs)
+
+    monkeypatch.setattr(tuner.asp, "link_peaks", spy)
+    monkeypatch.setattr(tuner, "PROMINENCES", (20,))
+    monkeypatch.setattr(tuner, "DURATIONS", (0.1,))
+    monkeypatch.setattr(tuner, "GAPS", (0,))
+    name = "dev_stat_harm"
+    monkeypatch.setattr(tuner.truth, "DEV_SIGNALS", {name: tr.DEV_SIGNALS[name]})
+    folder = tmp_path / "dev" / "suite"
+    folder.mkdir(parents=True)
+    sf.write(folder / f"{name}.wav", tr.render(name), tr.SR)
+    tuner.main(tmp_path, tmp_path / "results", max_cents=400.0)
+    assert seen and all(c == 400.0 for c in seen)
+    assert tuner.parse_args(["OUT", "RESULTS", "--max-cents", "400"]).max_cents == 400.0
+    assert tuner.parse_args(["OUT", "RESULTS"]).max_cents == tuner.MAX_CENTS

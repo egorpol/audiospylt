@@ -1,11 +1,12 @@
 """Tune only on OUT/dev/suite; never use the published suite.
 
-Usage: python tune_tracker.py OUT RESULTS
+Usage: python tune_tracker.py OUT RESULTS [--max-cents C]
 Fixed analysis and the parameter grid are independent of track_partials defaults.
 """
 
 from __future__ import annotations
 
+import argparse
 import itertools
 import pathlib
 import sys
@@ -31,7 +32,7 @@ MAX_CENTS = 50.0
 PROMINENCES = (None, 10, 15, 20, 25, 30)
 DURATIONS = (0.02, 0.05, 0.1)
 GAPS = (0, 1, 2, 4)
-PROVISIONAL = (20, 0.05, 0)
+DEFAULT = (20, 0.1, 0)
 
 
 def filter_span(tracks: pd.DataFrame, duration: float) -> pd.DataFrame:
@@ -51,7 +52,7 @@ def pareto(macro: pd.DataFrame) -> pd.DataFrame:
     return macro[keep].sort_values("recall", ascending=False, kind="stable")
 
 
-def report(macro: pd.DataFrame) -> str:
+def report(macro: pd.DataFrame, max_cents: float = MAX_CENTS) -> str:
     front = pareto(macro)
     cols = {
         "prominence_db": ("prominence", "num"), "min_duration": ("min_duration", "num"),
@@ -70,18 +71,20 @@ def report(macro: pd.DataFrame) -> str:
     header = "| " + " | ".join(h for h, _ in cols.values()) + " |"
     rule = "|" + "---:|" * len(cols)
     lines = ["# Tracker tuning (development suite only)", "",
+             f"Linking used `max_cents={max_cents:g}`. "
              "Macro means give each family equal weight, skipping NaN metrics. "
              "The Pareto set maximizes recall and minimizes false / frame and tracks / segment; ties remain.", "",
              header, rule]
     lines.extend(line(row) for _, row in front.iterrows())
-    chosen = ((macro["prominence_db"] == PROVISIONAL[0]) & (macro["min_duration"] == PROVISIONAL[1])
-              & (macro["max_gap"] == PROVISIONAL[2]))
-    if not macro.index[chosen].isin(front.index).any():
-        lines += ["", "Provisional default (outside the Pareto set):", "", header, rule, line(macro[chosen].iloc[0])]
+    if max_cents == MAX_CENTS:
+        chosen = ((macro["prominence_db"] == DEFAULT[0]) & (macro["min_duration"] == DEFAULT[1])
+                  & (macro["max_gap"] == DEFAULT[2]))
+        if not macro.index[chosen].isin(front.index).any():
+            lines += ["", "Default (outside the Pareto set):", "", header, rule, line(macro[chosen].iloc[0])]
     return "\n".join(lines) + "\n"
 
 
-def main(out: pathlib.Path, results: pathlib.Path) -> None:
+def main(out: pathlib.Path, results: pathlib.Path, max_cents: float = MAX_CENTS) -> None:
     started = time.perf_counter()
     folder = out / "dev" / "suite"
     if not folder.is_dir():
@@ -97,7 +100,7 @@ def main(out: pathlib.Path, results: pathlib.Path) -> None:
         for prominence in PROMINENCES:
             peaks = asp.spectrogram_peaks(spec, min_db=MIN_DB, prominence_db=prominence)
             for gap in GAPS:
-                linked = asp.link_peaks(peaks, max_cents=MAX_CENTS, max_gap=gap, min_duration=0)
+                linked = asp.link_peaks(peaks, max_cents=max_cents, max_gap=gap, min_duration=0)
                 for duration in DURATIONS:
                     tracks = filter_span(linked, duration)
                     pts = tracks[["time", "freq", "amp", "track_id"]].to_numpy()
@@ -120,9 +123,18 @@ def main(out: pathlib.Path, results: pathlib.Path) -> None:
     results.mkdir(parents=True, exist_ok=True)
     table = pd.DataFrame(rows)
     table.to_csv(results / "tuning.csv", index=False, float_format="%.8g")
-    (results / "tuning.md").write_text(report(table[table["family"] == "macro"]))
+    (results / "tuning.md").write_text(report(table[table["family"] == "macro"], max_cents=max_cents))
     print(f"Total: {time.perf_counter() - started:.2f} s", flush=True)
 
 
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(usage="python tune_tracker.py OUT RESULTS [--max-cents C]")
+    parser.add_argument("out", type=pathlib.Path)
+    parser.add_argument("results", type=pathlib.Path)
+    parser.add_argument("--max-cents", type=float, default=MAX_CENTS, dest="max_cents")
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    main(pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]))
+    args = parse_args()
+    main(args.out, args.results, max_cents=args.max_cents)

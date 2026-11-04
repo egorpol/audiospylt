@@ -26,7 +26,8 @@ BIN_FLOOR = 1e-4  # bin LSD as in the 2026-10-10 audit: floor 80 dB below the re
 MIN_BINS = 8  # band LSD: third-octave bands merged upward until each holds this many STFT bins
 LISTEN_PEAK_DB = -1.0
 COVER, QUIET_DB = 0.9, -10.0  # summary notes: historical renders shorter than this share of their input, or quieter
-ORDER = ["audiospylt-v1/default", "audiospylt-v1/matched", "audiospylt-v1/matched-nofade", "audiospylt-0.6/matched",
+ORDER = ["audiospylt-v1/default", "audiospylt-v1/matched", "audiospylt-v1/tracked", "audiospylt-v1/tracked-noprom",
+         "audiospylt-v1/tracked-wide", "audiospylt-v1/matched-nofade", "audiospylt-0.6/matched",
          "loris/matched", "loris/matched+asp", "loris/home", "loris/home+asp",
          "sms-tools/matched", "sms-tools/matched+asp", "sms-tools/home", "sms-tools/home+asp",
          "pm2-harmonic/matched+asp", "pm2-inharmonic/matched+asp",
@@ -88,11 +89,18 @@ def score(ref: np.ndarray, y: np.ndarray, sr: int) -> dict:
     d_band = signed_band ** 2
     bin_excess, bin_deficit = _excess_deficit(signed_bin)
     band_excess, band_deficit = _excess_deficit(signed_band)
-    return {"bin": float(np.sqrt(d_bin.mean())), "band": float(np.sqrt(d_band.mean())),
-            "gain": float(10 * np.log10(np.mean(y ** 2) / np.mean(ref ** 2))),
+    with np.errstate(divide="ignore"):  # a silent render scores -inf
+        gain = float(10 * np.log10(np.mean(y ** 2) / np.mean(ref ** 2)))
+    return {"bin": float(np.sqrt(d_bin.mean())), "band": float(np.sqrt(d_band.mean())), "gain": gain,
             "bin_excess": bin_excess, "bin_deficit": bin_deficit,
             "band_excess": band_excess, "band_deficit": band_deficit,
             "bands": [(float(np.sqrt(d_bin[s].mean())), float(np.sqrt(d_band[i].mean()))) for i, s in enumerate(sel)]}
+
+
+def match_rms(y: np.ndarray, target: float) -> np.ndarray:
+    """`y` scaled to RMS `target`; a silent render stays silent (an empty track table gives one)."""
+    rms = np.sqrt(np.mean(y ** 2))
+    return y * target / rms if rms else y
 
 
 def noise_floor(sr: int) -> dict:
@@ -304,7 +312,7 @@ def write_listening(out: pathlib.Path, known, rows, refs) -> None:
             if wav.is_file():
                 y, _ = sf.read(wav)
                 y = y[: ref.size] if y.size >= ref.size else np.pad(y, (0, ref.size - y.size))
-                clips.append((f"{i:02d}_{group(row).replace('/', '_')}", y * target / np.sqrt(np.mean(y ** 2))))
+                clips.append((f"{i:02d}_{group(row).replace('/', '_')}", match_rms(y, target)))
         peak = max(np.abs(c).max() for _, c in clips)
         scale = min(1.0, 10 ** (LISTEN_PEAK_DB / 20) / peak)  # one factor per excerpt keeps the levels equal
         folder = out / "listening" / e.name

@@ -12,7 +12,7 @@ analysis/synthesis panel, and five test sounds from the Loris and sms-tools repo
 the resyntheses that the authors of IRCAM's tools, Loris and SMS made in 2000 are scored as historical rows.
 
 The external tools and the reference sounds are not part of AudioSpylt's dependencies or CI. Results from the
-run of 2026-10-27 are in [`results/`](results/).
+run of 2026-10-27 (tracked rows 2026-11-04) are in [`results/`](results/).
 
 ## Sounds
 
@@ -68,6 +68,8 @@ and 279 at 48 kHz. Each sound is analysed and rendered at its own rate.
 | `audiospylt-v1/default` | AudioSpylt 1.0.0.dev0: `spectrogram` defaults (frame 2048, hop 512 samples at every rate, Hann, `zero_pad=1`, centred frames), `find_peaks(min_db=-60)` per frame | `synthesize` defaults: continuous phase, rows linked within `link_cents=100`, `link_ramp=0.005`, `fade=0.005` centred on voice ends |
 | `audiospylt-v1/matched` | matched frame and hop, Hann, `zero_pad=4`; `find_peaks(min_db=-80)` | as above |
 | `audiospylt-v1/tracked` | `track_partials` with matched frame and hop at the excerpt rate, all other arguments at their defaults | `synthesize(tracks_to_events(tracks))`, all defaults including fade |
+| `audiospylt-v1/tracked-noprom` | the same with `prominence_db=None` | as above |
+| `audiospylt-v1/tracked-wide` | the same with `prominence_db=None, max_cents=400` | as above |
 | `audiospylt-v1/matched-nofade` | as `matched` | as above with `fade=0` (kept to show the clicks) |
 | `audiospylt-0.6/matched` | 0.6 API (`dft_analysis.analyze_signal`, kept as a deprecated shim) per frame: matched frame and hop, Hann, frame k centred at k·hop, `thresh_amp_low=2.5e-5` (−80 dBFS on 0.6's scale), `thresh_amp_high=1` | the path of `tutorials_tech/resynth.ipynb`: `plot_waves(k=0.00015, phase_mode="chirp", edge_fade_s=0.0025)`, then `render_audio(fs_target_name="44.1kHz", alias_above_nyquist=True)`; see [How the 0.6 row runs](#how-the-06-row-runs-and-what-v1-changes) |
 | `loris/matched` | loristrck 1.7.2: `resolution` 43.07 Hz, `windowsize` 86.13 Hz, `hoptime` 5.805 ms, `ampfloor` −80 | `loristrck.synthesize(start=0, end=duration)` |
@@ -84,14 +86,14 @@ and 279 at 48 kHz. Each sound is analysed and rendered at its own rate.
 
 Notes on the rows:
 
-- AudioSpylt v1's default and matched rows are untracked per-frame peaks. The tracked row uses
-  `track_partials`. In the untracked rows every peak above `min_db` becomes an event held over the
-  frame centre ± hop/2, and `synthesize` joins events of consecutive frames into one phase-continuous voice
-  when their frequencies are within 100 cents. The matched rows keep 283 events per frame on `bayle`, 14 on
-  `de_natura_son` and 59 on the flute. For comparison, Loris keeps 245, 11 and 50 track points per frame,
-  sms-tools 88, 14 and 55, PM2 inharmonic 10–12 on `bayle` (the mean of each of the five runs; at most 15 in
-  a frame) and PM2 harmonic 18 on the flute. An untracked v1 row is a sum of all spectral peaks of every frame,
-  closer to an STFT resynthesis than to a compact model of the sound.
+- AudioSpylt v1's default and matched rows are untracked per-frame peaks. The tracked rows use
+  `track_partials` (see [Tracked rows](#tracked-rows)). In the untracked rows every peak above `min_db`
+  becomes an event held over the frame centre ± hop/2, and `synthesize` joins events of consecutive frames
+  into one phase-continuous voice when their frequencies are within 100 cents. The matched rows keep 283
+  events per frame on `bayle`, 14 on `de_natura_son` and 59 on the flute. For comparison, Loris keeps 245, 11
+  and 50 track points per frame, sms-tools 88, 14 and 55, PM2 inharmonic 10–12 on `bayle` (the mean of each of
+  the five runs; at most 15 in a frame) and PM2 harmonic 18 on the flute. An untracked v1 row is a sum of all
+  spectral peaks of every frame, closer to an STFT resynthesis than to a compact model of the sound.
 - With `fade=0`, an event that does not link starts and stops at full amplitude. On `de_natura_son`, the peaks
   of the 20–80 Hz rumble (bins 1–4 of a 2048-sample frame, 21.5 Hz each) move by more than 100 cents from
   frame to frame, so few of them link, and each one switches on and off every 5.8 ms. The result is broadband
@@ -111,7 +113,8 @@ Notes on the rows:
   gain is +9.5 to +21 dB on the case-study excerpts, which peak between −24.2 and −10.7 dBFS. See
   [Level](#level) for the scores at matched level.
 - Renders by `synthesize` and by the 0.6 path end at the last event, up to 0.96 s before the end of the input
-  (`audiospylt-v1/default` on the ICMC `piano`); the evaluator pads them with zeros.
+  (`audiospylt-v1/default` on the ICMC `piano`) and up to 2.03 s for the tracked rows (`audiospylt-v1/tracked`
+  on `bassdrum`; its `de_natura_son` render is empty). The evaluator pads them with zeros.
 - The `+asp` rows replay frequency and amplitude only. Loris's own synthesizer also uses the analysed phase and
   bandwidth, and sms-tools' uses the analysed phase. Comparing a tool's own row with its `+asp` row therefore
   isolates the synthesizer, not the analysis.
@@ -126,6 +129,42 @@ Notes on the rows:
 - PM2 harmonic finds 19 tracks on the ICMC `shaku` (PM2 inharmonic 1,564). This comes from the template's f0
   settings, which were not tuned per sound.
 - Partiels has no synthesizer, so the PM2 rows exist only as `+asp` rows.
+
+### Tracked rows
+
+| row | `prominence_db` | `max_cents` | band LSD | gain | gain < −6 dB | dev recall % | dev false / frame | dev tracks / segment | dev switch % |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `audiospylt-v1/tracked` | 20 | 50 | 22.50 | −1.91 | 10 | 84.83 | 0.72 | 1.18 | 0 |
+| `audiospylt-v1/tracked-noprom` | None | 50 | 12.12 | −0.61 | 6 | 88.09 | 26.39 | 1.07 | 0 |
+| `audiospylt-v1/tracked-wide` | None | 400 | 8.33 | −0.95 | 1 | 89.39 | 32.12 | 4.88 | 7.37 |
+
+Band LSD and gain are medians over the 35 sounds, and "gain < −6 dB" counts sounds. The dev columns are macro
+means on the accuracy benchmark's development suite at minimum duration 0.1 s and maximum gap 0
+(`tune_tracker.py`, with `--max-cents 400` for the last row). The first row is the `track_partials` default.
+`tracked-wide` is shown to measure what the gate costs; it is not a recommended setting. It pays for its lower
+LSD with 32.12 false peaks per frame against 0.72, 4.88 tracks per segment against 1.18, and 7.37 % switches
+against 0.
+
+On the 27 ICMC 2000 sounds the median band LSD is 26.14, 12.24 and 8.26 for the three rows, against 5.53 for
+`audiospylt-v1/matched` (untracked), 8.85 for `loris/matched+asp` and 9.31 for `sms-tools/matched+asp`. The
+`+asp` rows are the fair comparison because they use the same synthesis.
+
+At the defaults, `de_natura_son` gives an empty table: 0 tracks, no warning, a silent render, gain −inf. Its
+bin LSD of 8.30 is a floor effect (see [Floor effects](#floor-effects)), not a partial match; its band LSD is
+26.26. Read band LSD and gain together, because a quiet render can score well on the floored bin LSD.
+
+Two things cause this, and they act on different quantities. Prominence sets the track count: 0, 0, 14 and 185
+tracks at 20 dB, 15 dB, 10 dB and None (50 c, minimum duration 0.1 s). The 50 c gate loses the energy: 92.3 % of
+this sound's energy lies at 20–100 Hz. The per-frame peaks still hold it before linking (their summed power is
+−2.37 dB re the excerpt at 20 dB, −0.83 dB at None), but after 50 c linking no track below 100 Hz survives at any
+prominence. A 46 ms window resolves little at 20–100 Hz, and one 5.4 Hz bin of the zero-padded spectrum is about
+220 c at 40 Hz. With prominence None, the gain is −28.5 dB at 50 c and −4.1 dB at 400 c. PM2 inharmonic also drops
+most of this texture (gain −11.9 dB).
+
+For resynthesis of dense or noisy material, `prominence_db=None` gave lower LSD here, and a wider gate lower still
+where the energy sits at low frequencies, at the accuracy cost in the table. Lower LSD is not proven better
+listening: noise peaks can fill bands without sounding like the input, and no listening test has been run. A
+low-frequency floor for the gate and a warning on an empty result are planned, not built or measured.
 
 ### Home settings
 
@@ -295,14 +334,16 @@ affected. Compare rows within one sound, not across sounds. Scoring each sound a
 Because the 0.6 renderer normalises its output, the level difference dominates that row's scores. With the
 render scaled to the RMS of the excerpt, the 0.6 row scores (bin / band LSD in dB) 17.33 / 11.38 on `bayle`,
 3.51 / 9.49 on `de_natura_son` and 10.00 / 8.81 on the flute. These values come from `evaluate.score` on the
-rescaled render; they are not in `results/`. Every other row is within −3.6 to +0.2 dB of the excerpt, except
-PM2 inharmonic on `de_natura_son` (see above).
+rescaled render; they are not in `results/`. Aside from the 0.6 row, every non-tracked row is within −3.6 to
++0.2 dB of the excerpt, except PM2 inharmonic on `de_natura_son` (see above). The tracked rows are inside
+that range on `bayle` and the flute and below it on `de_natura_son` (gain −inf, −28.52 and −4.09 dB; see
+[Tracked rows](#tracked-rows)).
 
 ## Headline results
 
-These tables are copied from [`results/summary.md`](results/summary.md) (run of 2026-10-27). Lower is better.
-"–" means the row has no render of that sound. The excess / deficit tables split the band LSD into the
-part where the render is louder than the sound and the part where it is quieter (see
+These tables are copied from [`results/summary.md`](results/summary.md) (run of 2026-10-27; tracked rows
+2026-11-04). Lower is better. "–" means the row has no render of that sound. The excess / deficit tables split
+the band LSD into the part where the render is louder than the sound and the part where it is quieter (see
 [Metrics](#metrics-evaluatepy)); `summary.md` gives the same split of the bin LSD.
 
 ### Case-study excerpts
@@ -316,6 +357,9 @@ the means. Noise-pair floor: bin LSD 7.89, band LSD 1.86.
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | 21.13 | 3.24 | 12.00 |
 | audiospylt-v1/matched | 6.45 | 2.56 | 7.05 |
+| audiospylt-v1/tracked | 25.49 | 8.30 | 13.92 |
+| audiospylt-v1/tracked-noprom | 11.25 | 7.05 | 10.77 |
+| audiospylt-v1/tracked-wide | 8.55 | 4.40 | 8.51 |
 | audiospylt-v1/matched-nofade | 6.19 | 22.20 | 6.51 |
 | audiospylt-0.6/matched | 16.76 | 5.33 | 17.34 |
 | loris/matched | 7.48 | 3.11 | 7.08 |
@@ -331,6 +375,9 @@ the means. Noise-pair floor: bin LSD 7.89, band LSD 1.86.
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | 8.49 | 10.88 | 22.61 |
 | audiospylt-v1/matched | 1.11 | 9.55 | 11.67 |
+| audiospylt-v1/tracked | 20.99 | 26.26 | 25.95 |
+| audiospylt-v1/tracked-noprom | 5.63 | 19.68 | 16.61 |
+| audiospylt-v1/tracked-wide | 2.45 | 12.44 | 14.00 |
 | audiospylt-v1/matched-nofade | 1.14 | 29.98 | 6.46 |
 | audiospylt-0.6/matched | 12.82 | 13.17 | 21.88 |
 | loris/matched | 2.02 | 10.11 | 12.39 |
@@ -346,6 +393,9 @@ the means. Noise-pair floor: bin LSD 7.89, band LSD 1.86.
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | -0.16 | -1.79 | -0.19 |
 | audiospylt-v1/matched | -0.18 | -0.45 | -0.09 |
+| audiospylt-v1/tracked | -1.89 | -inf | -0.38 |
+| audiospylt-v1/tracked-noprom | -0.48 | -28.52 | -0.26 |
+| audiospylt-v1/tracked-wide | -0.51 | -4.09 | -0.41 |
 | audiospylt-v1/matched-nofade | -0.17 | 0.21 | -0.08 |
 | audiospylt-0.6/matched | 9.55 | 10.61 | 20.99 |
 | loris/matched | -0.47 | -3.62 | -0.44 |
@@ -361,6 +411,9 @@ the means. Noise-pair floor: bin LSD 7.89, band LSD 1.86.
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | 0.72 / 8.46 | 1.05 / 10.83 | 0.23 / 22.61 |
 | audiospylt-v1/matched | 0.79 / 0.78 | 1.94 / 9.35 | 0.77 / 11.65 |
+| audiospylt-v1/tracked | 0.55 / 20.98 | 0.00 / 26.26 | 0.11 / 25.95 |
+| audiospylt-v1/tracked-noprom | 0.63 / 5.60 | 0.03 / 19.68 | 0.55 / 16.60 |
+| audiospylt-v1/tracked-wide | 0.82 / 2.30 | 0.14 / 12.43 | 0.95 / 13.97 |
 | audiospylt-v1/matched-nofade | 0.85 / 0.76 | 29.98 / 0.07 | 0.88 / 6.40 |
 | audiospylt-0.6/matched | 11.87 / 4.86 | 11.68 / 6.08 | 21.88 / 0.21 |
 | loris/matched | 0.47 / 1.97 | 0.15 / 10.11 | 0.57 / 12.38 |
@@ -380,6 +433,9 @@ median over all the sounds it rendered.
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 27 | 9.82 | 9.72 | 14.36 | 14.76 | -1.03 |
 | audiospylt-v1/matched | 27 | 4.82 | 4.76 | 5.16 | 4.69 | -0.53 |
+| audiospylt-v1/tracked | 27 | 15.89 | 15.79 | 26.95 | 27.80 | -3.71 |
+| audiospylt-v1/tracked-noprom | 27 | 9.61 | 9.53 | 13.41 | 13.14 | -1.48 |
+| audiospylt-v1/tracked-wide | 27 | 7.36 | 7.46 | 8.98 | 8.22 | -1.22 |
 | audiospylt-v1/matched-nofade | 27 | 5.39 | 5.19 | 5.53 | 5.21 | -0.48 |
 | audiospylt-0.6/matched | 27 | 12.66 | 13.10 | 12.73 | 12.67 | 6.23 |
 | loris/matched | 27 | 6.18 | 6.55 | 7.67 | 6.82 | -2.00 |
@@ -401,6 +457,9 @@ median over all the sounds it rendered.
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | 27 | 0.97 / 14.30 | 0.69 / 14.70 |
 | audiospylt-v1/matched | 27 | 1.16 / 4.96 | 0.89 / 4.46 |
+| audiospylt-v1/tracked | 27 | 0.23 / 26.95 | 0.14 / 27.79 |
+| audiospylt-v1/tracked-noprom | 27 | 0.54 / 13.38 | 0.44 / 13.14 |
+| audiospylt-v1/tracked-wide | 27 | 0.88 / 8.90 | 0.81 / 8.15 |
 | audiospylt-v1/matched-nofade | 27 | 4.02 / 2.88 | 3.51 / 2.95 |
 | audiospylt-0.6/matched | 27 | 10.75 / 4.84 | 10.33 / 3.47 |
 | loris/matched | 27 | 0.82 / 7.56 | 0.50 / 6.75 |
@@ -424,6 +483,9 @@ Bin LSD / band LSD in dB.
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 14.40 / 23.79 | 8.89 / 14.23 | 2.28 / 5.87 | 9.65 / 13.01 | 5.64 / 13.33 |
 | audiospylt-v1/matched | 8.40 / 10.56 | 4.42 / 6.31 | 1.37 / 2.50 | 4.37 / 4.73 | 3.18 / 7.06 |
+| audiospylt-v1/tracked | 13.99 / 19.25 | 10.97 / 15.68 | 5.28 / 16.25 | 14.78 / 22.33 | 5.30 / 9.21 |
+| audiospylt-v1/tracked-noprom | 12.24 / 15.77 | 7.67 / 10.87 | 3.49 / 7.00 | 8.47 / 10.06 | 4.54 / 8.48 |
+| audiospylt-v1/tracked-wide | 9.62 / 14.55 | 6.28 / 9.44 | 2.47 / 4.43 | 6.41 / 6.75 | 4.68 / 8.33 |
 | audiospylt-v1/matched-nofade | 8.19 / 8.22 | 4.56 / 3.48 | 1.68 / 5.02 | 4.47 / 2.97 | 3.36 / 6.85 |
 | audiospylt-0.6/matched | 15.10 / 21.53 | 12.59 / 10.14 | 3.31 / 5.12 | 12.89 / 8.47 | 14.64 / 21.92 |
 | loris/matched | 8.46 / 12.90 | 5.40 / 8.09 | 1.93 / 3.63 | 6.25 / 5.91 | 3.90 / 7.58 |
@@ -443,6 +505,9 @@ Bin LSD / band LSD in dB.
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 0.82 / 23.77 | 0.52 / 14.22 | 1.06 / 5.77 | 0.51 / 13.00 | 1.71 / 13.22 |
 | audiospylt-v1/matched | 1.66 / 10.43 | 0.56 / 6.28 | 1.19 / 2.20 | 0.63 / 4.69 | 2.03 / 6.76 |
+| audiospylt-v1/tracked | 0.18 / 19.25 | 0.12 / 15.68 | 0.21 / 16.25 | 0.29 / 22.32 | 0.64 / 9.19 |
+| audiospylt-v1/tracked-noprom | 1.54 / 15.69 | 0.26 / 10.86 | 0.68 / 6.97 | 0.35 / 10.05 | 1.58 / 8.33 |
+| audiospylt-v1/tracked-wide | 2.04 / 14.41 | 0.55 / 9.42 | 0.78 / 4.36 | 0.36 / 6.74 | 2.54 / 7.94 |
 | audiospylt-v1/matched-nofade | 1.73 / 8.04 | 2.66 / 2.23 | 4.78 / 1.55 | 0.94 / 2.82 | 3.33 / 5.98 |
 | audiospylt-0.6/matched | 20.27 / 7.25 | 9.79 / 2.64 | 4.30 / 2.78 | 7.66 / 3.62 | 21.87 / 1.48 |
 | loris/matched | 0.48 / 12.89 | 0.29 / 8.08 | 0.78 / 3.55 | 0.70 / 5.86 | 1.46 / 7.44 |
@@ -466,9 +531,9 @@ In short:
   fill the high bands where the peaks miss the breath noise: its band deficit is 6.40 dB, against 11.65 dB with
   fades.
 - Loris is the closest tracker on `bayle` (band LSD 2.02 dB, 0.9 dB above v1 with 14 % fewer points) and on
-  the flute's bin LSD. sms-tools is the closest on `de_natura_son`, where it also beats every v1 row (bin /
-  band LSD 2.17 / 8.71 dB, v1 `matched` 2.56 / 9.55). On `bayle`, the sms-tools and PM2 limits on the number
-  of partials show up as empty bands.
+  the flute's bin LSD. sms-tools is the closest on `de_natura_son`, where it also beats every v1 row including
+  the tracked ones (bin / band LSD 2.17 / 8.71 dB, v1 `matched` 2.56 / 9.55, `tracked-wide` 4.40 / 12.44). On
+  `bayle`, the sms-tools and PM2 limits on the number of partials show up as empty bands.
 - Played through `asp.synthesize` (frequency and amplitude only), the same tracks score 0.1–2.6 dB higher
   than with the tool's own synthesizer on the case-study excerpts.
 - On the 18 common ICMC sounds, the authors' own renders of 2000 have mean bin LSDs of 4.09 (SMS) to 5.71 dB
@@ -488,7 +553,8 @@ In short:
 `evaluate.py` writes `OUT/listening/<sound>/NN_<row>.wav`: `00_original` (the mono input) and one file per row,
 using the first run of the PM2 inharmonic row. Every file is scaled to the RMS of the input, then one factor
 per sound puts the loudest peak of the set at −1 dBFS, so the files of one sound can be compared at equal
-loudness. They are 16-bit WAVs at the input's rate, 35 folders and about 145 MB in total.
+loudness. A silent render (empty track table) stays a silent file. They are 16-bit WAVs at the input's rate,
+35 folders, 635 files, about 175 MB in total.
 
 ## Reproducing
 
@@ -498,7 +564,7 @@ after the other runners because it also replays the track tables that they write
 `run_historical.py` takes `--sets case,icmc2000,tools` (default: every set whose files are present).
 
 ```sh
-OUT=$HOME/asp-fidelity     # reference sounds, renders, track tables, listening WAVs; ~660 MB
+OUT=$HOME/asp-fidelity     # reference sounds, renders, track tables, listening WAVs; ~745 MB
 VENVS=$HOME/asp-bench-venvs
 
 uv venv --python 3.12 $VENVS/asp
@@ -518,7 +584,8 @@ $A benchmarks/fidelity/run_historical.py $OUT                     # ~2.5 min
 $A benchmarks/fidelity/evaluate.py $OUT benchmarks/fidelity/results   # ~15 s
 ```
 
-Without the fetch step, only the `case` set runs, and `run_historical.py` has nothing to do. Every runner writes `OUT/raw/<row>/<sound>.wav` (float32, at
+Without the fetch step, only the `case` set runs, and `run_historical.py` has nothing to do. The three tracked
+rows take about 2.5 min (measured 2026-11-04). Every runner writes `OUT/raw/<row>/<sound>.wav` (float32, at
 the level the tool renders, at the input's rate) and `OUT/raw/<row>/meta.json` (version, parameters,
 synthesizer, and per sound its set, rate and counts). The Loris, sms-tools and PM2 runners also write their
 tracks to `OUT/tracks/<row>/<sound>.csv` in the format of the accuracy benchmark (time, freq, amp, track).

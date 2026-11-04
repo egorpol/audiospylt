@@ -269,7 +269,7 @@ def track_partials(
     prominence_db: float | None = 20.0,
     max_cents: float = 50.0,
     max_gap: int = 0,
-    min_duration: float = 0.05,
+    min_duration: float = 0.1,
 ) -> pd.DataFrame:
     """Analyze mono audio into partial tracks through spectral peaks.
 
@@ -300,7 +300,7 @@ def track_partials(
         Positive linking gate, as for link_peaks.
     max_gap : int, default 0
         Maximum number of missed frames, as for link_peaks.
-    min_duration : float, default 0.05
+    min_duration : float, default 0.1
         Minimum measured track span in seconds, as for link_peaks.
 
     Returns

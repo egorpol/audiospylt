@@ -39,6 +39,10 @@ V1 = {
 OLD = {**MATCHED, "window_type": "hann", "thresh_amp_low": 1e-4 / 4, "thresh_amp_high": 1.0, "k": 0.00015,
        "phase_mode": "chirp", "edge_fade_s": 0.0025}
 TRACK_FADE = 0.005  # as in G2
+# overrides of the track_partials defaults: tracked-noprom shows what the prominence default removes,
+# tracked-wide what the 50 c gate then still loses (its accuracy cost is in the benchmark README)
+TRACKED = {"audiospylt-v1/tracked": {}, "audiospylt-v1/tracked-noprom": {"prominence_db": None},
+           "audiospylt-v1/tracked-wide": {"prominence_db": None, "max_cents": 400.0}}
 
 
 def frame_hop(p: dict, sr: int) -> tuple[int, int]:
@@ -75,24 +79,26 @@ def v1_rows(out: pathlib.Path, chosen: list[excerpts.Excerpt]) -> None:
         )
 
 
-def tracked_row(out: pathlib.Path, chosen: list[excerpts.Excerpt]) -> None:
-    row = "audiospylt-v1/tracked"
+def tracked_rows(out: pathlib.Path, chosen: list[excerpts.Excerpt]) -> None:
     # frame and hop come from MATCHED at each excerpt's rate, not from the signature
     defaults = {k: v.default for k, v in inspect.signature(asp.track_partials).parameters.items()
                 if v.default is not inspect.Parameter.empty and k not in ("frame_length", "hop")}
-    done = {}
-    for e in chosen:
-        frame, hop = frame_hop(MATCHED, e.sr)
-        tracks = asp.track_partials(excerpts.load(e), e.sr, frame_length=frame, hop=hop)
-        events = asp.tracks_to_events(tracks)
-        excerpts.write_render(out, row, e, asp.synthesize(events, e.sr))
-        done[e.name] = {"set": e.set, "sr": e.sr, "frame": frame, "hop": hop,
-                        "params": {**defaults, "frame_length": frame, "hop": hop, "fade": DEFAULT_FADE},
-                        "tracks": int(tracks["track_id"].nunique()), "events": len(events)}
-        print(row, e.name, done[e.name]["tracks"], "tracks", len(events), "events", flush=True)
-    excerpts.write_meta(out, row, version=asp.__version__,
-                        params={**defaults, **MATCHED, "fade": DEFAULT_FADE}, excerpts=done,
-                        synth=f"audiospylt.synthesize(audiospylt.tracks_to_events(tracks)) (defaults, fade={DEFAULT_FADE})")
+    for row, overrides in TRACKED.items():
+        params = {**defaults, **overrides}
+        done = {}
+        for e in chosen:
+            frame, hop = frame_hop(MATCHED, e.sr)
+            tracks = asp.track_partials(excerpts.load(e), e.sr, frame_length=frame, hop=hop, **overrides)
+            events = asp.tracks_to_events(tracks)
+            excerpts.write_render(out, row, e, asp.synthesize(events, e.sr))
+            done[e.name] = {"set": e.set, "sr": e.sr, "frame": frame, "hop": hop,
+                            "params": {**params, "frame_length": frame, "hop": hop, "fade": DEFAULT_FADE},
+                            "tracks": int(tracks["track_id"].nunique()), "events": len(events)}
+            print(row, e.name, done[e.name]["tracks"], "tracks", len(events), "events", flush=True)
+        excerpts.write_meta(out, row, version=asp.__version__,
+                            params={**params, **MATCHED, "fade": DEFAULT_FADE}, excerpts=done,
+                            synth=("audiospylt.synthesize(audiospylt.tracks_to_events(tracks)) "
+                                   f"(defaults, fade={DEFAULT_FADE})"))
 
 
 def old_row(out: pathlib.Path, chosen: list[excerpts.Excerpt]) -> None:
@@ -163,6 +169,6 @@ if __name__ == "__main__":
     args, sets = excerpts.cli(sys.argv[1:])
     out, chosen = pathlib.Path(args[0]), excerpts.excerpts(pathlib.Path(args[0]), sets)
     v1_rows(out, chosen)
-    tracked_row(out, chosen)
+    tracked_rows(out, chosen)
     old_row(out, chosen)
     track_rows(out, chosen)

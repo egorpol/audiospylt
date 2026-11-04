@@ -12,6 +12,9 @@ Noise-pair floor (two independent white-noise realisations, 10 s), bin / band LS
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | 21.13 | 3.24 | 12.00 |
 | audiospylt-v1/matched | 6.45 | 2.56 | 7.05 |
+| audiospylt-v1/tracked | 25.49 | 8.30 | 13.92 |
+| audiospylt-v1/tracked-noprom | 11.25 | 7.05 | 10.77 |
+| audiospylt-v1/tracked-wide | 8.55 | 4.40 | 8.51 |
 | audiospylt-v1/matched-nofade | 6.19 | 22.20 | 6.51 |
 | audiospylt-0.6/matched | 16.76 | 5.33 | 17.34 |
 | loris/matched | 7.48 | 3.11 | 7.08 |
@@ -27,6 +30,9 @@ Noise-pair floor (two independent white-noise realisations, 10 s), bin / band LS
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | 8.49 | 10.88 | 22.61 |
 | audiospylt-v1/matched | 1.11 | 9.55 | 11.67 |
+| audiospylt-v1/tracked | 20.99 | 26.26 | 25.95 |
+| audiospylt-v1/tracked-noprom | 5.63 | 19.68 | 16.61 |
+| audiospylt-v1/tracked-wide | 2.45 | 12.44 | 14.00 |
 | audiospylt-v1/matched-nofade | 1.14 | 29.98 | 6.46 |
 | audiospylt-0.6/matched | 12.82 | 13.17 | 21.88 |
 | loris/matched | 2.02 | 10.11 | 12.39 |
@@ -42,6 +48,9 @@ Noise-pair floor (two independent white-noise realisations, 10 s), bin / band LS
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | -0.16 | -1.79 | -0.19 |
 | audiospylt-v1/matched | -0.18 | -0.45 | -0.09 |
+| audiospylt-v1/tracked | -1.89 | -inf | -0.38 |
+| audiospylt-v1/tracked-noprom | -0.48 | -28.52 | -0.26 |
+| audiospylt-v1/tracked-wide | -0.51 | -4.09 | -0.41 |
 | audiospylt-v1/matched-nofade | -0.17 | 0.21 | -0.08 |
 | audiospylt-0.6/matched | 9.55 | 10.61 | 20.99 |
 | loris/matched | -0.47 | -3.62 | -0.44 |
@@ -57,6 +66,9 @@ Noise-pair floor (two independent white-noise realisations, 10 s), bin / band LS
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | 1.53 / 21.07 | 1.01 / 3.08 | 0.91 / 11.96 |
 | audiospylt-v1/matched | 3.03 / 5.69 | 1.42 / 2.13 | 1.44 / 6.90 |
+| audiospylt-v1/tracked | 0.93 / 25.47 | 0.00 / 8.30 | 0.42 / 13.92 |
+| audiospylt-v1/tracked-noprom | 2.66 / 10.93 | 0.23 / 7.05 | 0.80 / 10.74 |
+| audiospylt-v1/tracked-wide | 4.70 / 7.14 | 0.40 / 4.38 | 1.80 / 8.31 |
 | audiospylt-v1/matched-nofade | 3.30 / 5.23 | 22.19 / 0.68 | 1.64 / 6.30 |
 | audiospylt-0.6/matched | 13.64 / 9.73 | 5.07 / 1.64 | 17.03 / 3.25 |
 | loris/matched | 4.15 / 6.22 | 0.40 / 3.09 | 2.78 / 6.52 |
@@ -72,6 +84,9 @@ Noise-pair floor (two independent white-noise realisations, 10 s), bin / band LS
 | --- | ---: | ---: | ---: |
 | audiospylt-v1/default | 0.72 / 8.46 | 1.05 / 10.83 | 0.23 / 22.61 |
 | audiospylt-v1/matched | 0.79 / 0.78 | 1.94 / 9.35 | 0.77 / 11.65 |
+| audiospylt-v1/tracked | 0.55 / 20.98 | 0.00 / 26.26 | 0.11 / 25.95 |
+| audiospylt-v1/tracked-noprom | 0.63 / 5.60 | 0.03 / 19.68 | 0.55 / 16.60 |
+| audiospylt-v1/tracked-wide | 0.82 / 2.30 | 0.14 / 12.43 | 0.95 / 13.97 |
 | audiospylt-v1/matched-nofade | 0.85 / 0.76 | 29.98 / 0.07 | 0.88 / 6.40 |
 | audiospylt-0.6/matched | 11.87 / 4.86 | 11.68 / 6.08 | 21.88 / 0.21 |
 | loris/matched | 0.47 / 1.97 | 0.15 / 10.11 | 0.57 / 12.38 |
@@ -93,6 +108,9 @@ Bands at 44100 Hz (18): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 27 | 9.69 | 9.20 | 9.82 | 9.72 |
 | audiospylt-v1/matched | 27 | 5.07 | 4.86 | 4.82 | 4.76 |
+| audiospylt-v1/tracked | 27 | 15.36 | 15.14 | 15.89 | 15.79 |
+| audiospylt-v1/tracked-noprom | 27 | 10.08 | 9.51 | 9.61 | 9.53 |
+| audiospylt-v1/tracked-wide | 27 | 8.12 | 7.64 | 7.36 | 7.46 |
 | audiospylt-v1/matched-nofade | 27 | 6.00 | 5.27 | 5.39 | 5.19 |
 | audiospylt-0.6/matched | 27 | 13.72 | 13.16 | 12.66 | 13.10 |
 | loris/matched | 27 | 6.58 | 6.60 | 6.18 | 6.55 |
@@ -114,6 +132,9 @@ Bands at 44100 Hz (18): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 27 | 14.61 | 13.93 | 14.36 | 14.76 |
 | audiospylt-v1/matched | 27 | 5.78 | 5.53 | 5.16 | 4.69 |
+| audiospylt-v1/tracked | 27 | 26.15 | 26.14 | 26.95 | 27.80 |
+| audiospylt-v1/tracked-noprom | 27 | 14.40 | 12.24 | 13.41 | 13.14 |
+| audiospylt-v1/tracked-wide | 27 | 10.43 | 8.26 | 8.98 | 8.22 |
 | audiospylt-v1/matched-nofade | 27 | 6.08 | 4.96 | 5.53 | 5.21 |
 | audiospylt-0.6/matched | 27 | 14.00 | 12.87 | 12.73 | 12.67 |
 | loris/matched | 27 | 8.32 | 8.00 | 7.67 | 6.82 |
@@ -135,6 +156,9 @@ Bands at 44100 Hz (18): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 27 | -1.10 | -0.77 | -1.12 | -1.03 |
 | audiospylt-v1/matched | 27 | -0.84 | -0.46 | -0.80 | -0.53 |
+| audiospylt-v1/tracked | 27 | -5.93 | -3.12 | -6.72 | -3.71 |
+| audiospylt-v1/tracked-noprom | 27 | -2.73 | -1.11 | -2.69 | -1.48 |
+| audiospylt-v1/tracked-wide | 27 | -1.76 | -1.29 | -1.47 | -1.22 |
 | audiospylt-v1/matched-nofade | 27 | -0.79 | -0.42 | -0.75 | -0.48 |
 | audiospylt-0.6/matched | 27 | 6.12 | 5.17 | 6.24 | 6.23 |
 | loris/matched | 27 | -2.51 | -1.67 | -2.51 | -2.00 |
@@ -156,6 +180,9 @@ Bands at 44100 Hz (18): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 27 | 1.86 / 9.35 | 1.46 / 9.11 | 1.67 / 9.62 | 1.55 / 9.36 |
 | audiospylt-v1/matched | 27 | 2.21 / 4.44 | 2.15 / 4.11 | 2.08 / 4.28 | 2.26 / 4.06 |
+| audiospylt-v1/tracked | 27 | 0.59 / 15.34 | 0.53 / 15.08 | 0.55 / 15.88 | 0.49 / 15.78 |
+| audiospylt-v1/tracked-noprom | 27 | 1.27 / 9.97 | 1.13 / 9.26 | 1.29 / 9.51 | 1.32 / 9.17 |
+| audiospylt-v1/tracked-wide | 27 | 2.52 / 7.48 | 2.16 / 6.32 | 2.40 / 6.82 | 2.31 / 6.29 |
 | audiospylt-v1/matched-nofade | 27 | 3.83 / 4.04 | 2.92 / 3.77 | 3.36 / 3.88 | 2.99 / 3.74 |
 | audiospylt-0.6/matched | 27 | 10.32 / 7.68 | 9.82 / 6.77 | 8.78 / 7.76 | 8.45 / 6.16 |
 | loris/matched | 27 | 3.15 / 5.55 | 2.61 / 5.42 | 2.73 / 5.44 | 2.58 / 5.23 |
@@ -177,6 +204,9 @@ Bands at 44100 Hz (18): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 27 | 1.08 / 14.43 | 0.65 / 13.93 | 0.97 / 14.30 | 0.69 / 14.70 |
 | audiospylt-v1/matched | 27 | 1.30 / 5.49 | 0.93 / 5.12 | 1.16 / 4.96 | 0.89 / 4.46 |
+| audiospylt-v1/tracked | 27 | 0.26 / 26.15 | 0.14 / 26.14 | 0.23 / 26.95 | 0.14 / 27.79 |
+| audiospylt-v1/tracked-noprom | 27 | 0.60 / 14.37 | 0.50 / 12.24 | 0.54 / 13.38 | 0.44 / 13.14 |
+| audiospylt-v1/tracked-wide | 27 | 0.88 / 10.35 | 0.81 / 8.26 | 0.88 / 8.90 | 0.81 / 8.15 |
 | audiospylt-v1/matched-nofade | 27 | 4.23 / 3.28 | 3.30 / 3.20 | 4.02 / 2.88 | 3.51 / 2.95 |
 | audiospylt-0.6/matched | 27 | 12.37 / 4.71 | 11.59 / 3.35 | 10.75 / 4.84 | 10.33 / 3.47 |
 | loris/matched | 27 | 1.20 / 7.97 | 0.52 / 7.97 | 0.82 / 7.56 | 0.50 / 6.75 |
@@ -208,6 +238,9 @@ Bands at 48000 Hz (19): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 14.40 | 8.89 | 2.28 | 9.65 | 5.64 |
 | audiospylt-v1/matched | 8.40 | 4.42 | 1.37 | 4.37 | 3.18 |
+| audiospylt-v1/tracked | 13.99 | 10.97 | 5.28 | 14.78 | 5.30 |
+| audiospylt-v1/tracked-noprom | 12.24 | 7.67 | 3.49 | 8.47 | 4.54 |
+| audiospylt-v1/tracked-wide | 9.62 | 6.28 | 2.47 | 6.41 | 4.68 |
 | audiospylt-v1/matched-nofade | 8.19 | 4.56 | 1.68 | 4.47 | 3.36 |
 | audiospylt-0.6/matched | 15.10 | 12.59 | 3.31 | 12.89 | 14.64 |
 | loris/matched | 8.46 | 5.40 | 1.93 | 6.25 | 3.90 |
@@ -227,6 +260,9 @@ Bands at 48000 Hz (19): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 23.79 | 14.23 | 5.87 | 13.01 | 13.33 |
 | audiospylt-v1/matched | 10.56 | 6.31 | 2.50 | 4.73 | 7.06 |
+| audiospylt-v1/tracked | 19.25 | 15.68 | 16.25 | 22.33 | 9.21 |
+| audiospylt-v1/tracked-noprom | 15.77 | 10.87 | 7.00 | 10.06 | 8.48 |
+| audiospylt-v1/tracked-wide | 14.55 | 9.44 | 4.43 | 6.75 | 8.33 |
 | audiospylt-v1/matched-nofade | 8.22 | 3.48 | 5.02 | 2.97 | 6.85 |
 | audiospylt-0.6/matched | 21.53 | 10.14 | 5.12 | 8.47 | 21.92 |
 | loris/matched | 12.90 | 8.09 | 3.63 | 5.91 | 7.58 |
@@ -246,6 +282,9 @@ Bands at 48000 Hz (19): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 0.09 | 0.11 | -0.04 | -0.23 | 0.12 |
 | audiospylt-v1/matched | -0.00 | -0.00 | -0.14 | -0.28 | -0.02 |
+| audiospylt-v1/tracked | -0.01 | -0.02 | -0.32 | -0.59 | -0.04 |
+| audiospylt-v1/tracked-noprom | -0.00 | -0.01 | -0.24 | -0.46 | -0.03 |
+| audiospylt-v1/tracked-wide | -0.08 | -0.06 | -0.19 | -0.48 | -0.09 |
 | audiospylt-v1/matched-nofade | -0.00 | -0.00 | -0.13 | -0.28 | -0.02 |
 | audiospylt-0.6/matched | 16.51 | 3.94 | 4.17 | 5.04 | 6.39 |
 | loris/matched | -0.08 | -0.12 | -0.60 | -1.03 | -0.21 |
@@ -265,6 +304,9 @@ Bands at 48000 Hz (19): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 0.81 / 14.38 | 1.45 / 8.77 | 0.72 / 2.16 | 1.66 / 9.51 | 1.44 / 5.45 |
 | audiospylt-v1/matched | 1.75 / 8.22 | 2.11 / 3.88 | 0.81 / 1.10 | 2.27 / 3.74 | 1.95 / 2.52 |
+| audiospylt-v1/tracked | 0.54 / 13.98 | 0.61 / 10.95 | 0.20 / 5.27 | 0.91 / 14.75 | 0.64 / 5.26 |
+| audiospylt-v1/tracked-noprom | 1.11 / 12.19 | 1.51 / 7.52 | 0.42 / 3.46 | 1.68 / 8.31 | 1.49 / 4.29 |
+| audiospylt-v1/tracked-wide | 3.01 / 9.14 | 3.19 / 5.41 | 0.50 / 2.42 | 3.26 / 5.51 | 3.40 / 3.22 |
 | audiospylt-v1/matched-nofade | 1.90 / 7.97 | 2.73 / 3.65 | 1.32 / 1.04 | 2.61 / 3.62 | 2.28 / 2.46 |
 | audiospylt-0.6/matched | 13.58 / 6.62 | 10.54 / 6.88 | 2.12 / 2.54 | 8.75 / 9.47 | 14.11 / 3.90 |
 | loris/matched | 2.65 / 8.03 | 2.25 / 4.92 | 0.58 / 1.84 | 3.69 / 5.04 | 2.08 / 3.30 |
@@ -284,6 +326,9 @@ Bands at 48000 Hz (19): 0–177, 177–354, 354–561, 561–891, 891–1122, 11
 | --- | ---: | ---: | ---: | ---: | ---: |
 | audiospylt-v1/default | 0.82 / 23.77 | 0.52 / 14.22 | 1.06 / 5.77 | 0.51 / 13.00 | 1.71 / 13.22 |
 | audiospylt-v1/matched | 1.66 / 10.43 | 0.56 / 6.28 | 1.19 / 2.20 | 0.63 / 4.69 | 2.03 / 6.76 |
+| audiospylt-v1/tracked | 0.18 / 19.25 | 0.12 / 15.68 | 0.21 / 16.25 | 0.29 / 22.32 | 0.64 / 9.19 |
+| audiospylt-v1/tracked-noprom | 1.54 / 15.69 | 0.26 / 10.86 | 0.68 / 6.97 | 0.35 / 10.05 | 1.58 / 8.33 |
+| audiospylt-v1/tracked-wide | 2.04 / 14.41 | 0.55 / 9.42 | 0.78 / 4.36 | 0.36 / 6.74 | 2.54 / 7.94 |
 | audiospylt-v1/matched-nofade | 1.73 / 8.04 | 2.66 / 2.23 | 4.78 / 1.55 | 0.94 / 2.82 | 3.33 / 5.98 |
 | audiospylt-0.6/matched | 20.27 / 7.25 | 9.79 / 2.64 | 4.30 / 2.78 | 7.66 / 3.62 | 21.87 / 1.48 |
 | loris/matched | 0.48 / 12.89 | 0.29 / 8.08 | 0.78 / 3.55 | 0.70 / 5.86 | 1.46 / 7.44 |

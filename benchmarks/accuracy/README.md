@@ -6,7 +6,7 @@ defaults (or shipped template) and with a matched setting (Hann window of about 
 0.6 runs with the matched setting only, as a reference for what v1 changed. The scores are frequency error in
 cents, amplitude error in dB, recall and false detections.
 
-The external tools are not part of AudioSpylt's dependencies or CI. Results from the run of 2026-10-23 are in
+The external tools are not part of AudioSpylt's dependencies or CI. Results from the run of 2026-11-04 are in
 [`results/`](results/).
 
 ## Signals
@@ -40,7 +40,7 @@ points.
 | --- | --- | --- |
 | `audiospylt-v1/default` | AudioSpylt 1.0.0.dev0 (this repository) | `spectrogram` defaults: frame 2048, hop 512, Hann, `zero_pad=1`, centred frames; `find_peaks(min_db=-60)` per frame (QIFFT on dB) |
 | `audiospylt-v1/matched` | AudioSpylt 1.0.0.dev0 | frame 2048, hop 256, Hann, `zero_pad=4` (8192-point FFT); `find_peaks(min_db=-80)` |
-| `audiospylt-v1/tracked` | AudioSpylt 1.0.0.dev0 | `track_partials(x, sr)` defaults, recorded from the signature in `meta.json` |
+| `audiospylt-v1/tracked` | AudioSpylt 1.0.0.dev0 | `track_partials(x, sr)` defaults (Hann, frame 2048, hop 256, `zero_pad=4`, `min_db=-80`, prominence 20 dB, 50 c, `max_gap=0`, `min_duration=0.1`), recorded from the signature in `meta.json` |
 | `audiospylt-v1/tracked-bh` | AudioSpylt 1.0.0.dev0 | the same with `window="blackmanharris"` |
 | `audiospylt-0.6/matched` | AudioSpylt 0.6 API (`dft_analysis.analyze_signal`, kept as a deprecated shim) | frame 2048, hop 256, Hann, frame k centred at k·hop (half a frame of zeros at both ends); `thresh_amp_low=2.5e-5` (−80 dBFS on 0.6's scale, see below), `thresh_amp_high=1` |
 | `loris/default` | Loris via loristrck 1.7.2 | `resolution` = 0.9 × the file's lowest true frequency (the rule of thumb in the loristrck docs); everything else at its defaults (window size derived from the resolution, hop = 1/window size, amplitude floor −90 dB) |
@@ -63,11 +63,30 @@ Notes on the rows:
   its tracking drops short and weak peaks.
 - PM2 inharmonic output differs from run to run on the same file. Both PM2 inharmonic rows ran five times
   (`r1` … `r5`). `summary.md` shows the mean over the runs and the min–max spread. PM2 harmonic is
-  deterministic and runs only on the 8 harmonic files (it needs an F0), so it has no close-pair results.
+  deterministic and runs only on the 13 harmonic files (it needs an F0), so it has no close-pair or
+  crossing results.
 - `loris/default` uses the true lowest frequency of each file to set the resolution. That follows the
   documented rule of thumb but uses knowledge of the truth.
 - The close-pair spacings (5–40 Hz) are below the main-lobe width of every window used here (86 Hz for a
-  2048-sample Hann at 44.1 kHz). Family recall stays between 31 % and 63 % for every row.
+  2048-sample Hann at 44.1 kHz). Close-pair recall runs from 11.6 % (`audiospylt-v1/tracked`) and
+  11.8 % (`tracked-bh`) to 62.6 % (`sms-tools/matched`).
+- With Hann, side lobes can pass the 20 dB prominence filter. When a partial lies within about 0.03 bin of
+  the zero-pad ×4 grid, the spectrum samples exact nulls, which `spectrogram_peaks` clips at its
+  `floor_db` of −120 dB, and the side lobes then stand far above those nulls. In a sweep of 200 sine
+  frequencies across one bin, 20 % threw side-lobe peaks at −12 dBFS and 16 % at −34 dBFS; with
+  Blackman-Harris, 0 %. So on the stationary family `tracked` has 60.7 % paired and 1 false / frame,
+  against 100.0 % and 0 for `tracked-bh`; on `stat_inharm` alone, 31.2 % and 2. For stationary or
+  synthetic tones use `window="blackmanharris"`. Its main lobe is twice as wide: 172 Hz against 86 Hz at
+  2048 samples and 44.1 kHz.
+- The tracker defaults were chosen from the development suite, but the published suite is not an untouched
+  holdout. Provisional tracked rows had been scored on it before the choice, and the side-lobe finding
+  came from its `stat_inharm` file.
+- Against the previous published table of 2026-10-23: PM2 inharmonic was re-run. Over the 10 row/family
+  pairs and 10 metrics the two tables share, the min–max ranges of the old and new five runs overlap in
+  99 of 100 cells. The exception is `pm2-inharmonic/matched`, noise, |Δf| p95: 5.71–5.95 c then,
+  5.52–5.67 c now. Loris: the raw tracks of the 13 earlier signals are byte-identical, but recall and
+  false / frame moved in 10 per-signal and 6 per-family cells, because `hop_s` is one median over the
+  row's files and the 8 new signals moved it (default 2.31 to 2.44 ms, matched 5.18 to 5.23 ms).
 
 ### Amplitude scales
 
@@ -156,44 +175,79 @@ mean, min and max of the track metrics after `runs`. Repeat rows in the summary 
 
 ## Headline results
 
-These tables are copied from [`results/summary.md`](results/summary.md) (run of 2026-10-23). Rows marked
+These tables are copied from [`results/summary.md`](results/summary.md) (run of 2026-11-04). Rows marked
 "mean of 5" average five PM2 inharmonic runs. "–" means the row has no files in that family.
 
 **|Δf| p95 (cents)** per family:
 
-| row | stationary | glissando | vibrato | close pair | noise |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| audiospylt-0.6/matched | 37.1 | 31.1 | 26.1 | 47.3 | 37.1 |
-| audiospylt-v1/default | 2.44 | 1.43 | 2.81 | 38.5 | 8.53 |
-| audiospylt-v1/matched | 0.0594 | 0.0373 | 3.28 | 38.1 | 7.16 |
-| loris/default | 0.0294 | 0.0324 | 0.111 | 38 | 26.3 |
-| loris/matched | 0.00231 | 0.326 | 7.25 | 33.8 | 44.4 |
-| pm2-harmonic/matched | 0.131 | 0.0884 | 3.31 | – | 6.71 |
-| pm2-harmonic/template | 43 | 21.4 | 16.3 | – | 34.5 |
-| pm2-inharmonic/matched (mean of 5) | 0.126 | 0.0943 | 3.31 | 26.4 | 5.82 |
-| pm2-inharmonic/template (mean of 5) | 35 | 20.5 | 15.1 | 36.8 | 32.7 |
-| sms-tools/default | 0.921 | 0.43 | 0.815 | 38.2 | 13.8 |
-| sms-tools/matched | 0.0594 | 0.0373 | 3.28 | 38.1 | 7.27 |
+| row | stationary | glissando | vibrato | close pair | noise | crossing | onset/offset | dropout | tremolo |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| audiospylt-0.6/matched | 37.1 | 31.1 | 26.1 | 47.3 | 37.1 | 39.3 | 37.1 | 37.1 | 37.1 |
+| audiospylt-v1/default | 2.44 | 1.43 | 2.81 | 38.5 | 8.53 | 11.8 | 2.48 | 2.48 | 2.19 |
+| audiospylt-v1/matched | 0.0594 | 0.0373 | 3.28 | 38.1 | 7.16 | 9.04 | 0.0974 | 0.0963 | 0.0908 |
+| audiospylt-v1/tracked | 0.0594 | 0.0373 | 3.28 | 9.74 | 3.89 | 7.57 | 0.0974 | 0.0963 | 0.0908 |
+| audiospylt-v1/tracked-bh | 0.00584 | 0.0168 | 2.14 | 9.75 | 3.95 | 13.4 | 0.0177 | 0.102 | 0.00871 |
+| loris/default | 0.0294 | 0.0324 | 0.111 | 38 | 26.3 | 43.8 | 0.0566 | 0.105 | 0.863 |
+| loris/matched | 0.00231 | 0.326 | 7.25 | 33.8 | 44.4 | 2.32 | 0.0236 | 0.0424 | 4.34 |
+| pm2-harmonic/matched | 0.131 | 0.0884 | 3.31 | – | 6.71 | – | 0.181 | 0.179 | 0.154 |
+| pm2-harmonic/template | 43 | 21.4 | 16.3 | – | 34.5 | – | 47.2 | 46 | 38 |
+| pm2-inharmonic/matched (mean of 5) | 0.132 | 0.0914 | 3.3 | 28.2 | 5.62 | 8.35 | 0.176 | 0.181 | 0.155 |
+| pm2-inharmonic/template (mean of 5) | 34.9 | 20.2 | 14.9 | 36.8 | 34.3 | 33.8 | 46.5 | 45.9 | 38.2 |
+| sms-tools/default | 0.921 | 0.43 | 0.815 | 38.2 | 13.8 | 29.7 | 1.57 | 1.28 | 1.31 |
+| sms-tools/matched | 0.0594 | 0.0373 | 3.28 | 38.1 | 7.27 | 8.91 | 0.0974 | 0.0963 | 0.0908 |
 
 **Recall %** per family:
 
-| row | stationary | glissando | vibrato | close pair | noise |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| audiospylt-0.6/matched | 94.1 | 97.9 | 100.0 | 42.4 | 100.0 |
-| audiospylt-v1/default | 100.0 | 100.0 | 100.0 | 51.4 | 100.0 |
-| audiospylt-v1/matched | 100.0 | 100.0 | 100.0 | 60.5 | 100.0 |
-| loris/default | 100.0 | 100.0 | 100.0 | 35.6 | 91.8 |
-| loris/matched | 100.0 | 100.0 | 94.4 | 40.7 | 99.9 |
-| pm2-harmonic/matched | 100.0 | 100.0 | 100.0 | – | 98.9 |
-| pm2-harmonic/template | 99.4 | 99.3 | 100.0 | – | 98.0 |
-| pm2-inharmonic/matched (mean of 5) | 76.5 | 85.0 | 90.4 | 31.3 | 72.8 |
-| pm2-inharmonic/template (mean of 5) | 96.1 | 91.9 | 95.5 | 36.0 | 70.1 |
-| sms-tools/default | 100.0 | 100.0 | 100.0 | 37.4 | 71.5 |
-| sms-tools/matched | 100.0 | 100.0 | 100.0 | 62.6 | 98.0 |
+| row | stationary | glissando | vibrato | close pair | noise | crossing | onset/offset | dropout | tremolo |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| audiospylt-0.6/matched | 94.1 | 97.9 | 100.0 | 42.4 | 100.0 | 89.6 | 86.7 | 100.0 | 100.0 |
+| audiospylt-v1/default | 100.0 | 100.0 | 100.0 | 51.4 | 100.0 | 90.9 | 100.0 | 100.0 | 99.9 |
+| audiospylt-v1/matched | 100.0 | 100.0 | 100.0 | 60.5 | 100.0 | 92.5 | 100.0 | 100.0 | 100.0 |
+| audiospylt-v1/tracked | 100.0 | 100.0 | 100.0 | 11.6 | 77.0 | 84.8 | 100.0 | 100.0 | 100.0 |
+| audiospylt-v1/tracked-bh | 100.0 | 100.0 | 100.0 | 11.8 | 59.1 | 77.8 | 100.0 | 100.0 | 100.0 |
+| loris/default | 100.0 | 100.0 | 100.0 | 35.6 | 92.0 | 49.0 | 100.0 | 100.0 | 100.0 |
+| loris/matched | 100.0 | 100.0 | 94.5 | 40.7 | 99.9 | 91.7 | 100.0 | 100.0 | 100.0 |
+| pm2-harmonic/matched | 100.0 | 100.0 | 100.0 | – | 98.9 | – | 100.0 | 100.0 | 100.0 |
+| pm2-harmonic/template | 99.4 | 99.3 | 100.0 | – | 98.0 | – | 98.8 | 98.7 | 100.0 |
+| pm2-inharmonic/matched (mean of 5) | 82.4 | 93.3 | 91.6 | 30.5 | 74.4 | 78.6 | 79.8 | 92.6 | 97.5 |
+| pm2-inharmonic/template (mean of 5) | 97.3 | 96.7 | 98.0 | 36.0 | 66.1 | 66.7 | 85.2 | 90.8 | 95.8 |
+| sms-tools/default | 100.0 | 100.0 | 100.0 | 37.4 | 71.5 | 82.3 | 100.0 | 100.0 | 100.0 |
+| sms-tools/matched | 100.0 | 100.0 | 100.0 | 62.6 | 98.0 | 92.4 | 100.0 | 100.0 | 100.0 |
 
-On the stationary files, the median amplitude error of every row is within ±0.13 dB, except AudioSpylt 0.6
-(−12.5 dB, its uncorrected scale) and the two PM2 templates (+0.33 dB). Read high recall together with
-`false / frame` in `summary.md`: the per-frame peak rows reach high recall but also report many extra points.
+**Tracks / segment**
+
+| row | stationary | glissando | vibrato | close pair | noise | crossing | onset/offset | dropout | tremolo |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| audiospylt-v1/tracked | 1 | 1 | 1 | 7 | 2.28 | 1.5 | 1 | 1 | 1 |
+| audiospylt-v1/tracked-bh | 1 | 1 | 1 | 10 | 2.32 | 1.5 | 1 | 1 | 1 |
+| loris/default | 1 | 1 | 1 | 8.83 | 17.6 | 1.33 | 1 | 1 | 1 |
+| loris/matched | 1 | 1 | 31.1 | 15.9 | 2.33 | 1.5 | 1 | 1 | 1 |
+| pm2-harmonic/matched | 1 | 1 | 1 | – | 1 | – | 1 | 1 | 1 |
+| pm2-harmonic/template | 1 | 1 | 1 | – | 1.28 | – | 1 | 1 | 1 |
+| pm2-inharmonic/matched (mean of 5) | 1 | 1 | 1.16 | 22.5 | 3.17 | 1.45 | 1 | 1.02 | 1 |
+| pm2-inharmonic/template (mean of 5) | 1 | 3.41 | 3.53 | 14.2 | 12.6 | 14.5 | 1.1 | 1 | 1.52 |
+| sms-tools/default | 1 | 1 | 1 | 20.5 | 2.9 | 3.25 | 1 | 1 | 1 |
+| sms-tools/matched | 1 | 1 | 1 | 16.4 | 2.31 | 3.5 | 1 | 1 | 1 |
+
+**Switch %**
+
+| row | stationary | glissando | vibrato | close pair | noise | crossing | onset/offset | dropout | tremolo |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| audiospylt-v1/tracked | 0.0 | 0.0 | 0.0 | 40.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| audiospylt-v1/tracked-bh | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| loris/default | 0.0 | 0.0 | 0.0 | 96.3 | 3.8 | 0.0 | 0.0 | 0.0 | 0.0 |
+| loris/matched | 0.0 | 0.0 | 0.0 | 52.9 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| pm2-harmonic/matched | 0.0 | 0.0 | 0.0 | – | 0.0 | – | 0.0 | 0.0 | 0.0 |
+| pm2-harmonic/template | 0.0 | 0.0 | 0.0 | – | 0.0 | – | 0.0 | 0.0 | 0.0 |
+| pm2-inharmonic/matched (mean of 5) | 0.0 | 0.0 | 0.0 | 7.4 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| pm2-inharmonic/template (mean of 5) | 0.0 | 0.0 | 0.0 | 0.0 | 1.0 | 3.6 | 0.0 | 0.0 | 0.0 |
+| sms-tools/default | 0.0 | 0.0 | 0.0 | 48.5 | 1.4 | 0.0 | 0.0 | 0.0 | 0.0 |
+| sms-tools/matched | 0.0 | 0.0 | 0.0 | 33.3 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+
+Onset/offset and bridging columns are in `summary.md`. On the stationary files, the median amplitude error of
+every row is within ±0.13 dB, except AudioSpylt 0.6 (−12.5 dB, its uncorrected scale) and the two PM2
+templates (+0.33 dB). Read high recall together with `false / frame` in `summary.md`: the per-frame peak rows
+reach high recall but also report many extra points.
 
 ## Reproducing
 
@@ -225,20 +279,25 @@ For a reproducible development search:
 ```sh
 $A benchmarks/accuracy/suite.py $OUT --dev
 $A benchmarks/accuracy/tune_tracker.py $OUT DEV_RESULTS
+$A benchmarks/accuracy/tune_tracker.py $OUT DEV_RESULTS --max-cents 400   # optional gate
 ```
 
 The tuner reads only `OUT/dev/suite/`. It fixes Hann, frame 2048, hop 256, zero padding 4, centred frames,
-`min_db=-80` and `max_cents=50`. It tests prominence None, 10, 15, 20, 25, 30 dB; minimum duration 0.02, 0.05,
-0.1 s; and maximum gap 0, 1, 2, 4 frames (72 settings). It reuses one spectrogram per file, one peak table per
-prominence and one linking pass per prominence and gap. Duration filtering happens after linking. Family
-metrics pool samples; macro metrics average the families, skipping NaNs. `tuning.csv` records every family
-and macro row. `tuning.md` lists the Pareto set for maximum recall, minimum false / frame and minimum tracks /
-segment, plus the provisional default (20 dB, 0.05 s, 0 frames) if it lies outside the set.
+`min_db=-80` and, by default, `max_cents=50` (override with `--max-cents`). It tests prominence None, 10, 15,
+20, 25, 30 dB; minimum duration 0.02, 0.05, 0.1 s; and maximum gap 0, 1, 2, 4 frames (72 settings). It reuses
+one spectrogram per file, one peak table per prominence and one linking pass per prominence and gap. Duration
+filtering happens after linking. Family metrics pool samples; macro metrics average the families, skipping
+NaNs. `tuning.csv` records every family and macro row. `tuning.md` lists the Pareto set for maximum recall,
+minimum false / frame and minimum tracks / segment; when the gate is the default 50 c it also lists the
+`track_partials` default if that setting lies outside the set. The author picked prominence 20 dB, minimum
+duration 0.1 s, maximum gap 0 from the Pareto table. That setting is in the Pareto set: macro recall 84.8 %,
+0.72 false / frame, 1.18 tracks / segment, switch 0 %.
 
 Every runner writes `OUT/raw/<row>/<signal>.csv` (columns time, freq, amp, track; track −1 for untracked frame
 peaks) and `OUT/raw/<row>/meta.json` (parameters, version, hop). `evaluate.py` scores whatever rows are present,
 so the PM2 step can be skipped. On 2026-10-23, a run from fresh environments reproduced every non-PM2 value in
-`per_family.csv` exactly.
+`per_family.csv` exactly. The Loris recall and false / frame shifts noted above come from the new signals'
+effect on `hop_s`, not from changed tracks of the earlier files.
 
 ### Partiels and PM2
 

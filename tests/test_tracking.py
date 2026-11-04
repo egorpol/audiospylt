@@ -271,7 +271,7 @@ def test_track_partials_equals_composed_calls(options):
     stft = {"frame_length": 2048, "hop": 256, "zero_pad": 4, "window": "hann", "center": True}
     pick = {"min_db": -80., "rel_db": None, "fmin": 0., "fmax": None,
             "min_distance_hz": None, "prominence_db": 20.}
-    link = {"max_cents": 50., "max_gap": 0, "min_duration": .05}
+    link = {"max_cents": 50., "max_gap": 0, "min_duration": .1}
     for group in (stft, pick, link):
         group.update({key: value for key, value in options.items() if key in group})
     expected = link_peaks(spectrogram_peaks(spectrogram(audio, sr, **stft), **pick), **link)
