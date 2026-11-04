@@ -18,7 +18,7 @@ import truth  # noqa: E402
 
 
 def main(out: pathlib.Path, dev: bool = False) -> None:
-    signals = truth.DEV_SIGNALS if dev else truth.SIGNALS
+    signals = {**truth.DEV_SIGNALS, **truth.DEV_MOVING} if dev else truth.SIGNALS
     if dev:
         out = out / "dev"
     folder = out / "suite"

@@ -1,10 +1,12 @@
 """AudioSpylt rows: v1 per-frame QIFFT peaks (defaults, matched) 0.6 peaks (matched window), and v1 tracks.
 
-Usage: python run_audiospylt.py OUT   (venv with audiospylt installed)
+Usage: python run_audiospylt.py OUT [--dev]   (venv with audiospylt installed)
+--dev runs only the tracked rows, on OUT/dev/suite into OUT/dev/raw: score them with evaluate.py OUT/dev RESULTS.
 """
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import io
 import inspect
@@ -25,6 +27,16 @@ ROWS = {
     # function defaults: spectrogram(2048, 512, hann, zero_pad=1), find_peaks(min_db=-60)
     "audiospylt-v1/default": {"frame_length": 2048, "hop": 512, "zero_pad": 1, "min_db": -60.0},
     "audiospylt-v1/matched": {"frame_length": 2048, "hop": 256, "zero_pad": 4, "min_db": -80.0},
+}
+# Rows with a gap are diagnostic settings, shown with their noise cost; they are not recommendations.
+TRACKED = {
+    "audiospylt-v1/tracked": {},
+    "audiospylt-v1/tracked-bh": {"window": "blackmanharris"},
+    "audiospylt-v1/tracked-lp": {"prediction": "lp"},
+    "audiospylt-v1/tracked-gap24": {"max_gap": 24},
+    "audiospylt-v1/tracked-lp-gap24": {"prediction": "lp", "max_gap": 24},
+    "audiospylt-v1/tracked-gap60": {"max_gap": 60},
+    "audiospylt-v1/tracked-lp-gap60": {"prediction": "lp", "max_gap": 60},
 }
 OLD = {"frame_length": 2048, "hop": 256, "window_type": "hann",
        # 0.6 thresholds act on unscaled rfft/N magnitudes: a Hann sine of amp A reads A/4, so -80 dBFS = 1e-4/4
@@ -48,19 +60,18 @@ def v1_rows(out: pathlib.Path) -> None:
         print(row, "done")
 
 
-def tracked_rows(out: pathlib.Path) -> None:
+def tracked_rows(out: pathlib.Path, names: list[str]) -> None:
     defaults = {k: v.default for k, v in inspect.signature(asp.track_partials).parameters.items()
                 if v.default is not inspect.Parameter.empty}
-    for row, overrides in (("audiospylt-v1/tracked", {}),
-                           ("audiospylt-v1/tracked-bh", {"window": "blackmanharris"})):
+    for row, overrides in TRACKED.items():
         params = {**defaults, **overrides}
         folder = out / "raw" / row
-        for name in truth.SIGNALS:
+        for name in names:
             x, sr = sf.read(out / "suite" / f"{name}.wav")
             tracks = asp.track_partials(x, sr, **overrides)
             points.write_points(folder, name, tracks["time"], tracks["freq"], tracks["amp"], tracks["track_id"])
         points.write_meta(folder, kind="tracks", hop_s=params["hop"] / truth.SR,
-                          params=params, version=asp.__version__)
+                          params=params, version=asp.__version__, signals=names)
         print(row, "done", flush=True)
 
 
@@ -93,7 +104,13 @@ def old_row(out: pathlib.Path) -> None:
 
 
 if __name__ == "__main__":
-    out = pathlib.Path(sys.argv[1])
-    v1_rows(out)
-    old_row(out)
-    tracked_rows(out)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("out", type=pathlib.Path)
+    parser.add_argument("--dev", action="store_true")
+    args = parser.parse_args()
+    if args.dev:
+        tracked_rows(args.out / "dev", [*truth.DEV_SIGNALS, *truth.DEV_MOVING])
+    else:
+        v1_rows(args.out)
+        old_row(args.out)
+        tracked_rows(args.out, list(truth.SIGNALS))

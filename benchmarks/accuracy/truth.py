@@ -49,6 +49,9 @@ SIGNALS.update({
                       "trem": (6, depth)} for db, depth in ((20, 0.9), (40, 0.99))},
 })
 
+ADDED = tuple(SIGNALS)[len(ORIGINAL):]
+BASE = tuple(SIGNALS)  # the files of step 6.1; a row's hop median comes from these alone
+
 # Tuning uses only these perturbed signals, never the published suite.
 DEV_SIGNALS: dict[str, dict] = {
     "dev_stat_harm": {"family": "stationary", "kind": "f0", "f0": ("const", 196.0), "count": 12, "base": 0.25},
@@ -74,17 +77,73 @@ DEV_SIGNALS: dict[str, dict] = {
 }
 
 
+
+HOLES = "moving dropout"
+
+
+def _meeting_files(turn: str, cross: str, pairs: tuple) -> dict[str, dict]:
+    """A turn-back and a crossing per (a, b, amp1, amp2); the crossing takes its phases, so they differ only after the meeting."""
+    files = {}
+    for a, b, amp1, amp2 in pairs:
+        ends = {"sweeps": [(a, b), (b, a)], "amps": (amp1, amp2)}
+        files[f"{turn}_{a}_{b}"] = {"family": "turn-back", "kind": "turn", **ends}
+        files[f"{cross}_{a}_{b}"] = {"family": "matched crossing", "kind": "sweeps", "phases": f"{turn}_{a}_{b}", **ends}
+    return files
+
+
+def _hole_file(f0: tuple, width_ms: int, centres: list[float]) -> dict:
+    """Six moving harmonics; partial k drops out at centres[k]."""
+    return {"family": HOLES, "kind": "f0", "f0": f0, "count": 6, "base": 0.25,
+            "drop": [[c, width_ms / 1000] for c in centres]}
+
+
+# Fresh parameters: the held-out check on settings picked from the probes. Do not change them after a score.
+_HOLE_CENTRES = [0.4 + 0.22 * k for k in range(6)]
+_HOLE_PLAN = ((70, _HOLE_CENTRES), (110, _HOLE_CENTRES[::-1]), (70, _HOLE_CENTRES[::-1]), (110, _HOLE_CENTRES))
+MOVING: dict[str, dict] = {
+    **_meeting_files("turn", "cross", ((320, 720, 0.2, 0.15), (280, 840, 0.1, 0.2), (450, 800, 0.2, 0.2),
+                                       (260, 640, 0.15, 0.15), (550, 880, 0.2, 0.1), (380, 1140, 0.2, 0.2))),
+    **{f"hole_vib_{f0[1]:g}": _hole_file(f0, *plan) for f0, plan in zip(
+        (("vib", 330.0, 120.0, 5.0), ("vib", 262.0, 60.0, 7.0), ("vib", 494.0, 90.0, 4.0), ("vib", 208.0, 40.0, 6.5)),
+        _HOLE_PLAN)},
+    **{f"hole_gliss_{f0[1]:g}": _hole_file(f0, *plan) for f0, plan in zip(
+        (("exp", 165.0, 495.0), ("exp", 147.0, 415.0), ("exp", 660.0, 247.5), ("exp", 990.0, 440.0)), _HOLE_PLAN)},
+}
+SIGNALS.update(MOVING)
+
+# Kept apart from DEV_SIGNALS: the tuner's macro means stay on the 15 files they were tuned on.
+_DEV_HOLE_CENTRES = [0.35 + 0.25 * k for k in range(6)]
+DEV_MOVING: dict[str, dict] = {
+    **_meeting_files("dev_turn", "dev_x", ((350, 700, 0.15, 0.2), (300, 600, 0.2, 0.2), (440, 880, 0.2, 0.1),
+                                           (250, 1000, 0.2, 0.2), (500, 750, 0.2, 0.2), (400, 500, 0.2, 0.2))),
+    **{f"dev_hole_{shape}_{ms}": _hole_file(f0, ms, _DEV_HOLE_CENTRES) for ms in (60, 100)
+       for shape, f0 in (("vib", ("vib", 392.0, 75.0, 6.0)), ("gliss", ("exp", 196.0, 392.0)))},
+}
+
+
 def _spec(name: str) -> dict:
-    return SIGNALS[name] if name in SIGNALS else DEV_SIGNALS[name]
+    for table in (SIGNALS, DEV_SIGNALS, DEV_MOVING):
+        if name in table:
+            return table[name]
+    raise KeyError(name)
 
 
 def seed(name: str) -> int:
-    """Stable seeds, with separate ranges for original, added and development files."""
-    if name in ORIGINAL:
-        return sorted(ORIGINAL).index(name)
-    if name in SIGNALS:
-        return 100 + sorted(set(SIGNALS) - set(ORIGINAL)).index(name)
-    return 1000 + sorted(DEV_SIGNALS).index(name)
+    """Stable seeds: each frozen name list keeps its own range, so a new file never shifts an old one."""
+    for names, base in ((ORIGINAL, 0), (ADDED, 100), (MOVING, 200), (DEV_SIGNALS, 1000), (DEV_MOVING, 1100)):
+        if name in names:
+            return base + sorted(names).index(name)
+    raise KeyError(name)
+
+
+def meets(name: str) -> bool:
+    """True for two partials that meet at DURATION / 2, by crossing or by turning back."""
+    return _spec(name)["kind"] in ("sweeps", "turn")
+
+
+def shape(name: str) -> str:
+    """Path of the partials in an f0 file."""
+    return {"vib": "vibrato", "exp": "glide"}[_spec(name)["f0"][0]]
 
 
 def transitions(name: str) -> list[list[float]]:
@@ -155,9 +214,10 @@ def partials(name: str, t: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         k = np.arange(1, spec["count"] + 1)[:, None]
         freq = k * _f0(spec["f0"], t)[None, :]
         amp = (spec["base"] / k) * np.ones_like(t)[None, :]
-    elif spec["kind"] == "sweeps":
+    elif spec["kind"] in ("sweeps", "turn"):
         ends = np.asarray(spec["sweeps"], dtype=float)
-        freq = ends[:, :1] * (ends[:, 1:] / ends[:, :1]) ** (t[None, :] / DURATION)
+        along = np.minimum(t, DURATION - t) if spec["kind"] == "turn" else t  # a turn-back retraces its first half
+        freq = ends[:, :1] * (ends[:, 1:] / ends[:, :1]) ** (along[None, :] / DURATION)
         amp = np.array(spec["amps"], dtype=float)[:, None] * np.ones_like(t)[None, :]
     else:
         freq = np.array(spec["freqs"], dtype=float)[:, None] * np.ones_like(t)[None, :]
@@ -193,11 +253,11 @@ def tolerance_cents(freq: np.ndarray, state: np.ndarray | None = None) -> np.nda
 
 
 def render(name: str) -> np.ndarray:
-    """The file's samples (float64); phases from a fixed per-file seed."""
+    """The file's samples (float64); phases from a fixed seed, its own or the one its "phases" entry names."""
     n = np.arange(int(SR * DURATION))
     t = n / SR
     freq, amp = partials(name, t)
-    rng = np.random.default_rng(seed(name))
+    rng = np.random.default_rng(seed(_spec(name).get("phases", name)))
     phase0 = rng.uniform(0, 2 * np.pi, size=(len(freq), 1))
     # trapezoidal integral of the instantaneous frequency
     inc = np.concatenate([np.zeros((len(freq), 1)), 0.5 * (freq[:, 1:] + freq[:, :-1]) / SR], axis=1)

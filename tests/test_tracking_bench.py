@@ -6,10 +6,12 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
+import soundfile as sf
 
 import audiospylt as asp
 
@@ -38,6 +40,13 @@ PUBLISHED = tuple(ORIGINAL_SPECS) + ("cross_fast", "cross_slow", "stagger_harm",
 DEV = ("dev_stat_harm", "dev_stat_inharm", "dev_gliss_900", "dev_gliss_down", "dev_vib_75", "dev_vib_150",
        "dev_pair_15", "dev_pair_30", "dev_noise_15", "dev_noise_5", "dev_cross", "dev_stagger",
        "dev_drop_40", "dev_drop_60", "dev_trem_30")
+PAIRS = ("320_720", "280_840", "450_800", "260_640", "550_880", "380_1140")
+DEV_PAIRS = ("350_700", "300_600", "440_880", "250_1000", "500_750", "400_500")
+MOVING = (*[f"{kind}_{pair}" for pair in PAIRS for kind in ("turn", "cross")],
+          "hole_vib_330", "hole_vib_262", "hole_vib_494", "hole_vib_208",
+          "hole_gliss_165", "hole_gliss_147", "hole_gliss_660", "hole_gliss_990")
+DEV_MOVING = (*[f"dev_{kind}_{pair}" for pair in DEV_PAIRS for kind in ("turn", "x")],
+              "dev_hole_vib_60", "dev_hole_gliss_60", "dev_hole_vib_100", "dev_hole_gliss_100")
 
 
 @pytest.fixture
@@ -97,13 +106,50 @@ def test_specs_and_seeds(bench):
     _, tr, _ = bench
     assert tr.ORIGINAL == tuple(ORIGINAL_SPECS)
     assert {n: tr.SIGNALS[n] for n in tr.ORIGINAL} == ORIGINAL_SPECS
-    assert tuple(tr.SIGNALS) == PUBLISHED
+    assert tr.BASE == PUBLISHED
+    assert tuple(tr.SIGNALS) == PUBLISHED + MOVING
+    assert tuple(tr.MOVING) == MOVING
     assert tuple(tr.DEV_SIGNALS) == DEV
-    assert all(n.startswith("dev_") for n in DEV)
-    for names, base in ((tr.ORIGINAL, 0), (PUBLISHED[13:], 100), (DEV, 1000)):
+    assert tuple(tr.DEV_MOVING) == DEV_MOVING
+    assert all(n.startswith("dev_") for n in DEV + DEV_MOVING)
+    for names, base in ((tr.ORIGINAL, 0), (PUBLISHED[13:], 100), (MOVING, 200), (DEV, 1000), (DEV_MOVING, 1100)):
         assert {n: tr.seed(n) for n in names} == {n: base + i for i, n in enumerate(sorted(names))}
+    assert len({tr.seed(n) for n in PUBLISHED + MOVING + DEV + DEV_MOVING}) == 72
     json.dumps(tr.SIGNALS)
     json.dumps(tr.DEV_SIGNALS)
+    json.dumps(tr.DEV_MOVING)
+
+
+def test_moving_files(bench):
+    _, tr, _ = bench
+    assert [tr.seed(n) for n in ("cross_fast", "trem_40", "dev_cross", "dev_vib_75")] == [100, 107, 1000, 1014]
+    for kind_a, kind_b, table in (("turn", "cross", tr.MOVING), ("dev_turn", "dev_x", tr.DEV_MOVING)):
+        for name, spec in table.items():
+            if name.startswith(kind_a + "_"):
+                other = table[kind_b + name[len(kind_a):]]
+                assert (spec["family"], other["family"]) == ("turn-back", "matched crossing")
+                assert (spec["kind"], other["kind"]) == ("turn", "sweeps")
+                assert spec["sweeps"] == other["sweeps"] and spec["amps"] == other["amps"]
+    edges = np.array([0.0, 1.0, 2.0])
+    np.testing.assert_allclose(tr.partials("turn_320_720", edges)[0][:, 1], [480, 480])
+    f = tr.partials("turn_320_720", np.array([0.01, 0.5, 1.5, 1.99]))[0]
+    np.testing.assert_allclose(f[:, :2], f[:, :1:-1])
+    assert np.all(f[0] < 480) and np.all(f[1] > 480)
+    first_half = np.linspace(0.0, 1.0, 101)
+    assert np.array_equal(tr.partials("turn_320_720", first_half)[0], tr.partials("cross_320_720", first_half)[0])
+    for turn, cross in (("turn_450_800", "cross_450_800"), ("dev_turn_400_500", "dev_x_400_500")):
+        a, b = tr.render(turn), tr.render(cross)
+        half = len(a) // 2
+        assert np.array_equal(a[:half], b[:half]) and not np.array_equal(a[half + 2000:], b[half + 2000:])
+    crossing = tr.partials("cross_320_720", np.array([0.5, 1.5]))[0]
+    assert crossing[0, 0] < 480 < crossing[0, 1]
+    holes = [tr.MOVING[n] for n in MOVING if "hole" in n]
+    assert sum(len(h["drop"]) for h in holes) == 48
+    assert [h["drop"][0][1] for h in holes] == [0.07, 0.11] * 4
+    firsts = [h["drop"][0][0] for h in holes]
+    np.testing.assert_allclose(firsts, [0.4, 1.5, 1.5, 0.4] * 2)
+    assert [tr.shape(n) for n in MOVING if "hole" in n] == ["vibrato"] * 4 + ["glide"] * 4
+    assert tr.meets("cross_fast") and tr.meets("turn_320_720") and not tr.meets("hole_vib_330")
 
 
 def test_state_zones(bench):
@@ -118,7 +164,7 @@ def test_state_zones(bench):
     assert amp[0, 1] > 0
 
 
-@pytest.mark.parametrize("name", PUBLISHED + DEV)
+@pytest.mark.parametrize("name", PUBLISHED + MOVING + DEV + DEV_MOVING)
 def test_truth_grid(bench, name):
     _, tr, _ = bench
     t = np.linspace(0, tr.DURATION, 4001)
@@ -145,14 +191,15 @@ def test_truth_grid(bench, name):
     assert np.max(np.abs(tr.render(name))) <= 0.9
 
 
-@pytest.mark.parametrize("name", PUBLISHED)
+@pytest.mark.parametrize("name", PUBLISHED + MOVING + DEV_MOVING)
 def test_perfect_tracks(bench, name):
     e, tr, _ = bench
     pts = perfect(tr, name)
     result, det = scored(e, pts, name)
     assert result["tracks_per_segment"] == 1
     assert result["switch_frac"] == 0
-    if name.startswith("cross_"):
+    if tr.meets(name):
+        assert [result[m] for m in e.COUNT_METRICS[1:]] == [2, 2, 0, 0]
         hit = np.zeros_like(det["state"], dtype=bool)
         hit[det["pairs"][:, 1], det["pairs"][:, 0]] = True
         missed = np.any((det["state"] == 1) & ~hit, axis=0)
@@ -160,9 +207,75 @@ def test_perfect_tracks(bench, name):
     else:
         assert result["recall"] == 1
         assert result["false_per_frame"] == 0
-    if name.startswith("drop_"):
+        assert np.isnan(result["meet_eligible"])
+    if "drop" in tr._spec(name):
         assert result["bridge_n"] == 6
-        assert result["bridged_frac"] == 0
+        assert result["bridged"] == result["bridged_frac"] == 0
+    else:
+        assert np.isnan(result["bridged"])
+
+
+def meeting_of(e, before, after, start=0.2, stop=1.8, inside=()):
+    """One track with these partial votes on each side of the zone, plus any votes inside it."""
+    grid = np.arange(e.truth.GUARD, e.truth.DURATION - e.truth.GUARD + 1e-9, e.GRID)  # unrounded, as in detection
+    index = {round(float(t), 2): i for i, t in enumerate(grid)}
+    votes = [*zip(np.round(0.3 + 0.01 * np.arange(len(before)), 2), before),
+             *zip(np.round(1.4 + 0.01 * np.arange(len(after)), 2), after), *inside]
+    pairs = np.array([(index[round(float(t), 2)], k, 7) for t, k in votes], dtype=int).reshape(-1, 3)
+    pts = np.array([[start, 400.0, 0.1, 7], [stop, 400.0, 0.1, 7]])
+    result = e.meeting(pts, {"grid": grid, "pairs": pairs})
+    assert result["meet_eligible"] == result["meet_right"] + result["meet_swap"] + result["meet_unscorable"]
+    return [result[m] for m in e.COUNT_METRICS[1:]]
+
+
+@pytest.mark.parametrize("before, after, verdict", [
+    ([0, 0, 0], [0, 0, 0], [1, 1, 0, 0]),
+    ([1, 1, 1], [1, 1, 1], [1, 1, 0, 0]),
+    ([0, 0, 0], [1, 1, 1], [1, 0, 1, 0]),
+    ([0, 0, 1], [0, 1, 0, 0], [1, 1, 0, 0]),
+    ([0, 0, 1, 1], [0, 0, 0], [1, 0, 0, 1]),
+    ([0, 0, 0], [1, 1, 0, 0], [1, 0, 0, 1]),
+    ([0, 0], [0, 0, 0], [1, 0, 0, 1]),
+    ([0, 0, 0], [], [1, 0, 0, 1]),
+    ([], [], [0, 0, 0, 0]),
+])
+def test_meeting_verdicts(bench, before, after, verdict):
+    assert meeting_of(bench[0], before, after) == verdict
+
+
+def test_meeting_zone(bench):
+    e = bench[0]
+    three = [0, 0, 0]
+    # Only tracks reaching past both edges are eligible.
+    assert meeting_of(e, three, three, start=0.72) == [0, 0, 0, 0]
+    assert meeting_of(e, three, three, start=0.73) == [0, 0, 0, 0]
+    assert meeting_of(e, three, three, stop=1.28) == [0, 0, 0, 0]
+    assert meeting_of(e, three, three, start=0.71, stop=1.29) == [1, 1, 0, 0]
+    # Inside the zone nothing votes, whichever partial the merged peak pairs with.
+    inside = [(t, 1) for t in (0.8, 0.9, 1.0, 1.1, 1.2, 0.73, 1.27)]
+    assert meeting_of(e, [0, 0], three, inside=inside) == [1, 0, 0, 1]
+    assert meeting_of(e, three, three, inside=inside) == [1, 1, 0, 0]
+    # A track with pairs only inside the zone has no identity to judge: it is not eligible.
+    assert meeting_of(e, [], [], inside=inside) == [0, 0, 0, 0]
+    # Neither do the two grid points on the zone edges.
+    assert meeting_of(e, [0, 0], three, inside=[(0.72, 0)]) == [1, 0, 0, 1]
+    assert meeting_of(e, three, [0, 0], inside=[(1.28, 0)]) == [1, 0, 0, 1]
+    assert meeting_of(e, [0, 0], three, inside=[(0.71, 0)]) == [1, 1, 0, 0]
+
+
+@pytest.mark.parametrize("name", ["turn_320_720", "cross_320_720", "dev_turn_400_500", "cross_fast"])
+def test_planted_swap_at_the_meeting(bench, name):
+    e, tr, _ = bench
+    pts = perfect(tr, name)
+    swapped = pts.copy()
+    swapped[:, 3] = np.where(pts[:, 0] < 1, pts[:, 3], 1 - pts[:, 3])
+    result, _ = scored(e, swapped, name)
+    assert [result[m] for m in e.COUNT_METRICS[1:]] == [2, 0, 2, 0]
+    cut = pts.copy()
+    cut[:, 3] = pts[:, 3] + 2 * (pts[:, 0] >= 1)
+    result, _ = scored(e, cut, name)
+    assert [result[m] for m in e.COUNT_METRICS[1:]] == [0, 0, 0, 0]
+    assert result["tracks_per_segment"] == 2
 
 
 def test_swaps_and_fragmentation(bench):
@@ -252,7 +365,172 @@ def test_row_selection(bench, tmp_path):
     e.main(tmp_path, tmp_path / "results")
     result = pd.read_csv(tmp_path / "results" / "per_signal.csv")
     assert list(result["signal"]) == ["stat_harm", "cross_slow"]
-    assert result[list(e.TRACK_METRICS)].isna().all().all()
+    assert result[list(e.TRACK_METRICS + e.COUNT_METRICS)].isna().all().all()
+    assert "Meetings and holes" not in (tmp_path / "results" / "summary.md").read_text()
+
+
+def test_count_tables(bench, tmp_path):
+    e, tr, _ = bench
+    folder = tmp_path / "raw" / "test" / "tracks"
+    names = ["dev_turn_400_500", "dev_x_400_500", "dev_hole_vib_60", "dev_hole_gliss_60", "dev_drop_40"]
+    (folder).mkdir(parents=True)
+    (folder / "meta.json").write_text(json.dumps({"kind": "tracks", "hop_s": 256 / tr.SR, "signals": names}))
+    for name in names:
+        pts = perfect(tr, name)
+        if name == "dev_hole_gliss_60":  # bridge the holes of the first two partials
+            pts[:, 3] = np.where(pts[:, 3] < 4, pts[:, 3] // 2 * 2, pts[:, 3])
+        e.points.write_points(folder, name, *pts.T)
+    e.main(tmp_path, tmp_path / "results")
+    columns = list(pd.read_csv(tmp_path / "results" / "per_family.csv").columns)
+    assert columns[columns.index("bridged_frac") + 1:] == list(e.COUNT_METRICS)
+    text = (tmp_path / "results" / "summary.md").read_text()
+    head = text.index("## Meetings and holes")
+    assert head > text.index("## Tracking")
+    assert "| test/tracks | turn-back | 1 | 2 | 2 | 0 | 0 |" in text
+    assert "| test/tracks | matched crossing | 1 | 2 | 2 | 0 | 0 |" in text
+    assert "| test/tracks | 2/12 | 0 | 0/6 | 2/6 | 0/6 | 2/6 |" in text
+    assert "Repeat runs are listed one by one" in text[head:]
+    assert "dev_drop_40" not in text[head:]  # a hole in a steady partial is not a moving hole
+
+
+def load_runner(monkeypatch, filename, **stubs):
+    """Import a runner from the benchmark folder, with stand-ins for tools this venv lacks."""
+    for name, stub in stubs.items():
+        monkeypatch.setitem(sys.modules, name, stub)
+    spec = importlib.util.spec_from_file_location(f"bench_{filename[:-3]}", BENCH / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def tiny_suite(monkeypatch, tr, folder):
+    """Three old files and three new ones; new files step 0.5 s, so a pooled median would differ."""
+    old = {n: {"family": "x", "kind": "f0"} for n in ("old_a", "old_b", "old_c")}
+    new = {"new_hole": {"family": "y", "kind": "f0"}, "new_turn": {"family": "y", "kind": "turn"},
+           "new_cross": {"family": "y", "kind": "sweeps"}}
+    monkeypatch.setattr(tr, "BASE", tuple(old))
+    monkeypatch.setattr(tr, "MOVING", new)
+    (folder / "suite").mkdir(parents=True)
+    for name in {**old, **new}:
+        sf.write(folder / "suite" / f"{name}.wav", np.full(64, 0.5 if name in new else 0.0), tr.SR, subtype="FLOAT")
+    return old, new
+
+
+def breakpoints(step):
+    return np.column_stack([np.arange(5) * step, np.full(5, 440.0), np.full(5, 0.1)])
+
+
+def test_loris_new_run_agrees_with_full_run(bench, tmp_path, monkeypatch):
+    _, tr, _ = bench
+    seen = []
+
+    def analyze(x, sr, **p):
+        seen.append(float(x[0]))
+        return [breakpoints(0.5 if x[0] > 0 else 0.01)]
+
+    run_loris = load_runner(monkeypatch, "run_loris.py", loristrck=SimpleNamespace(analyze=analyze))
+    monkeypatch.setattr(run_loris.importlib.metadata, "version", lambda _: "0")
+    full, split = tmp_path / "full", tmp_path / "split"
+    old, new = tiny_suite(monkeypatch, tr, full)
+    (split / "suite").parent.mkdir()
+    (split / "suite").symlink_to(full / "suite")
+
+    def params(name):
+        return {"resolution": name}
+
+    monkeypatch.setattr(tr, "SIGNALS", old)
+    run_loris.run(split, "loris/x", params)
+    monkeypatch.setattr(tr, "SIGNALS", {**old, **new})
+    seen.clear()
+    run_loris.run(split, "loris/x", params, new=True)
+    assert seen == [0.5] * len(new)  # the old files are not analysed again
+    run_loris.run(full, "loris/x", params)
+    metas = [json.loads((f / "raw" / "loris/x" / "meta.json").read_text()) for f in (full, split)]
+    assert metas[0] == metas[1]
+    assert metas[0]["hop_s"] == 0.01
+    assert set(metas[0]["params"]) == set(old) | set(new)
+    assert sorted(p.name for p in (split / "raw" / "loris/x").glob("*.csv")) == sorted(f"{n}.csv" for n in {**old, **new})
+    with pytest.raises(SystemExit, match="full run"):
+        run_loris.run(tmp_path / "none", "loris/x", params, new=True)
+    monkeypatch.setattr(run_loris.importlib.metadata, "version", lambda _: "1")
+    with pytest.raises(SystemExit, match="same tool"):
+        run_loris.run(split, "loris/x", params, new=True)
+
+
+def test_sms_new_run_extends_a_full_run(bench, tmp_path, monkeypatch):
+    _, tr, _ = bench
+
+    def analyse(x, sr, w, N, H, t, maxnSines, minSineDur):
+        return np.full((4, 1), 440.0), np.full((4, 1), -20.0), None
+
+    models = SimpleNamespace(sineModel=SimpleNamespace(sineModelAnal=analyse))
+    run_sms = load_runner(monkeypatch, "run_sms.py", smstools=SimpleNamespace(models=models), **{"smstools.models": models})
+    monkeypatch.setattr(run_sms.importlib.metadata, "version", lambda _: "0")
+    old, new = tiny_suite(monkeypatch, tr, tmp_path)
+    with pytest.raises(SystemExit, match="full run"):
+        run_sms.main(tmp_path, new=True)
+    assert not (tmp_path / "raw").exists()
+    monkeypatch.setattr(tr, "SIGNALS", old)
+    run_sms.main(tmp_path)
+    folder = tmp_path / "raw" / "sms-tools/default"
+    assert sorted(p.stem for p in folder.glob("*.csv")) == sorted(old)
+    run_sms.main(tmp_path, new=True)
+    assert sorted(p.stem for p in folder.glob("*.csv")) == sorted({**old, **new})
+    monkeypatch.setattr(run_sms.importlib.metadata, "version", lambda _: "1")
+    with pytest.raises(SystemExit, match="same tool"):
+        run_sms.main(tmp_path, new=True)
+
+
+def test_partiels_new_run_agrees_with_full_run(bench, tmp_path, monkeypatch):
+    _, tr, _ = bench
+    run_partiels = load_runner(monkeypatch, "run_partiels.py")
+    full, split = tmp_path / "full", tmp_path / "split"
+    old, new = tiny_suite(monkeypatch, tr, full)
+    (split / "suite").parent.mkdir()
+    (split / "suite").symlink_to(full / "suite")
+    templates = tmp_path / "templates"
+    templates.mkdir()
+    for fname in run_partiels.TEMPLATES.values():
+        (templates / fname).touch()
+    monkeypatch.setattr(run_partiels, "matched_template", lambda src, dst: dst.touch())
+
+    seen = set()
+
+    def run_one(partiels, wav, template, tmp):
+        seen.add(wav.stem)
+        step = 0.5 if wav.stem in new else 0.01
+        return pd.DataFrame({"time": np.arange(5) * step, "freq": 440.0, "amp": 0.1, "track_id": 0})
+
+    monkeypatch.setattr(run_partiels, "run_one", run_one)
+    monkeypatch.setattr(tr, "SIGNALS", old)
+    run_partiels.main(split, templates, "x")
+    monkeypatch.setattr(tr, "SIGNALS", {**old, **new})
+    seen.clear()
+    run_partiels.main(split, templates, "x", new=True)
+    assert seen == set(new)  # old PM2 inharmonic runs are not reproducible: they must stay
+    run_partiels.main(split, templates, "x", new=True)  # a rerun must not list a file twice
+    run_partiels.main(full, templates, "x")
+    for row, names in (("pm2-inharmonic/matched/r3", [*old, *new]), ("pm2-harmonic/template", [*old, "new_hole"])):
+        metas = [json.loads((f / "raw" / row / "meta.json").read_text()) for f in (full, split)]
+        assert metas[0] == metas[1]
+        assert metas[0]["signals"] == names
+        assert metas[0]["hop_s"] == 0.01
+
+
+def test_tracked_rows(bench, tmp_path, monkeypatch):
+    _, tr, _ = bench
+    runner = load_runner(monkeypatch, "run_audiospylt.py")
+    assert list(runner.TRACKED) == [f"audiospylt-v1/tracked{s}" for s in
+                                    ("", "-bh", "-lp", "-gap24", "-lp-gap24", "-gap60", "-lp-gap60")]
+    (tmp_path / "suite").mkdir()
+    name = "dev_hole_gliss_60"
+    sf.write(tmp_path / "suite" / f"{name}.wav", tr.render(name).astype(np.float32), tr.SR, subtype="FLOAT")
+    runner.tracked_rows(tmp_path, [name])
+    defaults = json.loads((tmp_path / "raw" / "audiospylt-v1/tracked" / "meta.json").read_text())
+    assert (defaults["params"]["prediction"], defaults["params"]["max_gap"]) == ("hold", 0)
+    meta = json.loads((tmp_path / "raw" / "audiospylt-v1/tracked-lp-gap60" / "meta.json").read_text())
+    assert (meta["params"]["prediction"], meta["params"]["max_gap"], meta["signals"]) == ("lp", 60, [name])
+    assert (tmp_path / "raw" / "audiospylt-v1/tracked-gap24" / f"{name}.csv").is_file()
 
 
 def test_span_filtering(bench):
@@ -310,10 +588,10 @@ def test_pooling_and_repeat_columns(bench):
                         for i, sample in enumerate(samples, 1)])
     rep = e.repeats(fam)
     runs = rep.columns.get_loc("runs")
-    assert list(rep.columns[runs + 1:]) == [f"{m}_{stat}" for stat in ("mean", "min", "max")
-                                          for m in e.TRACK_METRICS]
+    assert list(rep.columns[runs + 1:]) == [f"{m}_{stat}" for metrics in (e.TRACK_METRICS, e.COUNT_METRICS)
+                                          for stat in ("mean", "min", "max") for m in metrics]
     assert rep.iloc[0]["tracks_per_segment_mean"] == 1.75
-    text = e.summary(fam, rep)
+    text = e.summary(fam, rep, pd.DataFrame({"family": [], "bridged": []}))
     assert "### test" in text
     assert "tool (mean of 2)" in text
     assert "offset med (ms)" not in text
@@ -332,7 +610,7 @@ def test_endpoints_outside_guard_and_no_pairs(bench):
     assert np.isnan(result["bridged_frac"])
     result, _ = scored(e, np.empty((0, 4)), "stat_harm")
     fam = pd.DataFrame([{"row": "empty/tracked", "family": "stationary", "signals": 1, **result}])
-    assert "### stationary" in e.summary(fam, e.repeats(fam))
+    assert "### stationary" in e.summary(fam, e.repeats(fam), pd.DataFrame({"family": [], "bridged": []}))
 
 
 def test_neutral_detection_keeps_amplitude_gate(bench):

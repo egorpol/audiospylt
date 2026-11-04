@@ -1,7 +1,9 @@
 """Partiels PM2 rows: inharmonic (all files, 5 runs each: PM2 inharmonic is not reproducible) and harmonic
 (harmonic files only), each with the Ircam template and a matched window.
 
-Usage: python run_partiels.py OUT TEMPLATE_DIR [PARTIELS]
+Usage: python run_partiels.py OUT TEMPLATE_DIR [PARTIELS] [--new]
+--new analyses only truth.MOVING and extends the rows of an earlier full run. Old PM2 inharmonic CSVs must stay: those
+runs are not reproducible. A row's hop is the median over truth.BASE alone, so a full run and --new agree.
 TEMPLATE_DIR holds PM2-Partials-Tracking-{Inharmonic,Harmonic}-20.ptldoc from Ircam-Vamp-Plugins-Manuals.zip
 (github.com/Ircam-Partiels/ircam-vamp-plugins, release 2.1.0). PARTIELS defaults to /opt/Partiels/Partiels.
 Needs audiospylt (read_partiels) in the running venv.
@@ -9,6 +11,7 @@ Needs audiospylt (read_partiels) in the running venv.
 
 from __future__ import annotations
 
+import argparse
 import pathlib
 import re
 import shutil
@@ -24,6 +27,7 @@ import truth  # noqa: E402
 import audiospylt as asp  # noqa: E402
 
 RUNS = 5
+VERSION = "Partiels 2.6.0, Ircam Vamp 2.1.0 (PM2 v5)"
 TEMPLATES = {"pm2-inharmonic": "PM2-Partials-Tracking-Inharmonic-20.ptldoc",
              "pm2-harmonic": "PM2-Partials-Tracking-Harmonic-20.ptldoc"}
 # PM2 parameters are list indices: overlap {3,4,8,16,32}, oversampling {1,2,4,8}, window {Blackman,Hann,Hamming}
@@ -61,7 +65,7 @@ def run_one(partiels: str, wav: pathlib.Path, template: pathlib.Path, tmp: pathl
     return tracks
 
 
-def main(out: pathlib.Path, template_dir: pathlib.Path, partiels: str) -> None:
+def main(out: pathlib.Path, template_dir: pathlib.Path, partiels: str, new: bool = False) -> None:
     tdir = out / "partiels-templates"
     tdir.mkdir(parents=True, exist_ok=True)
     harmonic = [n for n, s in truth.SIGNALS.items() if s["kind"] == "f0"]
@@ -71,22 +75,31 @@ def main(out: pathlib.Path, template_dir: pathlib.Path, partiels: str) -> None:
             raise SystemExit(f"missing {src}")
         matched_template(src, tdir / f"matched-{fname}")
         for setting, template in (("template", src), ("matched", tdir / f"matched-{fname}")):
-            names = harmonic if tool == "pm2-harmonic" else list(truth.SIGNALS)
+            wanted = harmonic if tool == "pm2-harmonic" else list(truth.SIGNALS)
+            names = [n for n in wanted if n in truth.MOVING] if new else wanted
             for run in range(1, (RUNS if tool == "pm2-inharmonic" else 1) + 1):
                 row = f"{tool}/{setting}" + (f"/r{run}" if tool == "pm2-inharmonic" else "")
                 folder = out / "raw" / row
+                old = points.read_meta(folder, VERSION) if new else {}
                 steps = []
                 for name in names:
                     tr = run_one(partiels, out / "suite" / f"{name}.wav", template, out / "partiels-tmp")
                     points.write_points(folder, name, tr["time"], tr["freq"], tr["amp"], tr["track_id"])
-                    steps += [np.diff(g["time"].to_numpy()) for _, g in tr.groupby("track_id") if len(g) > 1]
-                hop = float(np.median(np.concatenate(steps)))
-                points.write_meta(folder, kind="tracks", hop_s=hop, version="Partiels 2.6.0, Ircam Vamp 2.1.0 (PM2 v5)",
+                    if name in truth.BASE:
+                        steps += [np.diff(g["time"].to_numpy()) for _, g in tr.groupby("track_id") if len(g) > 1]
+                hop = old["hop_s"] if new else float(np.median(np.concatenate(steps)))
+                points.write_meta(folder, kind="tracks", hop_s=hop, version=VERSION,
                                   params={"template": fname, "matched": MATCHED_NOTE if setting == "matched" else None},
-                                  signals=names, hop_note="median frame step within tracks")
+                                  signals=list(dict.fromkeys([*old.get("signals", []), *names])),
+                                  hop_note="median frame step within tracks of the truth.BASE files")
                 print(row, "done, hop", round(hop, 5), flush=True)
 
 
 if __name__ == "__main__":
-    main(pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]),
-         sys.argv[3] if len(sys.argv) > 3 else "/opt/Partiels/Partiels")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("out", type=pathlib.Path)
+    parser.add_argument("template_dir", type=pathlib.Path)
+    parser.add_argument("partiels", nargs="?", default="/opt/Partiels/Partiels")
+    parser.add_argument("--new", action="store_true")
+    args = parser.parse_args()
+    main(args.out, args.template_dir, args.partiels, args.new)

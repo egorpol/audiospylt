@@ -14,6 +14,11 @@ cannot pair. Recall counts present cells only; false points must reach -60 dBFS.
 Tracking uses only present pairs: distinct tracks per present segment, tracks that switch partial identity,
 onset/offset errors from raw track endpoints, and identity continuity across dropouts. Transition zones
 are neutral within 50 ms. Counts and samples pool across files before computing family statistics.
+Meetings count tracks instead of the switch rate, which a merged peak inflates: a track is eligible if its raw
+points start before and end after MEET_ZONE around the meeting and it has a present pair outside the zone, so false
+tracks stay in false / frame alone. Those pairs vote on each side; a side needs MEET_MIN votes and one partial
+strictly ahead. Same partial on both sides is right, different is a swap, anything else (a tie, too few votes) is
+unscorable.
 """
 
 from __future__ import annotations
@@ -33,6 +38,8 @@ GRID = 0.01
 FALSE_DB = -60.0
 GATE_DB: float | None = -20.0  # a point pairs only if at most this far below the true amp
 REPEAT = r"/r\d+$"
+MEET_ZONE = 0.28  # seconds either side of the meeting; the partials are too close to tell apart inside
+MEET_MIN = 3      # votes a side needs before its majority counts
 # summary.md columns: metric -> (header, kind)
 SUMMARY = {
     "points": ("points", "int"), "matched_frac": ("paired %", "pct"), "dup_frac": ("dup %", "pct"),
@@ -51,6 +58,8 @@ TRACK_METRICS = (
     "offset_n", "offset_missed", "offset_med_ms", "offset_abs_p95_ms",
     "bridge_n", "bridge_undet", "bridged_frac",
 )
+# Written after every older column, here and in repeats.csv, so existing columns keep their position.
+COUNT_METRICS = ("bridged", "meet_eligible", "meet_right", "meet_swap", "meet_unscorable")
 TRACK_SUMMARY = {
     "tracks_per_segment": ("tracks / segment", "num"), "switch_frac": ("switch %", "pct"),
     "onset_med_ms": ("onset med (ms)", "num"), "onset_abs_p95_ms": (r"onset \|err\| p95 (ms)", "num"),
@@ -61,7 +70,7 @@ TRACK_SUMMARY = {
 
 
 def signal_specs() -> dict:
-    return {**truth.SIGNALS, **truth.DEV_SIGNALS}
+    return {**truth.SIGNALS, **truth.DEV_SIGNALS, **truth.DEV_MOVING}
 
 
 def accuracy(pts: np.ndarray, name: str) -> dict:
@@ -175,6 +184,34 @@ def present_segments(state: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1) - 1))
 
 
+def majority(partials: np.ndarray) -> int | None:
+    """The partial strictly ahead among at least MEET_MIN votes, else None."""
+    if len(partials) < MEET_MIN:
+        return None
+    votes = np.bincount(partials)
+    top = np.flatnonzero(votes == votes.max())
+    return int(top[0]) if len(top) == 1 else None
+
+
+def meeting(pts: np.ndarray, det: dict) -> dict:
+    """Eligible, right, swap and unscorable track counts over the meeting at DURATION / 2."""
+    centre = truth.DURATION / 2
+    grid_time = det["grid"][det["pairs"][:, 0]]
+    outside = np.abs(grid_time - centre) > MEET_ZONE + 1e-9
+    result = dict.fromkeys(COUNT_METRICS[1:], 0)
+    for tid in np.unique(pts[pts[:, 3] >= 0, 3]):
+        times = pts[pts[:, 3] == tid, 0]
+        mine = outside & (det["pairs"][:, 2] == tid)
+        if times.min() >= centre - MEET_ZONE or times.max() <= centre + MEET_ZONE or not mine.any():
+            continue
+        result["meet_eligible"] += 1
+        before = majority(det["pairs"][mine & (grid_time < centre), 1])
+        after = majority(det["pairs"][mine & (grid_time > centre), 1])
+        verdict = "unscorable" if before is None or after is None else "right" if before == after else "swap"
+        result["meet_" + verdict] += 1
+    return result
+
+
 def tracking(pts: np.ndarray, name: str, det: dict) -> dict:
     """Poolable tracking samples and transition totals, from present detection pairs only."""
     pairs, grid, state = det["pairs"], det["grid"], det["state"]
@@ -225,13 +262,14 @@ def tracking(pts: np.ndarray, name: str, det: dict) -> dict:
         after = edge_track(k, centre + width / 2, True)
         if before is not None and after is not None:
             bridges.append(before == after)
-    result.update(bridges=bridges, drop_total=len(spec.get("drop", [])))
+    result.update(bridges=bridges, drop_total=len(spec.get("drop", [])),
+                  meeting=meeting(pts, det) if truth.meets(name) else None)
     return result
 
 
 def track_stats(samples: list[dict] | None) -> dict:
     if samples is None:
-        return dict.fromkeys(TRACK_METRICS, np.nan)
+        return dict.fromkeys(TRACK_METRICS + COUNT_METRICS, np.nan)
     sizes = [v for s in samples for v in s["sizes"]]
     switches = [v for s in samples for v in s["switches"]]
     out = {"segments": len(sizes), "tracks_per_segment": np.mean(sizes) if sizes else np.nan,
@@ -246,8 +284,12 @@ def track_stats(samples: list[dict] | None) -> dict:
     bridges = [v for s in samples for v in s["bridges"]]
     out.update(bridge_n=len(bridges) if total else np.nan,
                bridge_undet=total - len(bridges) if total else np.nan,
-               bridged_frac=np.mean(bridges) if bridges else np.nan)
-    return {m: out[m] for m in TRACK_METRICS}
+               bridged_frac=np.mean(bridges) if bridges else np.nan,
+               bridged=sum(bridges) if total else np.nan)
+    meetings = [s["meeting"] for s in samples if s.get("meeting")]
+    for m in COUNT_METRICS[1:]:
+        out[m] = sum(v[m] for v in meetings) if meetings else np.nan
+    return {m: out[m] for m in TRACK_METRICS + COUNT_METRICS}
 
 
 def q(v: np.ndarray, p: float) -> float:
@@ -274,14 +316,16 @@ def stats(acc: list[dict], det: list[dict], tracks: list[dict] | None = None) ->
 def repeats(fam: pd.DataFrame) -> pd.DataFrame:
     """Mean, min and max of every metric over the repeat runs of a row, per family."""
     rep = fam[fam["row"].str.contains(REPEAT)].assign(row=lambda d: d["row"].str.replace(REPEAT, "", regex=True))
-    g = rep.groupby(["row", "family"], sort=False)[list(SUMMARY)]
-    out = pd.concat({"mean": g.mean(), "min": g.min(), "max": g.max()}, axis=1)
-    out.columns = [f"{m}_{s}" for s, m in out.columns]
-    out = out.reset_index().assign(runs=g.size().to_numpy())
-    gtrack = rep.groupby(["row", "family"], sort=False)[list(TRACK_METRICS)]
-    extra = pd.concat({"mean": gtrack.mean(), "min": gtrack.min(), "max": gtrack.max()}, axis=1)
-    extra.columns = [f"{m}_{s}" for s, m in extra.columns]
-    return pd.concat([out, extra.reset_index(drop=True)], axis=1)
+    groups = rep.groupby(["row", "family"], sort=False)
+
+    def spread(metrics) -> pd.DataFrame:
+        g = groups[list(metrics)]
+        block = pd.concat({"mean": g.mean(), "min": g.min(), "max": g.max()}, axis=1)
+        block.columns = [f"{m}_{s}" for s, m in block.columns]
+        return block
+
+    out = spread(SUMMARY).reset_index().assign(runs=groups.size().to_numpy())
+    return pd.concat([out, *[spread(m).reset_index(drop=True) for m in (TRACK_METRICS, COUNT_METRICS)]], axis=1)
 
 
 def cell(v: float, kind: str) -> str:
@@ -294,7 +338,42 @@ def cell(v: float, kind: str) -> str:
     return np.format_float_positional(v, precision=3, unique=False, fractional=False, trim="-")
 
 
-def summary(fam: pd.DataFrame, rep: pd.DataFrame) -> str:
+def count_tables(fam: pd.DataFrame, sig: pd.DataFrame) -> list[str]:
+    """Meetings and holes as counts: a percentage of 2 or 12 tracks says less than the tracks themselves."""
+    meets = fam[fam["meet_eligible"].notna()]
+    holes = sig[(sig["family"] == truth.HOLES) & sig["bridged"].notna()]
+    if meets.empty and holes.empty:
+        return []
+    lines = ["## Meetings and holes", "", f"Counts, pooled over files. Meetings: tracks spanning +-{MEET_ZONE} s of "
+             f"the meeting with a present pair outside it; identity by majority of at least {MEET_MIN} present pairs "
+             "each side. Holes: bridged of determined (held across the hole by one track), undetermined holes left "
+             "out. Repeat runs are listed one by one, as a mean of a few tracks is no longer a count; repeats.csv "
+             "has their mean, min and max.", ""]
+    if not meets.empty:
+        lines += ["### Meetings", "", "| row | family | files | eligible | right | swap | unscorable |",
+                  "|---|---|---:|---:|---:|---:|---:|"]
+        for _, r in meets.sort_values(["family", "row"], kind="stable").iterrows():
+            values = [cell(r[m], "int") for m in ("signals", *COUNT_METRICS[1:])]
+            lines.append(f"| {r['row']} | {r['family']} | " + " | ".join(values) + " |")
+        lines.append("")
+    if not holes.empty:
+        shapes = holes["signal"].map(truth.shape)
+        names = list(dict.fromkeys(holes["signal"]))
+
+        def ratio(rows: pd.DataFrame) -> str:
+            return f"{rows['bridged'].sum():.0f}/{rows['bridge_n'].sum():.0f}" if len(rows) else "–"
+
+        lines += ["### Holes in moving partials", "", "| row | all | undet. | vibrato | glide | " + " | ".join(names) + " |",
+                  "|---|" + "---:|" * (4 + len(names))]
+        for row, g in holes.groupby("row", sort=False):
+            cells = [ratio(g), f"{g['bridge_undet'].sum():.0f}", ratio(g[shapes[g.index] == "vibrato"]),
+                     ratio(g[shapes[g.index] == "glide"]), *[ratio(g[g["signal"] == n]) for n in names]]
+            lines.append(f"| {row} | " + " | ".join(cells) + " |")
+        lines.append("")
+    return lines
+
+
+def summary(fam: pd.DataFrame, rep: pd.DataFrame, sig: pd.DataFrame) -> str:
     means = rep[["row", "family", "runs"] + [f"{m}_mean" for m in SUMMARY]]
     means = means.rename(columns={f"{m}_mean": m for m in SUMMARY})
     table = pd.concat([fam[~fam["row"].str.contains(REPEAT)],
@@ -333,6 +412,7 @@ def summary(fam: pd.DataFrame, rep: pd.DataFrame) -> str:
             values = [r["row"], *[cell(r[m], k) for m, (_, k) in cols.items()]]
             lines.append("| " + " | ".join(values) + " |")
         lines.append("")
+    lines += count_tables(fam, sig)
     return "\n".join(lines) + "\n"
 
 
@@ -362,12 +442,13 @@ def main(out: pathlib.Path, results: pathlib.Path) -> None:
                                        if tracked else None)})
         print(row, "scored", flush=True)
     results.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(per_signal).to_csv(results / "per_signal.csv", index=False, float_format="%.4g")
+    sig = pd.DataFrame(per_signal)
+    sig.to_csv(results / "per_signal.csv", index=False, float_format="%.4g")
     fam = pd.DataFrame(per_family)
     fam.to_csv(results / "per_family.csv", index=False, float_format="%.4g")
     rep = repeats(fam)
     rep.to_csv(results / "repeats.csv", index=False, float_format="%.4g")
-    (results / "summary.md").write_text(summary(fam, rep))
+    (results / "summary.md").write_text(summary(fam, rep, sig))
 
 
 if __name__ == "__main__":

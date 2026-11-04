@@ -26,6 +26,17 @@ def write_meta(folder: pathlib.Path, **meta) -> None:
     (folder / "meta.json").write_text(json.dumps(meta, indent=1))
 
 
+def read_meta(folder: pathlib.Path, version: str) -> dict:
+    """The meta.json an incremental run extends: the row's full run, made with this tool version."""
+    path = folder / "meta.json"
+    if not path.is_file():
+        raise SystemExit(f"{path} is missing: --new extends a full run")
+    meta = json.loads(path.read_text())
+    if meta["version"] != version:
+        raise SystemExit(f"{path} says {meta['version']}, this run {version}: --new extends a full run of the same tool")
+    return meta
+
+
 def read_points(folder: pathlib.Path, name: str) -> np.ndarray:
     """(n, 4) array: time, freq, amp, track."""
     data = np.loadtxt(folder / f"{name}.csv", delimiter=",", skiprows=1, ndmin=2)

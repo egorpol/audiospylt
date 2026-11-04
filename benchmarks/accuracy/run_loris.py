@@ -1,10 +1,13 @@
 """Loris rows (loristrck): documented rule of thumb and matched window.
 
-Usage: python run_loris.py OUT   (venv with loristrck + soundfile)
+Usage: python run_loris.py OUT [--new]   (venv with loristrck + soundfile)
+--new analyses only truth.MOVING and extends the rows of an earlier full run.
+A row's hop is the median over truth.BASE alone, so a full run and --new agree and old scores stay put.
 """
 
 from __future__ import annotations
 
+import argparse
 import importlib.metadata
 import pathlib
 import sys
@@ -22,26 +25,32 @@ MATCHED = {"resolution": 2 * truth.SR / 2048, "windowsize": 4 * truth.SR / 2048,
            "ampfloor": -80.0}
 
 
-def run(out: pathlib.Path, row: str, params_for) -> None:
+def run(out: pathlib.Path, row: str, params_for, new: bool = False) -> None:
     folder = out / "raw" / row
-    used, steps = {}, []
-    for name in truth.SIGNALS:
+    version = "loristrck " + importlib.metadata.version("loristrck")
+    old = points.read_meta(folder, version) if new else {}
+    used, steps = dict(old.get("params", {})), []
+    for name in truth.MOVING if new else truth.SIGNALS:
         x, sr = sf.read(out / "suite" / f"{name}.wav")
         p = params_for(name)
         used[name] = p
         parts = lt.analyze(np.ascontiguousarray(x, dtype=float), sr, **p)
         rows = [np.column_stack([q[:, 0], q[:, 1], q[:, 2], np.full(len(q), i)]) for i, q in enumerate(parts)]
-        steps += [np.diff(q[:, 0]) for q in parts if len(q) > 1]
+        if name in truth.BASE:
+            steps += [np.diff(q[:, 0]) for q in parts if len(q) > 1]
         data = np.vstack(rows) if rows else np.zeros((0, 4))
         points.write_points(folder, name, *data.T)
-    hop = float(np.median(np.concatenate(steps)))
-    points.write_meta(folder, kind="tracks", hop_s=hop, version="loristrck " + importlib.metadata.version("loristrck"),
-                      params=used, hop_note="median breakpoint step within partials")
+    hop = old["hop_s"] if new else float(np.median(np.concatenate(steps)))
+    points.write_meta(folder, kind="tracks", hop_s=hop, version=version, params=used,
+                      hop_note="median breakpoint step within partials of the truth.BASE files")
     print(row, "done, hop", round(hop, 5))
 
 
 if __name__ == "__main__":
-    out = pathlib.Path(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("out", type=pathlib.Path)
+    parser.add_argument("--new", action="store_true")
+    args = parser.parse_args()
     # loristrck docs: resolution ~= 0.9 * min(f0); everything else at its default
-    run(out, "loris/default", lambda name: {"resolution": 0.9 * truth.lowest_freq(name)})
-    run(out, "loris/matched", lambda name: dict(MATCHED))
+    run(args.out, "loris/default", lambda name: {"resolution": 0.9 * truth.lowest_freq(name)}, args.new)
+    run(args.out, "loris/matched", lambda name: dict(MATCHED), args.new)
