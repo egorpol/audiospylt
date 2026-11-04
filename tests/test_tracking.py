@@ -1,5 +1,6 @@
 """Measured-frame invariants and exact weighted partial linking."""
 
+import warnings
 from dataclasses import replace
 from itertools import combinations, permutations
 from types import SimpleNamespace
@@ -12,7 +13,7 @@ import pytest
 from audiospylt.analysis.peaks import find_peaks
 from audiospylt.analysis.spectrogram import spectrogram
 from audiospylt.analysis.tracking import (
-    _assign_frame, link_peaks, spectrogram_peaks, track_partials,
+    _assign_frame, _burg, _TrackHistory, link_peaks, spectrogram_peaks, track_partials,
 )
 from audiospylt.model.schema import SchemaError, validate
 
@@ -194,7 +195,8 @@ def test_duration_boundary_renumbering_metadata_and_empty_outputs():
                            [(.25, 800., .1), (.375, 800., .2)]])
     assert result.attrs["meta"] == {"source": "measured", "method": "link_peaks",
                                     "objective": "weighted", "max_cents": 50.,
-                                    "max_gap": 0, "min_duration": .125}
+                                    "max_gap": 0, "min_duration": .125,
+                                    "prediction": "hold", "min_gate_hz": 0.}
     assert source.attrs["meta"] == {"source": "measured", "method": "old"}
     for empty in (link_peaks(source, min_duration=1.), link_peaks(source.iloc[:0])):
         assert_tracks(empty, [])
@@ -207,6 +209,9 @@ def test_duration_boundary_renumbering_metadata_and_empty_outputs():
     {"max_gap": -1}, {"max_gap": True}, {"max_gap": np.bool_(False)}, {"max_gap": 1.},
     {"max_gap": np.nan}, {"max_gap": "1"}, {"min_duration": -1}, {"min_duration": np.inf},
     {"min_duration": np.nan}, {"min_duration": False}, {"min_duration": "0"},
+    {"prediction": "burg"}, {"prediction": None}, {"prediction": ["lp"]},
+    {"prediction": np.array(["lp", "hold"])}, {"min_gate_hz": -1}, {"min_gate_hz": np.inf},
+    {"min_gate_hz": np.nan}, {"min_gate_hz": True}, {"min_gate_hz": "1"},
 ])
 def test_link_parameter_errors(kwargs):
     with pytest.raises(ValueError, match=next(iter(kwargs))):
@@ -264,14 +269,16 @@ def test_assignment_matches_brute_force_all_partial_matchings(n, m, record_prope
 @pytest.mark.parametrize("options", [{}, {"frame_length": 512, "hop": 128, "zero_pad": 2,
     "window": "blackmanharris", "center": False, "min_db": -70., "rel_db": -30.,
     "fmin": 100., "fmax": 2000., "min_distance_hz": 80., "prominence_db": 10.,
-    "max_cents": 80., "max_gap": 1, "min_duration": .025}])
+    "max_cents": 80., "max_gap": 1, "min_duration": .025, "prediction": "lp",
+    "min_gate_hz": 5.}])
 def test_track_partials_equals_composed_calls(options):
     sr = 8000
     audio = .5 * np.sin(2 * np.pi * 440 * np.arange(sr) / sr)
     stft = {"frame_length": 2048, "hop": 256, "zero_pad": 4, "window": "hann", "center": True}
     pick = {"min_db": -80., "rel_db": None, "fmin": 0., "fmax": None,
             "min_distance_hz": None, "prominence_db": 20.}
-    link = {"max_cents": 50., "max_gap": 0, "min_duration": .1}
+    link = {"max_cents": 50., "max_gap": 0, "min_duration": .1, "prediction": "hold",
+            "min_gate_hz": 0.}
     for group in (stft, pick, link):
         group.update({key: value for key, value in options.items() if key in group})
     expected = link_peaks(spectrogram_peaks(spectrogram(audio, sr, **stft), **pick), **link)
@@ -307,7 +314,8 @@ def test_exponential_glissando_silence_and_audio_shape_errors():
     tracks = track_partials(audio, sr)
     assert tracks.track_id.nunique() == 1
     assert tracks.time.iloc[0] <= .025 and tracks.time.iloc[-1] >= .975
-    assert_tracks(track_partials(np.zeros(sr), sr), [])
+    with pytest.warns(UserWarning, match="no tracks"):
+        assert_tracks(track_partials(np.zeros(sr), sr), [])
     with pytest.raises(ValueError) as expected:
         spectrogram(np.zeros((2, 100)), sr)
     with pytest.raises(ValueError) as actual:
@@ -344,3 +352,279 @@ def test_equal_frequencies_keep_candidate_creation_and_peak_row_order():
 def test_spectrogram_peaks_rejects_a_single_spectrum_with_route(multi_spec):
     with pytest.raises(TypeError, match=r"spec must be a Spectrogram; got Spectrum; use find_peaks"):
         spectrogram_peaks(multi_spec.frame(0))
+
+
+def reference_burg(samples, order):
+    forward = backward = np.array(samples, dtype=float)
+    coefficients = np.array([1.])
+    for _ in range(order):
+        ahead, behind = forward[1:], backward[:-1]
+        energy = behind @ behind + ahead @ ahead
+        k = 0. if energy <= 0 else -2 * (behind @ ahead) / energy
+        forward, backward = ahead + k * behind, behind + k * ahead
+        coefficients = np.r_[coefficients, 0.] + k * np.r_[0., coefficients[::-1]]
+    return coefficients
+
+
+def reference_predict(series):
+    """One track's next frequency in Hz, spelled out without batching."""
+    if len(series) < 2:
+        return series[-1]
+    x = np.log2(np.array(series[-64:], dtype=float))
+    while len(x) < 7:
+        take = min(len(x) - 1, 7 - len(x))
+        x = np.r_[2 * x[0] - x[take:0:-1], x]
+    t = np.arange(len(x))
+    slope, intercept = np.polyfit(t, x, 1)
+    residual = x - (slope * t + intercept)
+    return 2. ** (slope * len(x) + intercept
+                  - reference_burg(residual, 6)[1:] @ residual[::-1][:6])
+
+
+def reference_link(table, *, max_cents=50., max_gap=0, min_duration=0., min_gate_hz=0.):
+    """link_peaks with per-track series that catch up frame by frame."""
+    table = table.sort_values(["frame", "freq", "amp"], kind="stable").reset_index(drop=True)
+    frame, time, freq, amp = (table[n].to_numpy() for n in ("frame", "time", "freq", "amp"))
+    tracks, series, active = [], [], []
+    for k in np.unique(frame):
+        rows = np.flatnonzero(frame == k)
+        active = [i for i in active if frame[tracks[i][-1]] >= k - 1 - max_gap]
+        predicted = []
+        for i in active:
+            while frame[tracks[i][0]] + len(series[i]) - 1 < k - 1:
+                series[i].append(reference_predict(series[i]))
+            predicted.append(reference_predict(series[i]))
+        chosen, matched = _assign_frame(np.array(predicted), freq[rows], max_cents, min_gate_hz)
+        for candidate, peak in zip(chosen, matched):
+            tracks[active[candidate]].append(int(rows[peak]))
+            series[active[candidate]].append(float(freq[rows[peak]]))
+        for peak in sorted(set(range(len(rows))) - set(matched.tolist())):
+            active.append(len(tracks))
+            tracks.append([int(rows[peak])])
+            series.append([float(freq[rows[peak]])])
+    kept = [r for r in tracks if time[r[-1]] - time[r[0]] >= min_duration]
+    kept.sort(key=lambda r: (time[r[0]], freq[r[0]]))
+    return [[(time[row], freq[row], amp[row]) for row in r] for r in kept]
+
+
+def moving_table(seed, frames=220):
+    """Vibrato and glides with jitter, dropped peaks, absent frames and stray peaks."""
+    rng = np.random.default_rng(seed)
+    k = np.arange(frames)
+    curves = [440 * 2 ** (.03 * np.sin(2 * np.pi * k / 37)), 900 * 2 ** (k / 400),
+              2600 * 2 ** (-k / 500), 1500 * 2 ** (.02 * np.sin(2 * np.pi * k / 23 + 1))]
+    absent = set(rng.choice(frames, frames // 12, replace=False).tolist())
+    rows = []
+    for i in sorted(set(range(frames)) - absent):
+        for curve in curves:
+            if rng.random() > .12:
+                rows.append((i, i * .01, curve[i] * 2 ** (rng.normal(0, 1.5) / 1200), 1.))
+        if rng.random() < .4:
+            rows.append((i, i * .01, rng.uniform(100, 8000), .1))
+    return peaks(rows)
+
+
+def history_of(series):
+    history = _TrackHistory()
+    history.add(np.array([series[0]]))
+    for value in series[1:]:
+        history.push(np.array([value]))
+    return history
+
+
+def test_burg_recovers_a_known_ar2_process():
+    rng = np.random.default_rng(5)
+    x = np.zeros(20000)
+    noise = rng.normal(size=len(x))
+    for i in range(2, len(x)):
+        x[i] = 1.498 * x[i - 1] - .749 * x[i - 2] + noise[i]
+    np.testing.assert_allclose(_burg(x[np.newaxis], np.ones((1, len(x)), dtype=bool), 2)[0],
+                               [1., -1.498, .749], atol=.02)
+
+
+def test_burg_of_padded_rows_equals_burg_of_the_bare_rows():
+    rng = np.random.default_rng(6)
+    width = 40
+    lengths = [7, 8, 13, 39, 40]
+    samples = np.zeros((len(lengths), width))
+    valid = np.zeros_like(samples, dtype=bool)
+    for row, length in enumerate(lengths):
+        samples[row, -length:] = rng.normal(size=length)
+        valid[row, -length:] = True
+    coefficients = _burg(samples, valid, 6)
+    for row, length in enumerate(lengths):
+        np.testing.assert_allclose(coefficients[row], reference_burg(samples[row, -length:], 6),
+                                   rtol=0, atol=1e-10)
+
+
+@pytest.mark.parametrize("length", [1, 2, 3, 4, 5, 6, 7, 8, 20, 63, 64, 65, 150])
+def test_batched_prediction_equals_one_track_at_a_time(length):
+    rng = np.random.default_rng(length)
+    series = 2 ** (9 + np.cumsum(rng.normal(0, .01, length)))
+    assert history_of(series).predict()[0] == pytest.approx(reference_predict(series), rel=1e-11)
+
+
+def test_rows_of_different_lengths_do_not_disturb_each_other():
+    rng = np.random.default_rng(7)
+    lengths = [90, 64, 30, 7, 6, 3, 2, 1]  # oldest row first, one born per frame at most
+    series = [2 ** (9 + np.cumsum(rng.normal(0, .01, n))) for n in lengths]
+    history = _TrackHistory()
+    for step in range(lengths[0]):
+        opened = [s for s in series if lengths[0] - len(s) < step]
+        history.push(np.array([s[step - lengths[0] + len(s)] for s in opened]))
+        history.add(np.array([s[0] for s in series if lengths[0] - len(s) == step]))
+    np.testing.assert_array_equal(history.filled, np.minimum(lengths, 64))
+    np.testing.assert_allclose(history.predict(), [reference_predict(s) for s in series],
+                               rtol=1e-11, atol=0)
+
+
+@pytest.mark.parametrize("seed", range(4))
+@pytest.mark.parametrize("max_cents,max_gap,floor", [
+    (50., 0, 0.), (25., 3, 0.), (50., 8, 0.), (15., 16, 0.), (15., 3, 40.), (25., 8, 120.),
+])
+def test_lp_linking_equals_the_unbatched_reference(seed, max_cents, max_gap, floor):
+    source = moving_table(seed)
+    options = {"max_cents": max_cents, "max_gap": max_gap, "min_duration": .05,
+               "min_gate_hz": floor}
+    expected = reference_link(source, **options)
+    assert max(len(track) for track in expected) > 64 or max_gap == 0
+    assert_tracks(link_peaks(source, prediction="lp", **options), expected)
+    if floor:  # the floor changes these links, so the comparison above can see it
+        options["min_gate_hz"] = 0.
+        assert reference_link(source, **options) != expected
+
+
+def test_lp_ignores_row_order():
+    source = moving_table(9)
+    result = link_peaks(source, max_gap=4, prediction="lp")
+    shuffled = link_peaks(source.sample(frac=1, random_state=1), max_gap=4, prediction="lp")
+    pd.testing.assert_frame_equal(shuffled, result, check_exact=True)
+
+
+def glide(frames, rate=20., hole=(), stray=None):
+    rows = [(k, k * .01, float(hz(k * rate)), 1.) for k in range(frames) if k not in hole]
+    if stray is not None:
+        rows += [(k, k * .01, stray, .5) for k in range(frames)]
+    return peaks(rows)
+
+
+@pytest.mark.parametrize("stray", [None, 9000.], ids=["absent frames", "present frames"])
+def test_lp_carries_a_moving_track_across_exactly_max_gap_missed_frames(stray):
+    # The gate passes one 20 cent step, not the 120 cents across the hole. A second
+    # zombie per frame would put the prediction 100 cents ahead of the glide.
+    source = glide(40, hole=range(20, 25), stray=stray)
+    options = {"max_cents": 25., "min_duration": .05}
+    moving = link_peaks(source, max_gap=5, prediction="lp", **options)
+    assert len(moving[moving.freq < 8000]) == 35
+    assert moving[moving.freq < 8000].track_id.nunique() == 1
+    short = link_peaks(source, max_gap=4, prediction="lp", **options)
+    assert short[short.freq < 8000].track_id.nunique() == 2
+    held = link_peaks(source, max_gap=5, **options)
+    assert held[held.freq < 8000].track_id.nunique() == 2
+
+
+def test_lp_extends_a_two_point_track_along_its_slope():
+    # The third point is 40 cents from the second and 20 from the line through both.
+    source = peaks([(k, k * .01, float(hz(cents)), 1.) for k, cents in enumerate([0, 20, 60])])
+    assert link_peaks(source, max_cents=25., min_duration=0., prediction="lp").track_id.nunique() == 1
+    assert link_peaks(source, max_cents=25., min_duration=0.).track_id.nunique() == 2
+
+
+def test_lp_tracks_cross_where_hold_turns_back():
+    rows = [(k, k * .01, float(hz(12 * k)), 1.) for k in range(26)]
+    rows += [(k, k * .01, float(hz(300 - 12 * k)), 1.) for k in range(26)]
+    source = peaks(rows)
+    crossed = link_peaks(source, max_cents=20., min_duration=.1, prediction="lp")
+    assert crossed.track_id.nunique() == 2
+    assert sorted(np.sign(np.diff(g.freq)).sum() for _, g in crossed.groupby("track_id")) == [-25, 25]
+    turned = link_peaks(source, max_cents=20., min_duration=.1)
+    assert turned.track_id.nunique() == 2
+    assert all(abs(np.sign(np.diff(g.freq)).sum()) < 25 for _, g in turned.groupby("track_id"))
+
+
+@pytest.mark.parametrize("series", [[1., 1e300], [1., 1e-300], [2. ** -1070, 2. ** 1020]])
+def test_prediction_outside_the_float_range_falls_back_to_the_last_value(series):
+    assert history_of(series).predict()[0] == series[-1]
+
+
+@pytest.mark.parametrize("extreme", [np.finfo(float).max, np.finfo(float).smallest_subnormal])
+def test_lp_equals_hold_at_the_ends_of_the_float_range(extreme):
+    source = peaks([(k, k * .01, extreme, 1.) for k in range(3)])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        moving = link_peaks(source, min_duration=0., prediction="lp")
+    pd.testing.assert_frame_equal(moving, link_peaks(source, min_duration=0.), check_exact=True)
+
+
+def test_a_one_point_track_holds_exactly_under_lp():
+    # Peaks at the Hz gate: a round trip through log2 would pull some inside it.
+    for first in np.random.default_rng(11).uniform(50, 2000, 300):
+        source = peaks([(0, 0., first, 1.), (1, .01, first + 12, 1.)])
+        options = {"min_duration": 0., "min_gate_hz": 12.}
+        assert (link_peaks(source, prediction="lp", **options).track_id.nunique()
+                == link_peaks(source, **options).track_id.nunique())
+
+
+def test_lp_survives_a_prediction_outside_the_float_range():
+    source = peaks([(0, 0., 1., 1.), (1, .01, 1e300, 1.)] +
+                   [(k, k * .01, 1000., .5) for k in range(2, 12)])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = link_peaks(source, max_gap=9, min_duration=.01, prediction="lp")
+    assert result.track_id.nunique() == 1  # the 1000 Hz line; the jump stays one point each
+
+
+def test_hz_floor_links_within_either_gate_and_never_at_it():
+    def links(old, new, **floor):
+        return len(_assign_frame(np.array([old]), np.array([new]), 50., **floor)[0])
+
+    assert links(100., 108.) == 0  # 133 cents
+    assert links(100., 108., min_gate_hz=12.) == 1
+    assert links(100., 111.9, min_gate_hz=12.) == 1
+    assert links(100., 112., min_gate_hz=12.) == 0  # at the Hz gate
+    assert links(5000., 5100., min_gate_hz=12.) == 1  # 34 cents, 100 Hz
+    assert links(5000., 5200., min_gate_hz=12.) == 0
+    assert links(100., 100., min_gate_hz=5e-324) == 1  # no 0 * inf
+    assert links(100., 200., min_gate_hz=1e308) == 1
+
+
+def test_floor_reaches_the_tracks_and_the_metadata():
+    source = peaks([(0, 0., 60., 1.), (1, .1, 66., 1.), (2, .2, 60., 1.)])
+    assert link_peaks(source, min_duration=0.).track_id.nunique() == 3
+    floored = link_peaks(source, min_duration=0., min_gate_hz=8)
+    assert_tracks(floored, [[(0., 60., 1.), (.1, 66., 1.), (.2, 60., 1.)]])
+    assert floored.attrs["meta"]["min_gate_hz"] == 8.
+
+
+@pytest.mark.parametrize("n,m", [(n, m) for n in range(1, 5) for m in range(1, 5)])
+def test_floored_assignment_keeps_the_brute_force_optimum(n, m):
+    rng = np.random.default_rng(300 + 7 * n + m)
+    gate, floor = 50., 12.  # the two gates meet at 410 Hz, inside the draw
+    for _ in range(150):
+        centre = rng.uniform(150, 1200)
+        predicted = centre * 2 ** (rng.uniform(-120, 120, n) / 1200)
+        frequencies = centre * 2 ** (rng.uniform(-120, 120, m) / 1200)
+        cents = np.abs(1200 * np.log2(frequencies[None, :] / predicted[:, None]))
+        offset = np.abs(frequencies[None, :] - predicted[:, None])
+        gains = np.maximum(gate - np.minimum(cents, offset / floor * gate), 0)
+        best = 0.
+        for size in range(1, min(n, m) + 1):
+            for chosen in combinations(range(n), size):
+                for selected in permutations(range(m), size):
+                    best = max(best, sum(gains[i, j] for i, j in zip(chosen, selected)))
+        chosen, selected = _assign_frame(predicted, frequencies, gate, floor)
+        assert np.all(gains[chosen, selected] > 0)
+        assert gains[chosen, selected].sum() == pytest.approx(best, rel=0, abs=1e-9)
+
+
+def test_only_an_empty_track_partials_result_warns():
+    sr = 8000
+    with pytest.warns(UserWarning, match=(r"no tracks in 0 peaks.*min_db.*prominence_db=None"
+                                          r".*max_cents.*min_gate_hz.*min_duration")) as caught:
+        track_partials(np.zeros(sr), sr)
+    assert caught[0].filename == __file__
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        track_partials(.5 * np.sin(2 * np.pi * 440 * np.arange(sr) / sr), sr)
+        assert link_peaks(peaks([])).empty
+        assert link_peaks(peaks([(0, 0., 440., 1.)])).empty
