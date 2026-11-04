@@ -211,8 +211,10 @@ def test_perfect_tracks(bench, name):
     if "drop" in tr._spec(name):
         assert result["bridge_n"] == 6
         assert result["bridged"] == result["bridged_frac"] == 0
+        assert [result[m] for m in e.EDGE_METRICS] == [0, 6, 0]
     else:
         assert np.isnan(result["bridged"])
+        assert all(np.isnan(result[m]) for m in e.EDGE_METRICS)
 
 
 def meeting_of(e, before, after, start=0.2, stop=1.8, inside=()):
@@ -304,6 +306,95 @@ def test_dropout_identity(bench, bridged):
     assert result["bridge_n"] == 6
     assert result["bridge_undet"] == 0
     assert result["bridged_frac"] == int(bridged)
+    assert [result[m] for m in e.EDGE_METRICS] == [6 * bridged, 6, 0]
+
+
+@pytest.mark.parametrize("side", ["after", "before"])
+def test_reclaim_from_a_stub(bench, side):
+    """A held track takes the partial back from a stub past the neutral zone: bridged, but not at the edge."""
+    e, tr, _ = bench
+    name = "dev_hole_vib_60"
+    centre, width = tr._spec(name)["drop"][0]
+    lo, hi = centre - width / 2, centre + width / 2
+    pts = perfect(tr, name)
+    held = pts[:, 3] <= 1  # partial 0 on both sides of its hole
+    pts[held, 3] = 0
+    hop = 256 / tr.SR
+    stub = held & ((pts[:, 0] > hi) & (pts[:, 0] < hi + tr.NEUTRAL - hop) if side == "after"
+                   else (pts[:, 0] < lo) & (pts[:, 0] > lo - tr.NEUTRAL + hop))
+    assert stub.sum() >= 5
+    pts[stub, 3] = 99
+    result, _ = scored(e, pts, name)
+    assert (result["bridged"], result["bridge_n"]) == (1, 6)  # the registered count takes it as bridged
+    assert [result[m] for m in e.EDGE_METRICS] == [0, 6, 0]
+    pts[stub, 3] = 0  # the same frames on one track are bridged by both counts
+    result, _ = scored(e, pts, name)
+    assert (result["bridged"], result["bridge_n"]) == (1, 6)
+    assert [result[m] for m in e.EDGE_METRICS] == [1, 6, 0]
+
+
+def hole_frames(tr, frames, name="dev_hole_vib_60"):
+    """Points around partial 0's hole, one per tuple of `frame`'s arguments."""
+    centre, width = tr._spec(name)["drop"][0]
+
+    def frame(after, offset, track, cents=0.0, amp=0.1, partial=0):
+        """`offset` seconds from the upper edge if `after`, else from the lower one."""
+        t = centre + (width / 2 if after else -width / 2) + offset
+        return t, tr.partials(name, np.array([t]))[0][partial, 0] * 2 ** (cents / 1200), amp, track
+
+    return np.array([frame(*f) for f in frames], dtype=float).reshape(-1, 4)
+
+
+BEFORE, AFTER = (False, -0.01, 0), (True, 0.01, 0)
+
+
+@pytest.mark.parametrize("frames, verdicts", [
+    ([BEFORE, AFTER], [True]),
+    ([BEFORE, (True, 0.01, 1)], [False]),
+    ([(False, -0.099, 0), (True, 0.099, 0)], [True]),                       # inside the 0.1 s window
+    ([(False, -0.1 - 1e-13, 0), (True, 0.1 + 1e-13, 0)], [True]),           # rounding at the window's end
+    ([(False, -0.101, 0), AFTER], []),                                      # too far before
+    ([BEFORE, (True, 0.101, 0)], []),                                       # too far after
+    ([BEFORE], []),                                                         # one side is not determined
+    ([(False, 0.0, 0), AFTER], []),                                         # an edge frame belongs to neither side
+    ([BEFORE, (True, 0.0, 0)], []),
+    ([(False, 0.01, 0), AFTER], []),                                        # inside the hole
+    ([BEFORE, (True, -0.01, 0)], []),
+    ([BEFORE, (True, -0.01, 1), AFTER], [True]),                            # a hole frame changes nothing
+    ([(False, -0.05, 1), BEFORE, AFTER, (True, 0.05, 1)], [True]),          # the nearest frame decides
+    ([(False, -0.01, 1), (False, -0.05, 0), AFTER, (True, 0.05, 1)], [False]),
+    ([(False, -0.01, 0, 49.0), (True, 0.01, 0, -49.0)], [True]),            # tolerance, either way
+    ([(False, -0.01, 0, 51.0), AFTER], []),
+    ([BEFORE, (True, 0.01, 0, -51.0)], []),
+    ([(False, -0.01, 1, 51.0), BEFORE, AFTER], [True]),                     # off the partial is not read
+    ([(False, -0.01, 0, 0.0, 1e-9), (True, 0.01, 0, 0.0, 1e-9)], [True]),   # no amplitude gate
+    ([(False, -0.01, 0, 0.0, 0.1, 1), AFTER], []),                          # another partial's frame
+    ([(False, -0.01, 0), (False, -0.01, 1), AFTER], [True]),                # a same-time tie: the first row
+    ([(False, -0.01, 1), (False, -0.01, 0), AFTER], [False]),
+    ([BEFORE, (True, 0.01, 1), AFTER], [False]),
+    ([(False, -0.01, -1), AFTER], []),                                      # an untracked peak
+    ([BEFORE, (True, 0.01, -1)], []),
+])
+def test_edge_rule(bench, frames, verdicts):
+    e, tr, _ = bench
+    assert e.edge_bridges(hole_frames(tr, frames), "dev_hole_vib_60") == verdicts
+
+
+def test_edge_rule_skips_zero_frequency(bench):
+    e, tr, _ = bench
+    pts = hole_frames(tr, [BEFORE, AFTER])
+    pts[0, 1] = 0
+    with np.errstate(all="raise"):
+        assert e.edge_bridges(pts, "dev_hole_vib_60") == []
+
+
+def test_edge_rule_reads_each_hole_on_its_own_partial(bench):
+    e, tr, _ = bench
+    name = "dev_hole_vib_60"
+    pts = perfect(tr, name)
+    pts[pts[:, 3] <= 3, 3] = pts[pts[:, 3] <= 3, 3] // 2  # bridge partials 0 and 1
+    assert e.edge_bridges(pts, name) == [True, True, False, False, False, False]
+    assert e.edge_bridges(pts, "dev_turn_400_500") == []  # no holes, whatever the points
 
 
 def test_onset_offset_and_missed(bench):
@@ -382,7 +473,7 @@ def test_count_tables(bench, tmp_path):
         e.points.write_points(folder, name, *pts.T)
     e.main(tmp_path, tmp_path / "results")
     columns = list(pd.read_csv(tmp_path / "results" / "per_family.csv").columns)
-    assert columns[columns.index("bridged_frac") + 1:] == list(e.COUNT_METRICS)
+    assert columns[columns.index("bridged_frac") + 1:] == list(e.COUNT_METRICS + e.EDGE_METRICS)
     text = (tmp_path / "results" / "summary.md").read_text()
     head = text.index("## Meetings and holes")
     assert head > text.index("## Tracking")
@@ -391,6 +482,24 @@ def test_count_tables(bench, tmp_path):
     assert "| test/tracks | 2/12 | 0 | 0/6 | 2/6 | 0/6 | 2/6 |" in text
     assert "Repeat runs are listed one by one" in text[head:]
     assert "dev_drop_40" not in text[head:]  # a hole in a steady partial is not a moving hole
+    edge = text.index("### Holes at the hole edge (exploratory)")
+    assert text.index("### Holes in moving partials") < edge
+    assert text.count("| test/tracks | 2/12 | 0 | 0/6 | 2/6 | 0/6 | 2/6 |") == 2
+    note = text[edge:]
+    assert "added after the published run" in note
+    assert "does not prove one track through the gap" in note
+    assert "not the registered score" in note
+
+
+def test_edge_table_keeps_its_own_count(bench):
+    e, tr, _ = bench
+    sig = pd.DataFrame([{"row": "test/tracks", "signal": "dev_hole_vib_60", "family": tr.HOLES,
+                         "bridged": 5, "bridge_n": 6, "bridge_undet": 0,
+                         "bridged_edge": 2, "bridge_edge_n": 4, "bridge_edge_undet": 2}])
+    registered, edge = "\n".join(e.count_tables(pd.DataFrame({"meet_eligible": [np.nan]}), sig)).split(
+        "### Holes at the hole edge (exploratory)")
+    assert "| test/tracks | 5/6 | 0 | 5/6 | – | 5/6 |" in registered
+    assert "| test/tracks | 2/4 | 2 | 2/4 | – | 2/4 |" in edge
 
 
 def load_runner(monkeypatch, filename, **stubs):
@@ -570,9 +679,9 @@ def test_pooling_and_repeat_columns(bench):
     e, _, _ = bench
     samples = [
         {"sizes": [1], "switches": [False], "on_errors": [-0.012], "on_total": 2,
-         "off_errors": [], "off_total": 0, "bridges": [False], "drop_total": 2},
+         "off_errors": [], "off_total": 0, "bridges": [False], "edge_bridges": [False, True], "drop_total": 2},
         {"sizes": [2, 3], "switches": [True, True], "on_errors": [0.02, 0.04], "on_total": 2,
-         "off_errors": [], "off_total": 0, "bridges": [True, True], "drop_total": 2},
+         "off_errors": [], "off_total": 0, "bridges": [True, True], "edge_bridges": [], "drop_total": 2},
     ]
     result = e.track_stats(samples)
     assert result["segments"] == result["switch_tracks"] == 3
@@ -580,6 +689,7 @@ def test_pooling_and_repeat_columns(bench):
     assert result["switch_frac"] == result["bridged_frac"] == pytest.approx(2 / 3)
     assert result["onset_n"] == 3
     assert result["onset_missed"] == result["bridge_undet"] == 1
+    assert [result[m] for m in e.EDGE_METRICS] == [1, 2, 2]  # its own denominator, not bridge_n
     assert result["onset_med_ms"] == 20
     assert result["onset_abs_p95_ms"] == pytest.approx(38)
     assert np.isnan(result["offset_n"])
@@ -588,7 +698,7 @@ def test_pooling_and_repeat_columns(bench):
                         for i, sample in enumerate(samples, 1)])
     rep = e.repeats(fam)
     runs = rep.columns.get_loc("runs")
-    assert list(rep.columns[runs + 1:]) == [f"{m}_{stat}" for metrics in (e.TRACK_METRICS, e.COUNT_METRICS)
+    assert list(rep.columns[runs + 1:]) == [f"{m}_{stat}" for metrics in (e.TRACK_METRICS, e.COUNT_METRICS, e.EDGE_METRICS)
                                           for stat in ("mean", "min", "max") for m in metrics]
     assert rep.iloc[0]["tracks_per_segment_mean"] == 1.75
     text = e.summary(fam, rep, pd.DataFrame({"family": [], "bridged": []}))
@@ -608,6 +718,7 @@ def test_endpoints_outside_guard_and_no_pairs(bench):
     assert result["segments"] == result["bridge_n"] == 0
     assert result["bridge_undet"] == 6
     assert np.isnan(result["bridged_frac"])
+    assert [result[m] for m in e.EDGE_METRICS] == [0, 0, 6]
     result, _ = scored(e, np.empty((0, 4)), "stat_harm")
     fam = pd.DataFrame([{"row": "empty/tracked", "family": "stationary", "signals": 1, **result}])
     assert "### stationary" in e.summary(fam, e.repeats(fam), pd.DataFrame({"family": [], "bridged": []}))

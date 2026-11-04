@@ -19,6 +19,12 @@ points start before and end after MEET_ZONE around the meeting and it has a pres
 tracks stay in false / frame alone. Those pairs vote on each side; a side needs MEET_MIN votes and one partial
 strictly ahead. Same partial on both sides is right, different is a swap, anything else (a tie, too few votes) is
 unscorable.
+bridged_edge is exploratory, added after the published run, and not the registered score: `bridged` looks past the
+neutral zone, so a held track that takes a partial back from a stub counts as bridged. This count reads raw track
+frames at their own times, with no grid, amplitude gate or state, so neutral frames count: within EDGE_CENTS of the
+partial, the last strictly before the hole and the first strictly after it, each within EDGE_S of the edge. A hole is
+determined if it has both, and bridged if they carry the same track id; the first row wins a same-time tie. Its
+denominator is its own. The same id at the edge does not prove one track through the gap.
 """
 
 from __future__ import annotations
@@ -40,6 +46,8 @@ GATE_DB: float | None = -20.0  # a point pairs only if at most this far below th
 REPEAT = r"/r\d+$"
 MEET_ZONE = 0.28  # seconds either side of the meeting; the partials are too close to tell apart inside
 MEET_MIN = 3      # votes a side needs before its majority counts
+EDGE_CENTS = 50.0  # bridged_edge: a raw frame this close to the partial is on it
+EDGE_S = 0.1       # bridged_edge: a side's frame lies within this of the hole
 # summary.md columns: metric -> (header, kind)
 SUMMARY = {
     "points": ("points", "int"), "matched_frac": ("paired %", "pct"), "dup_frac": ("dup %", "pct"),
@@ -60,6 +68,8 @@ TRACK_METRICS = (
 )
 # Written after every older column, here and in repeats.csv, so existing columns keep their position.
 COUNT_METRICS = ("bridged", "meet_eligible", "meet_right", "meet_swap", "meet_unscorable")
+# Exploratory, added after the published run: last again, as its own block in repeats.csv.
+EDGE_METRICS = ("bridged_edge", "bridge_edge_n", "bridge_edge_undet")
 TRACK_SUMMARY = {
     "tracks_per_segment": ("tracks / segment", "num"), "switch_frac": ("switch %", "pct"),
     "onset_med_ms": ("onset med (ms)", "num"), "onset_abs_p95_ms": (r"onset \|err\| p95 (ms)", "num"),
@@ -212,6 +222,25 @@ def meeting(pts: np.ndarray, det: dict) -> dict:
     return result
 
 
+def edge_bridges(pts: np.ndarray, name: str) -> list[bool]:
+    """Per determined hole, whether the raw frames at its two edges carry the same track id."""
+    drops = signal_specs()[name].get("drop", [])
+    if not drops:
+        return []
+    tracked = pts[(pts[:, 3] >= 0) & (pts[:, 1] > 0)]
+    time = tracked[:, 0]
+    cents = np.abs(1200 * np.log2(tracked[:, 1] / truth.partials(name, time)[0]))
+    verdicts = []
+    for k, (centre, width) in enumerate(drops):
+        lo, hi = centre - width / 2, centre + width / 2
+        on = cents[k] <= EDGE_CENTS
+        before = tracked[on & (time < lo) & (time >= lo - EDGE_S - 1e-12)]
+        after = tracked[on & (time > hi) & (time <= hi + EDGE_S + 1e-12)]
+        if len(before) and len(after):
+            verdicts.append(bool(before[before[:, 0].argmax(), 3] == after[after[:, 0].argmin(), 3]))
+    return verdicts
+
+
 def tracking(pts: np.ndarray, name: str, det: dict) -> dict:
     """Poolable tracking samples and transition totals, from present detection pairs only."""
     pairs, grid, state = det["pairs"], det["grid"], det["state"]
@@ -262,14 +291,14 @@ def tracking(pts: np.ndarray, name: str, det: dict) -> dict:
         after = edge_track(k, centre + width / 2, True)
         if before is not None and after is not None:
             bridges.append(before == after)
-    result.update(bridges=bridges, drop_total=len(spec.get("drop", [])),
+    result.update(bridges=bridges, edge_bridges=edge_bridges(pts, name), drop_total=len(spec.get("drop", [])),
                   meeting=meeting(pts, det) if truth.meets(name) else None)
     return result
 
 
 def track_stats(samples: list[dict] | None) -> dict:
     if samples is None:
-        return dict.fromkeys(TRACK_METRICS + COUNT_METRICS, np.nan)
+        return dict.fromkeys(TRACK_METRICS + COUNT_METRICS + EDGE_METRICS, np.nan)
     sizes = [v for s in samples for v in s["sizes"]]
     switches = [v for s in samples for v in s["switches"]]
     out = {"segments": len(sizes), "tracks_per_segment": np.mean(sizes) if sizes else np.nan,
@@ -286,10 +315,13 @@ def track_stats(samples: list[dict] | None) -> dict:
                bridge_undet=total - len(bridges) if total else np.nan,
                bridged_frac=np.mean(bridges) if bridges else np.nan,
                bridged=sum(bridges) if total else np.nan)
+    edges = [v for s in samples for v in s["edge_bridges"]]
+    out.update(bridged_edge=sum(edges) if total else np.nan, bridge_edge_n=len(edges) if total else np.nan,
+               bridge_edge_undet=total - len(edges) if total else np.nan)
     meetings = [s["meeting"] for s in samples if s.get("meeting")]
     for m in COUNT_METRICS[1:]:
         out[m] = sum(v[m] for v in meetings) if meetings else np.nan
-    return {m: out[m] for m in TRACK_METRICS + COUNT_METRICS}
+    return {m: out[m] for m in TRACK_METRICS + COUNT_METRICS + EDGE_METRICS}
 
 
 def q(v: np.ndarray, p: float) -> float:
@@ -325,7 +357,7 @@ def repeats(fam: pd.DataFrame) -> pd.DataFrame:
         return block
 
     out = spread(SUMMARY).reset_index().assign(runs=groups.size().to_numpy())
-    return pd.concat([out, *[spread(m).reset_index(drop=True) for m in (TRACK_METRICS, COUNT_METRICS)]], axis=1)
+    return pd.concat([out, *[spread(m).reset_index(drop=True) for m in (TRACK_METRICS, COUNT_METRICS, EDGE_METRICS)]], axis=1)
 
 
 def cell(v: float, kind: str) -> str:
@@ -346,9 +378,9 @@ def count_tables(fam: pd.DataFrame, sig: pd.DataFrame) -> list[str]:
         return []
     lines = ["## Meetings and holes", "", f"Counts, pooled over files. Meetings: tracks spanning +-{MEET_ZONE} s of "
              f"the meeting with a present pair outside it; identity by majority of at least {MEET_MIN} present pairs "
-             "each side. Holes: bridged of determined (held across the hole by one track), undetermined holes left "
-             "out. Repeat runs are listed one by one, as a mean of a few tracks is no longer a count; repeats.csv "
-             "has their mean, min and max.", ""]
+             "each side. Holes: bridged of determined (the same track on the nearest present pairs either side), "
+             "undetermined holes left out. Repeat runs are listed one by one, as a mean of a few tracks is no longer "
+             "a count; repeats.csv has their mean, min and max.", ""]
     if not meets.empty:
         lines += ["### Meetings", "", "| row | family | files | eligible | right | swap | unscorable |",
                   "|---|---|---:|---:|---:|---:|---:|"]
@@ -360,16 +392,26 @@ def count_tables(fam: pd.DataFrame, sig: pd.DataFrame) -> list[str]:
         shapes = holes["signal"].map(truth.shape)
         names = list(dict.fromkeys(holes["signal"]))
 
-        def ratio(rows: pd.DataFrame) -> str:
-            return f"{rows['bridged'].sum():.0f}/{rows['bridge_n'].sum():.0f}" if len(rows) else "–"
+        def hole_table(bridged: str, determined: str, undetermined: str) -> list[str]:
+            def ratio(rows: pd.DataFrame) -> str:
+                return f"{rows[bridged].sum():.0f}/{rows[determined].sum():.0f}" if len(rows) else "–"
 
-        lines += ["### Holes in moving partials", "", "| row | all | undet. | vibrato | glide | " + " | ".join(names) + " |",
-                  "|---|" + "---:|" * (4 + len(names))]
-        for row, g in holes.groupby("row", sort=False):
-            cells = [ratio(g), f"{g['bridge_undet'].sum():.0f}", ratio(g[shapes[g.index] == "vibrato"]),
-                     ratio(g[shapes[g.index] == "glide"]), *[ratio(g[g["signal"] == n]) for n in names]]
-            lines.append(f"| {row} | " + " | ".join(cells) + " |")
-        lines.append("")
+            table = ["| row | all | undet. | vibrato | glide | " + " | ".join(names) + " |",
+                     "|---|" + "---:|" * (4 + len(names))]
+            for row, g in holes.groupby("row", sort=False):
+                cells = [ratio(g), f"{g[undetermined].sum():.0f}", ratio(g[shapes[g.index] == "vibrato"]),
+                         ratio(g[shapes[g.index] == "glide"]), *[ratio(g[g["signal"] == n]) for n in names]]
+                table.append(f"| {row} | " + " | ".join(cells) + " |")
+            return [*table, ""]
+
+        lines += ["### Holes in moving partials", "", *hole_table("bridged", "bridge_n", "bridge_undet"),
+                  "### Holes at the hole edge (exploratory)", "", "Exploratory: added after the published run, and "
+                  "not the registered score, which is the table above. That table looks past the neutral zone, so a "
+                  "held track that takes a partial back from a stub counts as bridged there. Here: the same track on "
+                  f"the raw frames nearest the hole, within {EDGE_CENTS:.0f} c of the partial and {EDGE_S} s of its "
+                  "edge, neutral frames included, of the holes with such a frame on both sides. The same track at "
+                  "the edge does not prove one track through the gap.", "",
+                  *hole_table("bridged_edge", "bridge_edge_n", "bridge_edge_undet")]
     return lines
 
 
