@@ -33,5 +33,6 @@ one that needs the network; see `python scripts/run_notebooks.py --help`).
     `min_db`) on `data/interop/saariaho_flute_pm2.sdif`, then MEI next to
     `samples/saariaho_sheet.png`.
 12. `partial_tracking` — `spectrogram_peaks`, `link_peaks` and `track_partials`:
-    test-tone failures, noise and gaps, then the Saariaho flute next to PM2,
-    with settings, point agreement and resynthesis.
+    test-tone failures, noise and gaps, `prediction` on crossing and turn-back
+    glides, then the Saariaho flute next to PM2, with settings, point agreement
+    and resynthesis.

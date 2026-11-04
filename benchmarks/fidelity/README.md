@@ -149,8 +149,8 @@ On the 27 ICMC 2000 sounds the median band LSD is 26.14, 12.24 and 8.26 for the 
 `audiospylt-v1/matched` (untracked), 8.85 for `loris/matched+asp` and 9.31 for `sms-tools/matched+asp`. The
 `+asp` rows are the fair comparison because they use the same synthesis.
 
-At the defaults, `de_natura_son` gives an empty table: 0 tracks, no warning, a silent render, gain −inf. Its
-bin LSD of 8.30 is a floor effect (see [Floor effects](#floor-effects)), not a partial match; its band LSD is
+At the defaults, `de_natura_son` gives an empty table, which `track_partials` warns about: 0 tracks, a silent
+render, gain −inf. Its bin LSD of 8.30 is a floor effect (see [Floor effects](#floor-effects)), not a partial match; its band LSD is
 26.26. Read band LSD and gain together, because a quiet render can score well on the floored bin LSD.
 
 Two things cause this, and they act on different quantities. Prominence sets the track count: 0, 0, 14 and 185
@@ -163,8 +163,14 @@ most of this texture (gain −11.9 dB).
 
 For resynthesis of dense or noisy material, `prominence_db=None` gave lower LSD here, and a wider gate lower still
 where the energy sits at low frequencies, at the accuracy cost in the table. Lower LSD is not proven better
-listening: noise peaks can fill bands without sounding like the input, and no listening test has been run. A
-low-frequency floor for the gate and a warning on an empty result are planned, not built or measured.
+listening: noise peaks can fill bands without sounding like the input, and no listening test has been run.
+
+`track_partials(min_gate_hz=)` puts a floor under the gate: a pair also links within that many Hz. It is off by
+default and has no row here. Measured on this sound alone with `evaluate.score` (not in `results/`): at prominence
+20 dB, 8 Hz still gives 0 tracks and 12 Hz gives 10 tracks, gain −9.4 dB, band LSD 24.21. At prominence None, 12 Hz
+gives 222 tracks, gain −4.4 dB, band LSD 13.25, near `tracked-wide`'s 298 tracks, −4.1 dB and 12.44. The tracks it adds
+follow noise paths, not partials: resolved low partials already track without it. Its accuracy cost is not measured,
+because the lowest partial of the accuracy benchmark's development suite is 187 Hz.
 
 ### Home settings
 

@@ -323,9 +323,10 @@ def link_peaks(
     value.
 
     Prediction is an assumption, not a measurement. While two partials merge
-    into one peak, the peaks cannot tell a crossing from two partials that
-    turn back. 'lp' assumes the motion goes on, so it follows more crossings
-    but swaps partials that turn back. 'hold' does the reverse.
+    into one peak, the tracker has one frequency for both and cannot tell a
+    crossing from two partials that turn back. 'lp' assumes the motion goes
+    on, so it follows more crossings but swaps partials that turn back.
+    'hold' does the reverse.
 
     min_gate_hz matters at low frequencies, where a cents gate is narrower than
     the analysis resolves: at 44.1 kHz with frame 2048 and zero_pad 4, one
