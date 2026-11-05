@@ -14,9 +14,11 @@ import pytest
 from audiospylt.analysis.peaks import find_peaks
 from audiospylt.analysis.spectrogram import mel_spectrogram, spectrogram
 from audiospylt.analysis.spectrum import Spectrum, amplitude_to_db, spectrum
+from audiospylt.io.tables import read_table, write_table
 from audiospylt.model.convert import snapshot_to_events
 from audiospylt.viz._common import (
     _minmax,
+    colorway_colour,
     get_template,
     sequential_colorscale,
     theme_colors,
@@ -227,6 +229,140 @@ def test_plot_spectrum_db_and_peaks(capsys, monkeypatch):
         plot_spectrum(spec, freq_scale="mel")
     with pytest.raises(ValueError, match="boolean|max_points"):
         plot_spectrum(spec, max_points=True)
+
+
+def test_plot_spectrum_selection_false_and_non_bool(capsys, monkeypatch):
+    audio, sr = _sine()
+    spec = spectrum(audio, sr)
+    peaks = find_peaks(spec, min_db=-45, fmin=100, fmax=3500, prominence_db=5)
+    baseline = plot_spectrum(spec, peaks, fmax=5000)
+    fig = _assert_no_side_effects(
+        plot_spectrum, spec, peaks, fmax=5000, selection=False,
+        capsys=capsys, monkeypatch=monkeypatch,
+    )
+    assert len(fig.data) == len(baseline.data) == 2
+    assert [t.name for t in fig.data] == [t.name for t in baseline.data]
+    with pytest.raises(ValueError, match="selection must be True or False"):
+        plot_spectrum(spec, peaks, selection="yes")
+    with pytest.raises(ValueError, match="selection must be True or False"):
+        plot_spectrum(spec, peaks, selection=1)
+
+
+def test_plot_spectrum_selection_lines(capsys, monkeypatch):
+    audio, sr = _sine()
+    spec = spectrum(audio, sr)
+    peaks = find_peaks(spec, min_db=-45, fmin=100, fmax=3500, prominence_db=5)
+    fig = _assert_no_side_effects(
+        plot_spectrum, spec, peaks, fmax=5000, selection=True,
+        capsys=capsys, monkeypatch=monkeypatch,
+    )
+    names = [t.name for t in fig.data]
+    assert names[2:] == ["min_db -45 dB", "fmin 100 Hz", "fmax 3500 Hz"]
+    colours = [colorway_colour("light", slot) for slot in (2, 3, 3)]
+    assert colours[0] != colours[1]
+    for trace, colour in zip(fig.data[2:], colours, strict=True):
+        assert isinstance(trace, go.Scatter)
+        assert trace.mode == "lines"
+        assert trace.line.dash == "dash"
+        assert trace.line.width == 1.5
+        assert trace.line.color == colour
+        assert trace.hoverinfo == "skip"
+        assert trace.legendgroup == "selection"
+        assert trace.showlegend is True
+        # Plotly may expose tuples; values must stay plain floats (not numpy).
+        assert all(type(v) is float for v in list(trace.x) + list(trace.y))
+    assert list(fig.data[2].y) == [-45.0, -45.0]
+    assert list(fig.data[3].x) == [100.0, 100.0]
+    assert list(fig.data[4].x) == [3500.0, 3500.0]
+    # Frequency lines share one y span that covers the spectrum and the amp line.
+    assert fig.data[3].y == fig.data[4].y
+    assert fig.data[3].y[0] <= -45.0 <= fig.data[3].y[1]
+    np.testing.assert_allclose(fig.data[3].y[0], min(fig.data[0].y), rtol=1e-5)
+    np.testing.assert_allclose(fig.data[3].y[1], max(fig.data[0].y), rtol=1e-5)
+    fig_lin = plot_spectrum(spec, peaks, db=False, fmax=5000, selection=True)
+    amp = 10 ** (-45 / 20)
+    assert fig_lin.data[2].name == "min_db -45 dB"
+    assert list(fig_lin.data[2].y) == [amp, amp]
+    fig_floor = plot_spectrum(
+        spec, peaks, floor_db=-40, fmax=5000, selection=True,
+    )
+    assert list(fig_floor.data[2].y) == [-40.0, -40.0]
+
+
+def test_plot_spectrum_selection_frequency_lines_reach_a_high_threshold():
+    audio, sr = _sine()
+    spec = spectrum(audio, sr)
+    top = float(np.max(plot_spectrum(spec).data[0].y))
+    peaks = find_peaks(spec, min_db=top + 5, fmin=100, fmax=2000)
+    assert peaks.empty
+    lines = [t for t in plot_spectrum(spec, peaks, selection=True).data if t.legendgroup == "selection"]
+    assert lines[0].y[0] == pytest.approx(top + 5)
+    assert max(lines[1].y) == pytest.approx(top + 5)
+
+
+def test_plot_spectrum_selection_off_limits_and_empty_crop(capsys, monkeypatch):
+    audio, sr = _sine()
+    spec = spectrum(audio, sr)
+    off = find_peaks(spec, min_db=None, fmin=0.0, fmax=None, prominence_db=5)
+    fig = _assert_no_side_effects(
+        plot_spectrum, spec, off, fmax=5000, selection=True,
+        capsys=capsys, monkeypatch=monkeypatch,
+    )
+    assert len(fig.data) == 2
+    assert all("min_db" not in t.name and "fmin" not in t.name and "fmax" not in t.name
+               for t in fig.data)
+    band = find_peaks(spec, min_db=-45, fmin=100, fmax=3500, prominence_db=5)
+    cropped = plot_spectrum(spec, band, fmin=500, fmax=2000, selection=True)
+    assert [t.name for t in cropped.data[2:]] == ["min_db -45 dB"]
+    # Crop to DC only, then log drops it: empty spectrum, no selection lines.
+    empty = plot_spectrum(
+        spec, band, fmin=0.0, fmax=spec.bin_hz * 0.5, freq_scale="log", selection=True,
+    )
+    assert len(empty.data[0].x) == 0
+    assert all(getattr(t, "legendgroup", None) != "selection" for t in empty.data)
+
+
+def test_plot_spectrum_selection_roundtrip_meta(tmp_path, capsys, monkeypatch):
+    audio, sr = _sine()
+    spec = spectrum(audio, sr)
+    peaks = find_peaks(spec, min_db=-45, fmin=100, fmax=3500, prominence_db=5)
+    restored = read_table(write_table(peaks, tmp_path / "peaks.tsv"))
+    assert restored.attrs["meta"]["min_db"] == "-45.0"
+    assert restored.attrs["meta"]["fmin"] == "100.0"
+    assert restored.attrs["meta"]["fmax"] == "3500.0"
+    fig = _assert_no_side_effects(
+        plot_spectrum, spec, restored, fmax=5000, selection=True,
+        capsys=capsys, monkeypatch=monkeypatch,
+    )
+    assert [t.name for t in fig.data[2:]] == ["min_db -45 dB", "fmin 100 Hz", "fmax 3500 Hz"]
+    none_peaks = find_peaks(spec, min_db=None, fmin=100, fmax=3500, prominence_db=5)
+    none_restored = read_table(write_table(none_peaks, tmp_path / "none.tsv"))
+    assert none_restored.attrs["meta"]["min_db"] == "None"
+    fig_none = plot_spectrum(spec, none_restored, fmax=5000, selection=True)
+    assert [t.name for t in fig_none.data[2:]] == ["fmin 100 Hz", "fmax 3500 Hz"]
+
+
+def test_plot_spectrum_selection_errors():
+    audio, sr = _sine()
+    spec = spectrum(audio, sr)
+    with pytest.raises(ValueError, match="selection=True requires a peaks table"):
+        plot_spectrum(spec, selection=True)
+    peaks = find_peaks(spec, min_db=-45, fmin=100, fmax=3500, prominence_db=5)
+    stripped = peaks.copy()
+    stripped.attrs["meta"] = {
+        key: value for key, value in peaks.attrs["meta"].items()
+        if key not in ("min_db", "fmin")
+    }
+    with pytest.raises(
+        ValueError,
+        match=r"missing min_db, fmin; find_peaks and spectrogram_peaks tables carry them",
+    ):
+        plot_spectrum(spec, stripped, selection=True)
+    bad = peaks.copy()
+    bad.attrs["meta"] = dict(peaks.attrs["meta"])
+    bad.attrs["meta"]["min_db"] = "loud"
+    with pytest.raises(ValueError, match=r"cannot be read as a number; got 'loud'"):
+        plot_spectrum(spec, bad, selection=True)
 
 
 def test_plot_spectrogram_pooling_mel_overlay(capsys, monkeypatch):

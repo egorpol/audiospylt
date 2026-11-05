@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import numpy as np
 import pandas as pd
@@ -59,9 +59,11 @@ def find_peaks(
         Validated snapshot, sorted by freq with a RangeIndex: float64 freq
         (Hz), amp (D4 peak units), nullable Int64 bin, float64 prominence (dB).
         Empty results retain these columns/dtypes. attrs['meta'] records sr,
-        frame_length, n_fft, window (string), and interpolation; no phase is
-        estimated. Filters act in frequency, absolute, relative, prominence,
-        then distance order, so excluded peaks cannot suppress survivors.
+        frame_length, n_fft, window (string), interpolation, and the resolved
+        picker settings (min_db, rel_db, fmin, fmax, min_distance_hz,
+        prominence_db, floor_db; fmax is never None); no phase is estimated.
+        Filters act in frequency, absolute, relative, prominence, then
+        distance order, so excluded peaks cannot suppress survivors.
 
     Notes
     -----
@@ -98,9 +100,12 @@ def find_peaks(
         "bin": pd.array(bins, dtype="Int64"),
         "prominence": prominence,
     }), "snapshot")
+    options = asdict(settings)
+    options.pop("interpolate")
     result.attrs["meta"] = {
         "sr": spec.sr, "frame_length": spec.frame_length, "n_fft": spec.n_fft,
         "window": str(spec.window), "interpolation": "qifft-db" if interpolate else "none",
+        **options,
     }
     return result
 

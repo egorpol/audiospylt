@@ -326,6 +326,8 @@ def test_snapshot_schema_metadata_provenance_roundtrip_and_input_purity(interpol
     meta = {
         "sr": 1000, "frame_length": 1000, "n_fft": 4000,
         "window": "('kaiser', 6.0)", "interpolation": "qifft-db" if interpolate else "none",
+        "min_db": -60.0, "rel_db": None, "fmin": 0.0, "fmax": 500.0,
+        "min_distance_hz": None, "prominence_db": None, "floor_db": -120.0,
     }
     assert result.attrs == {"audiospylt_table": "snapshot", "meta": meta}
     np.testing.assert_array_equal(spec.amp, original)

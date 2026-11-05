@@ -190,6 +190,22 @@ def plot_waveform(
     return fig
 
 
+def _selection_meta_float(meta: dict, key: str) -> float:
+    """Read a picker setting from peak-table meta (native or write_table string)."""
+    value = meta[key]
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"peaks.attrs['meta'][{key!r}] cannot be read as a number; got {value!r}"
+        ) from error
+    if not np.isfinite(number):
+        raise ValueError(
+            f"peaks.attrs['meta'][{key!r}] cannot be read as a number; got {value!r}"
+        )
+    return number
+
+
 def plot_spectrum(
     spec: Spectrum,
     peaks: pd.DataFrame | None = None,
@@ -201,6 +217,7 @@ def plot_spectrum(
     freq_scale: str = "linear",
     max_points: int | None = 50_000,
     gl: bool = False,
+    selection: bool = False,
     theme: str = "light",
     title: str | None = None,
 ) -> go.Figure:
@@ -222,6 +239,12 @@ def plot_spectrum(
         Display-only min/max budget for the spectrum line.
     gl : bool
         Opt-in ``Scattergl`` (WebGL context limits apply).
+    selection : bool, default False
+        Draw dashed lines for ``min_db``, ``fmin`` and ``fmax`` from
+        ``peaks.attrs['meta']`` (as ``find_peaks`` / ``spectrogram_peaks``
+        record them). ``rel_db``, ``prominence_db`` and ``min_distance_hz``
+        have no line, so a peak can clear every drawn threshold and still be
+        left out. Requires ``peaks``.
     theme, title
 
     Returns
@@ -237,6 +260,11 @@ def plot_spectrum(
     """
     if not isinstance(spec, Spectrum):
         raise TypeError(f"spec must be a Spectrum; got {type(spec).__name__}")
+    if not isinstance(selection, (bool, np.bool_)):
+        raise ValueError(f"selection must be True or False; got {selection!r}")
+    selection = bool(selection)
+    if selection and peaks is None:
+        raise ValueError("selection=True requires a peaks table")
     theme = _theme_name(theme)
     freq_scale = _freq_scale(freq_scale)
     max_points = _optional_max_points(max_points)
@@ -269,6 +297,7 @@ def plot_spectrum(
         ),
         showlegend=peaks is not None,
     ))
+    table = None
     if peaks is not None:
         table, kind = _table(peaks, None)
         if kind != "snapshot":
@@ -310,6 +339,68 @@ def plot_spectrum(
             x0 = float(max(fmin, positive[0])) if fmin > 0 else float(positive[0])
         else:
             x0 = None
+    if selection and table is not None:
+        meta = table.attrs.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+        missing = [key for key in ("min_db", "fmin", "fmax") if key not in meta]
+        if missing:
+            raise ValueError(
+                f"peaks.attrs['meta'] is missing {', '.join(missing)}; "
+                "find_peaks and spectrogram_peaks tables carry them, "
+                "imported ones do not"
+            )
+        pick_min_db = (
+            None if meta["min_db"] in (None, "None")
+            else _selection_meta_float(meta, "min_db")
+        )
+        pick_fmin = _selection_meta_float(meta, "fmin")
+        pick_fmax = _selection_meta_float(meta, "fmax")
+        if x0 is not None and len(x):
+            amp_line = dict(width=1.5, color=colorway_colour(theme, 2), dash="dash")
+            freq_line = dict(width=1.5, color=colorway_colour(theme, 3), dash="dash")
+            y_lo = float(np.min(y))
+            y_hi = float(np.max(y))
+            if pick_min_db is not None:
+                if db:
+                    amp_y = float(pick_min_db)
+                    if amp_y < floor_db:
+                        amp_y = float(floor_db)
+                else:
+                    amp_y = float(10 ** (pick_min_db / 20))
+                    floor_amp = float(10 ** (floor_db / 20))
+                    if amp_y < floor_amp:
+                        amp_y = floor_amp
+                y_lo = min(y_lo, amp_y)
+                y_hi = max(y_hi, amp_y)
+                fig.add_trace(go.Scatter(
+                    x=[float(x0), float(fmax)],
+                    y=[amp_y, amp_y],
+                    mode="lines",
+                    name=f"min_db {pick_min_db:g} dB",
+                    line=amp_line,
+                    hoverinfo="skip",
+                    legendgroup="selection",
+                    showlegend=True,
+                ))
+            nyquist = float(spec.sr / 2)
+            for label, hz in (("fmin", pick_fmin), ("fmax", pick_fmax)):
+                if label == "fmin" and hz <= 0:
+                    continue
+                if label == "fmax" and hz >= nyquist:
+                    continue
+                if hz < x0 or hz > fmax:
+                    continue
+                fig.add_trace(go.Scatter(
+                    x=[float(hz), float(hz)],
+                    y=[y_lo, y_hi],
+                    mode="lines",
+                    name=f"{label} {hz:g} Hz",
+                    line=freq_line,
+                    hoverinfo="skip",
+                    legendgroup="selection",
+                    showlegend=True,
+                ))
     apply_layout(fig, theme=theme, title=title, n_series=n_series)
     xaxis_kwargs: dict[str, object] = dict(title_text="frequency (Hz)", type=freq_scale)
     if x0 is not None:
