@@ -79,14 +79,21 @@ def _mono_audio(audio: np.ndarray) -> np.ndarray:
     return array
 
 
+def _window_weights(window: str | tuple | float, length: int) -> np.ndarray:
+    """Return periodic SciPy window weights; reject NaN or zero-sum windows."""
+    weights = get_window(window, length, fftbins=True)
+    gain = weights.sum()
+    if not np.isfinite(gain) or gain == 0:
+        raise ValueError("window must have a finite, nonzero sum for amplitude scaling")
+    return weights
+
+
 def _scaled_magnitude(
     frames: np.ndarray, window: str | tuple | float, n_fft: int,
 ) -> np.ndarray:
     """Scale one or many frames on the last axis identically in D4 units."""
-    weights = get_window(window, frames.shape[-1], fftbins=True)
+    weights = _window_weights(window, frames.shape[-1])
     gain = weights.sum()
-    if not np.isfinite(gain) or gain == 0:
-        raise ValueError("window must have a finite, nonzero sum for amplitude scaling")
     amp = np.abs(np.fft.rfft(frames * weights, n=n_fft, axis=-1)) * 2 / gain
     amp[..., 0] /= 2
     if n_fft % 2 == 0:

@@ -39,7 +39,7 @@ REGISTRY: dict[str, dict[str, tuple[str | None, str | None]]] = {
         "compute_fft": ("audiospylt.analysis.spectrum.spectrum", None),
         "filter_peaks": ("audiospylt.analysis.peaks.find_peaks", None),
         "plot_spectrum": ("audiospylt.viz.signal.plot_spectrum", None),
-        "plot_windowed_waveform": (None, None),
+        "plot_windowed_waveform": ("audiospylt.viz.signal.plot_waveform(..., window=...)", None),
         "analyze_signal": (
             "audiospylt.analysis.spectrum.spectrum, audiospylt.analysis.peaks.find_peaks "
             "and audiospylt.viz.signal.plot_spectrum", None),

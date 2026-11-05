@@ -76,7 +76,7 @@ def test_registry_matches_public_definitions_and_footer(module):
 def test_registry_inventory():
     assert len(REGISTRY) == 11
     assert len(NAMES) == 59
-    assert sum(use is None for entries in REGISTRY.values() for use, _ in entries.values()) == 15
+    assert sum(use is None for entries in REGISTRY.values() for use, _ in entries.values()) == 14
     assert "mei_old" not in REGISTRY
     assert not {"A4_FREQUENCY", "MIDI_BASE", "CENT_FACTOR", "XML_NS"} & REGISTRY["mei"].keys()
     assert issubclass(AudiospyltDeprecationWarning, DeprecationWarning)

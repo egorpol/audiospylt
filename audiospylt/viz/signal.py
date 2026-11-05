@@ -11,7 +11,7 @@ import pandas as pd
 
 from audiospylt._optional import import_optional
 from audiospylt.analysis.spectrogram import MelSpectrogram, Spectrogram
-from audiospylt.analysis.spectrum import Spectrum
+from audiospylt.analysis.spectrum import Spectrum, _window_weights
 from audiospylt.io.audio import _audio_array, _sample_rate
 from audiospylt.viz._common import (
     _finite_scalar,
@@ -73,6 +73,7 @@ def plot_waveform(
     *,
     time_offset: float = 0.0,
     channel_labels: Sequence[str] | None = None,
+    window: str | tuple | float | None = None,
     max_points: int | None = 50_000,
     gl: bool = False,
     theme: str = "light",
@@ -87,12 +88,20 @@ def plot_waveform(
     ----------
     audio : array-like
         1-D ``(samples,)`` or 2-D ``(channels, samples)`` as ``io.audio`` reads.
+        With ``window``, must be 1-D (mono); 2-D including ``(1, n)`` raises.
     sr : int
         Positive sample rate in Hz.
     time_offset : float, default 0
         Finite seconds added to ``n / sr``.
     channel_labels : sequence of str or None
         Legend labels for multichannel audio; default ``ch 1``, ``ch 2``, …
+    window : str, tuple, float, or None, default None
+        Optional analysis window as for ``analysis.spectrum.spectrum`` (SciPy
+        ``get_window`` with ``fftbins=True``). When set, the left trace is the
+        windowed samples and a second ``window`` curve sits on a right-hand
+        axis fixed at 0 to 1 (a window that dips below zero, such as
+        ``flattop`` to about -0.07, runs off the bottom). ``window=0.0`` is
+        Kaiser with beta 0, not "no window".
     max_points : int or None, default 50000
         Display-only min/max budget per channel (``>= 2`` or None).
     gl : bool, default False
@@ -108,7 +117,8 @@ def plot_waveform(
     Raises
     ------
     ValueError
-        Invalid audio, rate, labels, theme, or max_points.
+        Invalid audio, rate, labels, theme, or max_points; 2-D audio with a
+        window; or a window ``spectrum`` would reject (NaN or zero-sum weights).
     ImportError
         Plotly is missing; install audiospylt[plot].
     """
@@ -116,7 +126,16 @@ def plot_waveform(
     array, sr = _validate_audio(audio, sr)
     time_offset = _finite_scalar(time_offset, "time_offset")
     max_points = _optional_max_points(max_points)
-    if array.ndim == 1:
+    weights = None
+    if window is not None:
+        if array.ndim != 1:
+            raise ValueError(
+                f"windowed plot_waveform requires 1-D audio; got shape {array.shape}"
+            )
+        weights = _window_weights(window, array.shape[0])
+        channels = (array * weights)[np.newaxis, :]
+        mono = True
+    elif array.ndim == 1:
         channels = array[np.newaxis, :]
         mono = True
     else:
@@ -140,9 +159,34 @@ def plot_waveform(
             hovertemplate="time: %{x:.4g} s<br>amplitude: %{y:.4g}<extra></extra>",
             showlegend=not mono,
         ))
+    if weights is not None:
+        win_colour = colorway_colour(theme, 1)
+        x_w, y_w = _minmax(x_full, weights, max_points)
+        fig.add_trace(scatter(
+            x=np.asarray(x_w, dtype=np.float64),
+            y=np.asarray(y_w, dtype=np.float32),
+            mode="lines",
+            name="window",
+            line=dict(width=1, color=win_colour),
+            yaxis="y2",
+            hovertemplate="time: %{x:.4g} s<br>window: %{y:.4g}<extra></extra>",
+            showlegend=False,
+        ))
     apply_layout(fig, theme=theme, title=title, n_series=1 if mono else n_channels)
     fig.update_xaxes(title_text="time (s)")
-    fig.update_yaxes(title_text="amplitude (re full scale)")
+    amplitude = "amplitude" if weights is None else "windowed amplitude"
+    fig.update_yaxes(title_text=f"{amplitude} (re full scale)")
+    if weights is not None:
+        # After update_yaxes, which reaches every y axis that exists by then.
+        fig.update_layout(yaxis2=dict(
+            title=dict(text="window", font=dict(color=win_colour)),
+            tickfont=dict(color=win_colour),
+            overlaying="y",
+            side="right",
+            range=[0, 1],
+            showgrid=False,
+            zeroline=False,
+        ))
     return fig
 
 
@@ -484,10 +528,10 @@ def plot_spectrogram(
     if with_audio:
         colorbar.update(y=1, yanchor="top", len=0.75, lenmode="fraction")
     if is_mel:
-        # Band Hz as float32 customdata (n_mels × frames); mel y is not Hz.
-        custom = np.broadcast_to(
-            freqs.astype(np.float32)[:, np.newaxis], z.shape,
-        ).copy()
+        # Band Hz per cell, since mel y is not Hz. Nested lists, not an array:
+        # plotly encodes an array as a typed array, and plotly.js 2.35.3 (the
+        # VS Code and Cursor notebook renderer) then prints %{customdata} raw.
+        custom = [[hz] * z.shape[1] for hz in np.round(freqs, 2).tolist()]
         hover = (
             f"time: %{{x:.4g}} s<br>frequency: %{{customdata:.2f}} Hz<br>"
             f"amplitude: %{{z{amp_fmt}}}{amp_unit}<extra></extra>"
@@ -590,6 +634,15 @@ def plot_spectrogram(
         )
     elif not is_mel:
         yaxis_kwargs["type"] = freq_scale
+        if freq_scale == "log" and len(y_vals):
+            # Plotly's own log ticks read as a bare "2" and "5" on a short range.
+            from audiospylt.viz.tables import _hz_label, _log_freq_ticks
+
+            ticks = _log_freq_ticks(lo, hi)
+            if len(ticks) >= 2:  # a narrower crop keeps Plotly's ticks, not a bare axis
+                yaxis_kwargs.update(
+                    tickmode="array", tickvals=ticks, ticktext=[_hz_label(v) for v in ticks],
+                )
 
     if with_audio:
         fig.update_layout(

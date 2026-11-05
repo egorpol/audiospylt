@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 
+import json
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -123,6 +125,84 @@ def test_plot_waveform_fidelity_and_gl(capsys, monkeypatch):
         plot_waveform(np.array([1.0, np.nan]), sr)
     with pytest.raises(ValueError, match="boolean|integer|positive"):
         plot_waveform(audio, True)
+
+
+def test_plot_waveform_window_overlay(capsys, monkeypatch):
+    from scipy.signal import get_window
+
+    from audiospylt.viz._common import colorway_colour
+
+    n, sr = 4096, 44100
+    audio = np.zeros(n, dtype=np.float64)
+    audio[2] = 1.0
+    audio[n // 2] = 0.3
+    weights = get_window("hann", n, fftbins=True)
+    expected = audio * weights
+    # Decimate after multiply: the edge click is windowed away; the centre survives.
+    fig = plot_waveform(audio, sr, window="hann", max_points=64)
+    assert abs(float(np.max(np.abs(fig.data[0].y))) - 0.3) < 0.05
+    np.testing.assert_allclose(
+        fig.data[0].y,
+        _minmax(np.arange(n) / sr, expected, 64)[1].astype(np.float32),
+    )
+    assert fig.data[0].y.dtype == fig.data[1].y.dtype == np.float32
+    assert fig.data[1].name == "window"
+    assert fig.data[1].yaxis == "y2"
+    assert fig.data[1].hovertemplate == (
+        "time: %{x:.4g} s<br>window: %{y:.4g}<extra></extra>"
+    )
+    win_colour = colorway_colour("light", 1)
+    assert fig.data[1].line.color == win_colour
+    assert fig.layout.showlegend is False
+    assert fig.layout.yaxis.title.text == "windowed amplitude (re full scale)"
+    assert fig.layout.yaxis2.title.text == "window"
+    assert fig.layout.yaxis2.title.font.color == win_colour
+    assert fig.layout.yaxis2.tickfont.color == win_colour
+    assert fig.layout.yaxis2.overlaying == "y"
+    assert fig.layout.yaxis2.side == "right"
+    assert list(fig.layout.yaxis2.range) == [0, 1]
+    assert fig.layout.yaxis2.showgrid is False
+    assert fig.layout.yaxis2.zeroline is False
+    offset = 1.25
+    fig_off = plot_waveform(audio[:128], sr, window="hann", time_offset=offset, max_points=None)
+    x_full = offset + np.arange(128, dtype=np.float64) / sr
+    w128 = get_window("hann", 128, fftbins=True)
+    np.testing.assert_allclose(fig_off.data[0].x, x_full)
+    np.testing.assert_allclose(fig_off.data[1].x, x_full)
+    np.testing.assert_allclose(fig_off.data[1].y, w128.astype(np.float32))
+    assert isinstance(plot_waveform(audio[:64], sr, window="hann", gl=True).data[1], go.Scattergl)
+    # Kaiser beta 0 is a real window; do not treat 0.0 as None.
+    fig_k = plot_waveform(audio[:32], sr, window=0.0, max_points=None)
+    np.testing.assert_allclose(
+        fig_k.data[1].y, get_window(0.0, 32, fftbins=True).astype(np.float32),
+    )
+    with pytest.raises(ValueError, match="1-D"):
+        plot_waveform(audio[np.newaxis, :], sr, window="hann")
+    with pytest.raises(ValueError, match="1-D"):
+        plot_waveform(np.vstack([audio, audio]), sr, window="hann")
+    with pytest.raises(ValueError, match="finite, nonzero sum"):
+        plot_waveform(audio[:16], sr, window=("gaussian", 0))
+    # window=None: one trace, no second axis, the plain title.
+    mono, mono_sr = _sine(100)
+    plain = plot_waveform(mono, mono_sr, window=None)
+    assert len(plain.data) == 1 and "yaxis2" not in plain.to_dict()["layout"]
+    assert plain.layout.yaxis.title.text == "amplitude (re full scale)"
+    stereo = np.vstack([mono, -mono])
+    for kwargs in (
+        {},
+        {"theme": "dark"},
+        {"gl": True},
+        {"channel_labels": ["L", "R"]},
+    ):
+        args = (stereo if "channel_labels" in kwargs else mono, mono_sr)
+        assert plot_waveform(*args, window=None, **kwargs).to_json() == (
+            plot_waveform(*args, **kwargs).to_json()
+        )
+    _assert_no_side_effects(
+        plot_waveform, audio, sr, window="hann", max_points=128,
+        capsys=capsys, monkeypatch=monkeypatch,
+    )
+    np.testing.assert_array_equal(audio[2], 1.0)
 
 
 def test_plot_spectrum_db_and_peaks(capsys, monkeypatch):
@@ -267,11 +347,34 @@ def test_spectrogram_customdata_hz_vs_mel_and_json_size():
     S = spectrogram(audio, sr, frame_length=512, hop=128)
     mel = mel_spectrogram(S, n_mels=64)
     fig_mel = plot_spectrogram(mel)
-    cd = np.asarray(fig_mel.data[0].customdata)
-    assert cd.dtype == np.float32
-    assert cd.shape == fig_mel.data[0].z.shape
-    np.testing.assert_allclose(cd[:, 0], mel.freqs.astype(np.float32))
+    # Plain nested lists in the JSON: plotly.js 2.35.3, the VS Code and Cursor
+    # notebook renderer, cannot read a typed array per cell.
+    cd = json.loads(pio.to_json(fig_mel))["data"][0]["customdata"]
+    assert isinstance(cd, list) and all(isinstance(row, list) for row in cd)
+    assert np.shape(cd) == fig_mel.data[0].z.shape
+    np.testing.assert_allclose(np.asarray(cd)[:, 0], mel.freqs, atol=0.005)
     assert "%{customdata:.2f}" in fig_mel.data[0].hovertemplate
+
+
+def test_spectrogram_log_axis_labels_hz():
+    audio, sr = _sine(8192)
+    S = spectrogram(audio, sr, frame_length=512, hop=128)
+    yaxis = plot_spectrogram(S, freq_scale="log", fmin=100, fmax=8000).layout.yaxis
+    assert yaxis.type == "log"
+    assert yaxis.tickvals == (200.0, 500.0, 1000.0, 2000.0, 5000.0)
+    assert yaxis.ticktext == ("200", "500", "1k", "2k", "5k")
+    assert plot_spectrogram(S).layout.yaxis.tickvals is None
+
+
+@pytest.mark.parametrize("fmin,fmax,labelled", [(410, 490, False), (490, 510, False), (390, 510, True)])
+def test_spectrogram_narrow_log_crop_keeps_tick_labels(fmin, fmax, labelled):
+    # Under two 1-9 ticks in the crop: an array tick mode would leave the axis bare.
+    audio, sr = _sine(44100)
+    sg = spectrogram(audio, sr, frame_length=8192, hop=2048)
+    axis = plot_spectrogram(sg, freq_scale="log", fmin=fmin, fmax=fmax).layout.yaxis
+    assert axis.type == "log"
+    assert (axis.tickmode == "array") is labelled
+    assert labelled == (axis.tickvals is not None and len(axis.tickvals) >= 2)
 
 
 def test_spectrogram_legend_colorbar_and_audio_colours():
