@@ -28,7 +28,8 @@ one that needs the network; see `python scripts/run_notebooks.py --help`).
 9. `pyin_f0` — `pyin` (hop 512 vs 256) and `f0_to_tracks` on the cello arco
    sample; refine vs raw pYIN; sonify the contour.
 10. `interop_partiels_sdif` — `read_partiels`, `read_sdif`, `read_chord_seq` and
-    `write_sdif` on `data/interop/`, with `to_mono` and PM2 frame markers.
+    `write_sdif` on `data/interop/`, with `to_mono`, PM2 frame markers and renders
+    of the flute cut, drums and chord sequence.
 11. `tracks_chords_mei` — `tracks_at` and `tracks_to_chords` (`merge_cents`,
     `min_db`) on `data/interop/saariaho_flute_pm2.sdif`, then MEI next to
     `samples/saariaho_sheet.png`.
